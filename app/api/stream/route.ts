@@ -1,27 +1,32 @@
-// P0-T8 candidate B — the force-dynamic route handler SPEC.md R16 names as the fallback if the
-// next.config rewrite buffers SSE.
+// `GET /api/stream` — the deck's end of core's SSE feed (P1-T9).
 //
-// It exists alongside candidate A (the plain rewrite at /api/core/*) so both can be measured in
-// dev and in `next start` rather than argued about; scripts/sse-spike-cli.ts drives both and
-// RESEARCH.md F.6 holds the numbers. Which one the deck ships is DECISIONS.md D27.
+// It is a route handler rather than a `next.config` rewrite, and DECISIONS.md D27 is the whole
+// argument. Briefly: both transports stream unbuffered (RESEARCH.md F.6.1), so latency did not
+// decide it. What decided it is where the anti-buffering fix lives. Next gzips a proxied
+// `text/event-stream` and a compressor holds the stream to the end — twelve events as one chunk at
+// 2.2 s, with a `200 OK` and nothing in any log (F.6.3). Exactly one thing prevents it from the
+// server side, `Cache-Control: no-transform`, and on the rewrite that header would live in core, in
+// another process: a core that forgot it would present as a slow reconciler and be debugged in the
+// wrong place. Here the deck defends itself — `accept-encoding: identity` on the upstream leg and
+// `no-transform` on its own response, both in this file.
 //
-// `dynamic = 'force-dynamic'` is what stops Next from trying to prerender a route that must not
-// exist until someone asks for it. P0-T6 found that the same export is silently ignored on a
-// 'use client' module (RESEARCH.md F.5.1); a route handler is not one, so here it applies.
+// `dynamic = 'force-dynamic'` stops Next from prerendering a route that must not exist until
+// someone asks for it. P0-T6 found the same export is silently ignored on a 'use client' module
+// (F.5.1); a route handler is not one, so here it applies.
+import { CORE_ORIGIN } from '../../../contracts/origins.ts';
 import { readCoreToken } from '../../../contracts/core-token.ts';
+import { CORE_STREAM_PATH } from '../../../contracts/stream-event.ts';
 
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
 
-const CORE_STREAM = 'http://127.0.0.1:4950/stream';
+const CORE_STREAM = `${CORE_ORIGIN}${CORE_STREAM_PATH}`;
 
 /**
  * Response headers for the leg the browser sees.
  *
- * `no-transform` is the one that matters and it is not decorative: P0-T8 measured Next gzipping a
- * proxied `text/event-stream`, which buffers the whole stream into one chunk at the end. It is
- * repeated here because this handler's own response goes back through the same compression that
- * caught the rewrite (RESEARCH.md F.6.3).
+ * `no-transform` is the one that matters — see the header. It is repeated from core's own response
+ * because this handler's reply goes back through the same compression that caught the rewrite.
  */
 const STREAM_HEADERS: Readonly<Record<string, string>> = {
   'content-type': 'text/event-stream; charset=utf-8',
@@ -36,11 +41,11 @@ export async function GET(request: Request): Promise<Response> {
   // (SECURITY.md §3 rule 3).
   if (token === undefined) return new Response('unavailable\n', { status: 503 });
 
-  // The client's query string is deliberately NOT forwarded. Nothing needs it yet, and dropping
-  // it leaves the outbound request with no client-controlled part at all — which is what makes
-  // the CodeQL "file data in outbound network request" finding on the token below a statement
-  // about a constant destination rather than a question. When P1 needs `?since=<last-event-id>`
-  // to resume a stream, it adds that one parameter and validates it.
+  // The client's query string is deliberately NOT forwarded. Nothing needs it: the stream replays
+  // state on connect rather than resuming from an id, because there is no store to page against
+  // until P1-T8. Dropping it leaves the outbound request with no client-controlled part at all,
+  // which is what makes the CodeQL "file data in outbound network request" finding on the token
+  // below a statement about a constant destination rather than a question (RESEARCH.md F.6.10).
   const upstream = await connect(token, request.signal);
   // Core refusing the connection is an ordinary state, not a bug: it is how a deck left open
   // overnight finds out core restarted. Unhandled, the throw becomes a Next 500 carrying an HTML

@@ -6,6 +6,11 @@
 // than remembered — a client never learns why it was refused, and the reason goes to the local
 // log only (SECURITY.md §11 rule 6).
 //
+// A stream route is the one thing that does not leave through `respond()`, because it has no
+// single response to serialise — it is screened by the same guard and then handed to `SseStream`,
+// which owns every byte it writes. "Nothing but one class writes to a socket" is the rule that
+// survives; which class it is depends on the route (route.ts, P1-T9).
+//
 // There is no unauthenticated route, `/health` included. The deck never needs one: it reads the
 // token server-side in proxy.ts, and a core that is down fails the connection rather than
 // answering, which is the same signal (RESEARCH.md F.3.3).
@@ -14,7 +19,8 @@ import { LOOPBACK_ADDRESS } from '../../contracts/origins.ts';
 import type { Logger } from '../ports/logger.ts';
 import type { LoopbackGuard, RequestFacts, Rejection } from './loopback-guard.ts';
 import type { RequestRouter } from './request-router.ts';
-import { json, type JsonResponse } from './route.ts';
+import { json, type JsonResponse, type Route, type StreamRoute } from './route.ts';
+import { SseStream } from './sse-stream.ts';
 
 /** Methods that carry no body, and so cannot carry a Content-Type to screen (SEC-HTTP-4). */
 const BODYLESS: readonly string[] = ['GET', 'HEAD'];
@@ -25,16 +31,33 @@ const NO_STORE_HEADERS: Readonly<Record<string, string>> = {
   'x-content-type-options': 'nosniff',
 };
 
+/**
+ * Everything the server dispatches to.
+ *
+ * Named fields rather than four positional arguments: `router` and `streams` are both "the list of
+ * things that answer", and a call site that transposed them would compile and then 404 every route
+ * — the same reasoning that gave PtySocketServer a parts object in P5a-T2b.
+ */
+export interface CoreServerParts {
+  readonly guard: LoopbackGuard;
+  readonly router: RequestRouter<Route>;
+  /** Routes that take over the socket. Empty is normal; a server with no stream still works. */
+  readonly streams: RequestRouter<StreamRoute>;
+  readonly logger: Logger;
+}
+
 export class CoreServer {
   private readonly guard: LoopbackGuard;
-  private readonly router: RequestRouter;
+  private readonly router: RequestRouter<Route>;
+  private readonly streams: RequestRouter<StreamRoute>;
   private readonly logger: Logger;
   private readonly server: Server;
 
-  constructor(guard: LoopbackGuard, router: RequestRouter, logger: Logger) {
-    this.guard = guard;
-    this.router = router;
-    this.logger = logger;
+  constructor(parts: CoreServerParts) {
+    this.guard = parts.guard;
+    this.router = parts.router;
+    this.streams = parts.streams;
+    this.logger = parts.logger;
     this.server = createServer((request, response) => {
       void this.dispatch(request, response);
     });
@@ -83,7 +106,27 @@ export class CoreServer {
       return;
     }
 
-    const route = this.router.find(request.method ?? 'GET', pathOf(request.url));
+    const method = request.method ?? 'GET';
+    const path = pathOf(request.url);
+
+    // Before the JSON router, because a stream answers with the socket rather than with a value:
+    // there is no `JsonResponse` for it to return and nothing for `respond` to serialise.
+    const streamRoute = this.streams.find(method, path);
+    if (streamRoute !== undefined) {
+      this.openStream(streamRoute, request, response, facts);
+      return;
+    }
+
+    await this.serve(this.router.find(method, path), request, response, facts);
+  }
+
+  /** Reads the body, runs the handler, and turns anything either of them throws into a status. */
+  private async serve(
+    route: Route | undefined,
+    request: IncomingMessage,
+    response: ServerResponse,
+    facts: RequestFacts,
+  ): Promise<void> {
     if (route === undefined) {
       respond(response, json(404, { error: 'not found' }));
       return;
@@ -101,6 +144,27 @@ export class CoreServer {
         json(rejected?.status ?? 500, { error: oversize ? 'too large' : 'internal' }),
       );
     }
+  }
+
+  /**
+   * Hands one connection to a stream route and stops managing it.
+   *
+   * The `close` listener is this method's whole reason to exist: without it the route's
+   * subscription and heartbeat outlive the socket, and an `EventSource` — which reconnects by
+   * design — would leak one of each per reconnect, all day (RESEARCH.md F.6.8).
+   */
+  private openStream(
+    route: StreamRoute,
+    request: IncomingMessage,
+    response: ServerResponse,
+    facts: RequestFacts,
+  ): void {
+    const stream = new SseStream(response);
+    response.on('close', () => {
+      stream.close();
+    });
+    this.logger.info('stream_started', { path: pathOf(request.url) });
+    route.open(stream, facts);
   }
 
   private screen(facts: RequestFacts): Rejection | undefined {

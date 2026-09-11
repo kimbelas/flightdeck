@@ -471,8 +471,9 @@ phases:
           New ports: Scheduler and DirectoryWatcher (with Cancellation), both with fakes — timing
           tests run on a fake clock, not on a ten-second wait. `toSessionRow` was promoted out of
           DeckQuery so the deck and the reconciler cannot hold two opinions about `attachable`.
-          Core now reconciles for real (LoggingEventSink until P1-T7 and P1-T9 exist); the DECK
-          still polls, because it has nothing to subscribe to until P1-T9.
+          Core now reconciles for real; P1-T9 put the stream behind the same sink, so
+          `LoggingEventSink` is one of two subscribers rather than the only audience, and the deck
+          no longer polls.
         deliverables:
           [
             core/application/reconciler.ts,
@@ -526,7 +527,67 @@ phases:
         security: [SEC-DATA-1, SEC-DATA-3]
       - id: P1-T9
         title: SSE /stream with state replay on connect
-        status: todo
+        status: done
+        done_on: 2026-09-11
+        depends_on: [P1-T4, P0-T8]
+        notes: >-
+          DECISIONS.md D27 chose the transport before this task existed, so what was left was the
+          fan-out, the replay and the deck. The stream rides the deck's `force-dynamic` route
+          handler at `/api/stream`, deliberately outside the `/api/core/*` rewrite.
+          **Core keeps logging AND streams.** `FanOutEventSink` wraps `LoggingEventSink` and the new
+          `EventHub`, so the reconciler still holds one `EventSink` and cannot tell how many things
+          are behind it. Replacing the log with the stream would have traded the only record that
+          survives the tab being closed for the one that does not.
+          **The replay is free and is the whole design.** `Reconciler.snapshot()` reads the map the
+          sweeps already fill, so a browser connecting costs no `claude.exe` call and cannot
+          disagree with the deltas that follow; `DeckQuery` still sweeps, which is right for
+          `GET /sessions` and wrong for a connect at 1.5 s per subscriber. One frame rather than a
+          burst of upserts because `unreadable` belongs to the sweep, not to any row.
+          **Only `reconcile` events are forwarded, and that is a boundary rather than an omission.**
+          `DraftEvent.payload` is `unknown` because it is the producer's raw material, and the hook
+          payloads P1-T5 will publish carry model text (`Stop` carries last_assistant_message,
+          SEC-UI-2). Nothing reaches a browser that core did not derive into a `SessionRow`, and the
+          row is re-parsed on the way out (`parseSessionRow`) rather than trusted.
+          Two things this task found by running it, both in RESEARCH.md §G. (1) **G.7:
+          `next.config`'s header block REPLACES a route handler's own**, and had silently taken
+          `Cache-Control: no-transform` off the stream — the one lever that stops Next gzipping an
+          event stream into a single chunk, and the entire reason D27 put the mitigation in the
+          deck. Nothing was batching yet, which is what made it worth writing down. (2) **G.8: the
+          deck is blank for ~1.2 s after core restarts**, because the first snapshot from a core
+          that has bound its port but not finished a sweep is honestly empty. Left alone.
+          Verified in a real browser against a real core: the page hydrates under the production
+          CSP, opens the stream, renders from the replay, fetches `/api/core/sessions` on mount
+          never again; and killing core mid-session gives `core down`, the last known rows, one
+          reconnect attempt, and nine rows back 1171 ms later as deltas from the new core's first
+          sweep — with no page reload.
+          Known gap, named in the code and the README: `unreadable` moves only on a snapshot. A
+          subscription that becomes unreadable publishes no event at all (reconciler trap 1) and
+          `DraftEvent` has no shape for a subscription-level fact, since `sessionId` is required.
+          Widening that is P1-T8's call, where the store decides what an event is. `refresh` is
+          what moves the banner until then.
+        deliverables:
+          [
+            contracts/stream-event.ts,
+            contracts/session-row.ts,
+            core/application/event-hub.ts,
+            core/adapters/fan-out-event-sink.ts,
+            core/http/sse-stream.ts,
+            core/http/session-stream-route.ts,
+            core/http/route.ts,
+            core/http/core-server.ts,
+            app/api/stream/route.ts,
+            app/deck/deck-store.ts,
+            app/deck/browser-event-stream.ts,
+            app/deck/browser-stream-transport.ts,
+            tests/contracts/stream-event.test.ts,
+            tests/contracts/session-row.test.ts,
+            tests/core/application/event-hub.test.ts,
+            tests/core/adapters/fan-out-event-sink.test.ts,
+            tests/core/http/sse-stream.test.ts,
+            tests/core/http/session-stream-route.test.ts,
+            tests/app/deck-store.test.ts,
+          ]
+        security: [SEC-HTTP-1, SEC-HTTP-2, SEC-HTTP-3, SEC-HTTP-5, SEC-UI-2]
       - id: P1-T10
         title: Security middleware — Host, Origin, Sec-Fetch-Site, bearer token (constant-time), Content-Type, body limit, rate limit, no-store headers
         status: doing

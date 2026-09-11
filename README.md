@@ -1,19 +1,25 @@
 # Flightdeck
 
 A control tower for every Claude Code session on this machine, across both subscriptions.
-Status: **it runs.** A terminal slice is in (DECISIONS.md D30) — the deck lists every session on
-both subscriptions, starts background sessions, and attaches a real Claude Code session to a pane
-in the browser that you can type into.
+Status: **it runs, and it is live.** A terminal slice is in (DECISIONS.md D30) — the deck lists
+every session on both subscriptions, starts background sessions, and attaches a real Claude Code
+session to a pane in the browser that you can type into.
 
 ```
 flightdeck.cmd          # core + the deck + an Edge app window
 flightdeck-stop.cmd     # stop both (the sessions they were attached to keep running)
 ```
 
-**What it does not do yet.** Core reconciles both subscriptions every 10 s since P1-T4, but there
-is still no event stream (P1-T9) for the deck to subscribe to, so the deck **polls when you ask it
-to** — live terminals, not a live deck. The banner on the page says so. No quota gauges, no
-projects map, no search.
+**The deck updates itself.** Core reconciles both subscriptions every 10 s (P1-T4) and publishes
+what changed on an SSE stream (P1-T9); the page subscribes, gets the whole picture as its first
+frame, and takes deltas after that. Nothing polls, and `refresh` is now a deliberate re-sweep
+rather than the only way to find out. Core restarting is handled without a reload — the deck says
+`core down`, reconnects on its own, and comes back with a fresh replay.
+
+**What it does not do yet.** No quota gauges, no projects map, no search. Hooks and the statusLine
+receiver (P1-T5, P1-T6) are not built, so a session that goes blocked is noticed by the 10 s sweep
+rather than the instant it happens. One banner is still as old as your connection: a subscription
+core could not read publishes no event, so `refresh` is what updates it.
 
 **Only background sessions can be attached.** `claude attach` takes background sessions only, so
 an interactive session — one you started in a terminal yourself — shows on the deck read-only,

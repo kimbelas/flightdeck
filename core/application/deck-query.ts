@@ -4,7 +4,11 @@
 // dir, so serialising them doubles the wait for no reason, and one subscription being unreadable
 // must never hide the other's sessions. A failed sweep is reported as `unreadable`, not as empty —
 // "no sessions" and "I could not look" are different answers and the deck shows them differently.
-import type { DeckSnapshot, SessionRow } from '../../contracts/session-row.ts';
+import {
+  byAttentionThenAge,
+  type DeckSnapshot,
+  type SessionRow,
+} from '../../contracts/session-row.ts';
 import { SUBSCRIPTION_IDS, type SubscriptionId } from '../../contracts/session.ts';
 import type { Clock } from '../ports/clock.ts';
 import type { SessionSource } from '../ports/session-source.ts';
@@ -29,17 +33,10 @@ export class DeckQuery {
       for (const session of sweep.sessions) rows.push(toSessionRow(session));
     }
 
-    // Attention first, then newest. The deck's real ordering arrives with P2-T4; this is enough
-    // to keep a blocked session off the bottom of the list.
+    // Attention first, then newest — the comparator moved to contracts/ in P1-T9, when the stream's
+    // replay and the browser's re-sort became the second and third callers. The deck's real
+    // ordering arrives with P2-T4; this is enough to keep a blocked session off the bottom.
     rows.sort(byAttentionThenAge);
     return { rows, unreadable, takenAt: this.clock.now().getTime() };
   }
-}
-
-function byAttentionThenAge(left: SessionRow, right: SessionRow): number {
-  const leftBlocked = left.runState === 'blocked' ? 0 : 1;
-  const rightBlocked = right.runState === 'blocked' ? 0 : 1;
-  if (leftBlocked !== rightBlocked) return leftBlocked - rightBlocked;
-  if (left.live !== right.live) return left.live ? -1 : 1;
-  return right.startedAt - left.startedAt;
 }
