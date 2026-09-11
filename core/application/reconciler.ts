@@ -129,7 +129,7 @@ export class Reconciler {
       void this.reconcile();
     });
     this.watching = this.watcher.watch(() => {
-      this.onNudge();
+      this.nudge();
     });
     void this.reconcile();
   }
@@ -161,6 +161,15 @@ export class Reconciler {
     this.running = true;
     try {
       await this.sweepAll();
+    } catch (cause) {
+      // The second half of "@throws never", and it is not defensive programming for its own sake:
+      // a source that REJECTS rather than reporting a failed sweep used to take core down with it.
+      // `execFile` can throw on the calling stack when Windows cannot start a process at all, and
+      // that became an unhandled rejection and an exited core (RESEARCH.md G.10). The adapter no
+      // longer does it; this makes it not matter if something else ever does.
+      this.logger.error('reconcile_failed', {
+        reason: cause instanceof Error ? cause.name : 'unknown',
+      });
     } finally {
       this.running = false;
     }
@@ -170,7 +179,20 @@ export class Reconciler {
     }
   }
 
-  private onNudge(): void {
+  /**
+   * Asks for a sweep soon — D3's feeds 1 and 5, and the only thing either of them may do.
+   *
+   * Public since P1-T5, because a hook is the same kind of evidence as a file changing: it says
+   * something happened, never what is now true. A `Stop` reaches core in a millisecond and the
+   * sweep it asks for finishes inside a second, which is what makes the P1 gate sentence true —
+   * through the path that already existed rather than through a second one that would have to be
+   * kept in agreement with it.
+   *
+   * Debounced, and it has to be: a turn ending fires more than one hook, `fs.watch` fires in
+   * bursts (RESEARCH.md E.5), and the budget is 600 events a minute per session (SEC-HTTP-6).
+   * Every one of those is the same sweep.
+   */
+  public nudge(): void {
     this.debounce?.cancel();
     this.debounce = this.scheduler.after(NUDGE_DEBOUNCE_MS, () => {
       this.debounce = undefined;

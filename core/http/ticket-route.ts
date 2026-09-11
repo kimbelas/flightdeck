@@ -11,11 +11,13 @@
 import { parseTargetPayload } from '../../contracts/pty-protocol.ts';
 import type { TicketOffice } from '../application/ticket-office.ts';
 import type { RequestFacts } from './loopback-guard.ts';
+import type { RouteLimit } from './limits.ts';
 import { json, type JsonResponse, type Route } from './route.ts';
 
 export class TicketRoute implements Route {
   public readonly method = 'POST';
   public readonly path = '/pty-ticket';
+  public readonly limit: RouteLimit = 'control';
   private readonly tickets: TicketOffice;
 
   constructor(tickets: TicketOffice) {

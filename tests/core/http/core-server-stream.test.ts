@@ -12,8 +12,10 @@ import { UI_ORIGIN } from '../../../contracts/origins.ts';
 import { ConsoleLogger } from '../../../core/adapters/console-logger.ts';
 import { CoreServer } from '../../../core/http/core-server.ts';
 import { LoopbackGuard } from '../../../core/http/loopback-guard.ts';
+import { RateLimiter } from '../../../core/http/rate-limiter.ts';
 import { RequestRouter } from '../../../core/http/request-router.ts';
 import type { EventStream, Route, StreamRoute } from '../../../core/http/route.ts';
+import { SystemClock } from '../../../core/ports/clock.ts';
 
 const TOKEN = 'c'.repeat(64);
 const BODY_LIMIT = 1024;
@@ -106,6 +108,7 @@ async function serverOn(streams: readonly StreamRoute[]): Promise<{
     guard: guardFor(0),
     router: new RequestRouter<Route>([]),
     streams: new RequestRouter<StreamRoute>([]),
+    limiter: new RateLimiter(new SystemClock()),
     logger: silent,
   });
   await probe.listen(EPHEMERAL);
@@ -117,6 +120,7 @@ async function serverOn(streams: readonly StreamRoute[]): Promise<{
     guard: guardFor(port),
     router: new RequestRouter<Route>([]),
     streams: new RequestRouter<StreamRoute>(streams),
+    limiter: new RateLimiter(new SystemClock()),
     logger: silent,
   });
   await server.listen(port);

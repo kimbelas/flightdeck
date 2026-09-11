@@ -6,11 +6,13 @@
 import { SUBSCRIPTION_IDS, type SubscriptionId } from '../../contracts/session.ts';
 import type { RequestFacts } from './loopback-guard.ts';
 import type { LaunchRequest, SessionLauncher } from '../application/session-launcher.ts';
+import type { RouteLimit } from './limits.ts';
 import { json, type JsonResponse, type Route } from './route.ts';
 
 export class LaunchRoute implements Route {
   public readonly method = 'POST';
   public readonly path = '/sessions';
+  public readonly limit: RouteLimit = 'control';
   private readonly launcher: SessionLauncher;
 
   constructor(launcher: SessionLauncher) {

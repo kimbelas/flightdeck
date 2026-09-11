@@ -11,6 +11,7 @@ import type { SessionSource, Sweep } from '../../core/ports/session-source.ts';
 export class FakeSessionSource implements SessionSource {
   public readonly swept: SubscriptionId[] = [];
   private readonly sweeps = new Map<SubscriptionId, Sweep>();
+  private readonly rejecting = new Set<SubscriptionId>();
 
   /** How many times each subscription was swept — the reconciler's timer asserts on this. */
   public sweepCount(subscription: SubscriptionId): number {
@@ -31,6 +32,14 @@ export class FakeSessionSource implements SessionSource {
     this.willSweep({ subscription, sessions: [], failed: true, skipped: 0 });
   }
 
+  /**
+   * A source that REJECTS rather than reporting a failure — what a synchronous `spawn` throw looked
+   * like before the adapter stopped doing it (RESEARCH.md G.10). Nothing may die of this.
+   */
+  public willReject(subscription: SubscriptionId): void {
+    this.rejecting.add(subscription);
+  }
+
   /** A sweep that read the listing but could not name some of it (`Sweep.skipped`). */
   public willSkip(subscription: SubscriptionId, skipped: number): void {
     this.willSweep({ subscription, sessions: [], failed: false, skipped });
@@ -38,6 +47,7 @@ export class FakeSessionSource implements SessionSource {
 
   public sweep(subscription: SubscriptionId): Promise<Sweep> {
     this.swept.push(subscription);
+    if (this.rejecting.has(subscription)) return Promise.reject(new Error('spawn UNKNOWN'));
     return Promise.resolve(
       this.sweeps.get(subscription) ?? { subscription, sessions: [], failed: false, skipped: 0 },
     );

@@ -1355,3 +1355,81 @@ collect, so the server sits at one connection forever.
 before everything else — and both halves are pinned by tests in `core-server-stream.test.ts`. The
 failure mode this avoids is core surviving Ctrl+C for as long as one deck tab is open, which is
 indistinguishable from a hung process and is fixed by the wrong thing (a `taskkill`) every time.
+
+### G.10 A transient `spawn UNKNOWN` killed core — found by restarting it once too often
+
+Core exited on its own while P1-T5 was being verified, mid-sweep:
+
+```
+{"event":"sweep_failed","subscription":"isg","code":-1}
+{"event":"sweep_failed","subscription":"365","code":-1}
+Error: spawn UNKNOWN
+    at ExecFileProcessRunner.run (core/adapters/claude-cli/execfile-process-runner.ts:15)
+    at Reconciler.sweepAll (core/application/reconciler.ts:195)
+  errno: -4094, code: 'UNKNOWN', syscall: 'spawn'
+```
+
+Both subscriptions had just failed a sweep the ordinary way (`code: -1`, reported and survived),
+and then the next one did not fail — it **threw**. Windows briefly could not start a process at
+all, and libuv's `UNKNOWN` (-4094) comes out of `execFile` **on the calling stack**, not through
+the callback the runner was written around.
+
+**Three layers each did exactly what they were told, and the result was an exited process.**
+
+1. `ExecFileProcessRunner` resolves its promise from the callback. A throw before the callback
+   exists rejects the promise instead — its own header said "a non-zero exit is a value, not a
+   throw", and that was true of every failure it had seen.
+2. `ClaudeCliSessionSource.sweep` handles a failed *result* and has nothing to say about a
+   rejected *promise*.
+3. `Reconciler.reconcile` is documented `@throws never` and had a `try/finally` with no `catch`,
+   so the rejection travelled out through `void this.reconcile()` on the 10 s timer — an unhandled
+   rejection, which Node turns into an exit.
+
+**Why it matters more after P1-T5 than before.** A hook now nudges the reconciler, so sweeps happen
+more often and on someone else's schedule. And core dying is not a quiet failure once hooks are
+installed: every interactive session on both subscriptions wears `Stop hook error occurred · ctrl+o
+to see` until it comes back (F.1.5).
+
+**Fixed in both places, deliberately.** The runner catches the synchronous throw and answers with
+the same `code: -1` shape every caller already handles — a spawn that never happened is a run that
+failed. And `reconcile` now catches, so its documented contract is true rather than aspirational:
+a source that rejects must not be able to take core with it.
+
+**Worth generalising:** a promise-returning wrapper around a callback API has two failure paths and
+it is easy to write only one of them. The tell is a `new Promise` whose executor calls something
+that can throw before it ever calls back.
+
+### G.11 The 413 has to say `Connection: close`, or the NEXT request is the one that fails
+
+P1-T10 left the oversize-body behaviour open: core destroyed the socket the moment the cap was
+passed, so a sender that merely sent too much saw `ECONNRESET` and could not tell "too large" from
+"core died mid-request" (F.4.5). Writing the status first fixes that, and a test of one request
+says it is fixed. A test of **two** says otherwise:
+
+```
+POST /control  (70 KB, cap 64 KB)  → 413        ← the fix works
+POST /hooks    (same agent)        → ECONNRESET ← and then this
+```
+
+The sender is mid-body when the refusal goes out, so the connection cannot be reused whatever the
+server does — but a client that was not *told* keeps the socket in its pool and spends it on the
+next request. For a hook client that is an error banner in a live session for something it did a
+request ago, which is worse than the ECONNRESET this was meant to fix: at least that one blamed
+the request that caused it.
+
+The answer is the standard one — `Connection: close` on the 413 — plus destroying the socket after
+the response flushes, because Node would otherwise drain the rest of the body to keep the
+connection reusable, which is to say it would read the oversize payload it just refused.
+
+Measured on a running core after the fix:
+
+| Request | Cap | Result |
+|---|---|---|
+| 70 KB to a control route | 64 KB | `413`, `connection: close`, `{"error":"too large"}` |
+| 300 KB to `/hooks` | 4 MB | `200` in ~2 ms |
+| 5 MB to `/hooks` | 4 MB | `413` |
+
+**The 300 KB row is the one that was a latent bug.** Core ran with a single 256 KB cap for every
+route until this task, so a large `PostToolUse` payload would have been refused — and SEC-HTTP-4
+had said 4 MB for hooks since the policy was written. A body limit that is too small does not lose
+an event quietly; it puts a banner in front of the owner.

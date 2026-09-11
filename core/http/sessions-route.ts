@@ -4,11 +4,13 @@
 // store it would feed (P1-T8, P1-T9) are not built: D30 pulled the terminal ahead of them and said
 // so. The cost is a ~1.5 s round trip and a deck that does not update itself until asked.
 import type { DeckQuery } from '../application/deck-query.ts';
+import type { RouteLimit } from './limits.ts';
 import { json, type JsonResponse, type Route } from './route.ts';
 
 export class SessionsRoute implements Route {
   public readonly method = 'GET';
   public readonly path = '/sessions';
+  public readonly limit: RouteLimit = 'control';
   private readonly deck: DeckQuery;
 
   constructor(deck: DeckQuery) {
