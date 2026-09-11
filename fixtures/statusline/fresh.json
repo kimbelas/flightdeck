@@ -1,0 +1,49 @@
+{
+  "session_id": "cb5e8102-f057-4d5c-ad98-eac21a12f37d",
+  "transcript_path": "C:\\Users\\path-03206b\\.claude-isg\\projects\\path-6be021\\path-c9f7fc.jsonl",
+  "cwd": "C:\\Users\\path-03206b\\AppData\\Local\\Temp\\claude\\path-833542\\path-80ee91\\scratchpad\\path-bb07c8",
+  "scratchpad_dir": "C:\\Users\\path-03206b\\AppData\\Local\\Temp\\claude\\path-6be021\\path-cb5e81\\scratchpad",
+  "model": {
+    "id": "claude-haiku-4-5-20251001",
+    "display_name": "Haiku 4.5"
+  },
+  "workspace": {
+    "current_dir": "C:\\Users\\path-03206b\\AppData\\Local\\Temp\\claude\\path-833542\\path-80ee91\\scratchpad\\path-bb07c8",
+    "project_dir": "C:\\Users\\path-03206b\\AppData\\Local\\Temp\\claude\\path-833542\\path-80ee91\\scratchpad\\path-bb07c8",
+    "added_dirs": []
+  },
+  "version": "2.1.267",
+  "output_style": {
+    "name": "default"
+  },
+  "cost": {
+    "total_cost_usd": 0,
+    "total_duration_ms": 5744,
+    "total_api_duration_ms": 0,
+    "total_lines_added": 0,
+    "total_lines_removed": 0
+  },
+  "context_window": {
+    "total_input_tokens": 0,
+    "total_output_tokens": 0,
+    "context_window_size": 200000,
+    "current_usage": null,
+    "used_percentage": null,
+    "remaining_percentage": null
+  },
+  "exceeds_200k_tokens": false,
+  "fast_mode": false,
+  "thinking": {
+    "enabled": true
+  },
+  "rate_limits": {
+    "five_hour": {
+      "used_percentage": 23,
+      "resets_at": 1789080600
+    },
+    "seven_day": {
+      "used_percentage": 7.000000000000001,
+      "resets_at": 1789650000
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "claude_version": "2.1.268 (Claude Code)",
+  "proto": 1,
+  "supervisorPid": 3828,
+  "updatedAt": 1789123114141,
+  "workers": {
+    "2f3e94f3": {
+      "pid": 14572,
+      "sessionId": "2f3e94f3-dc84-444e-aaf7-a5eb6f838fd5",
+      "cwd": "C:\\Users\\path-03206b\\Documents\\path-875b93\\path-bd76a4",
+      "startedAt": 1789123113696,
+      "cliVersion": "2.1.268"
+    }
+  }
+}

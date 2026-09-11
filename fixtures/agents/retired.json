@@ -1,0 +1,109 @@
+{
+  "claude_version": "2.1.267",
+  "source": "claude agents --json --all",
+  "note": "Only --all shows background sessions that are no longer live. A retired, stopped or finished session loses pid and status and keeps state:done — stop and daemon-retirement are indistinguishable here.",
+  "sessions": [
+    {
+      "id": "16e4e402",
+      "cwd": "C:\\Users\\path-03206b\\Documents\\path-875b93\\path-88848e",
+      "kind": "background",
+      "startedAt": 1788520200047,
+      "sessionId": "16e4e402-a7bf-47c3-aced-a35d735a9972",
+      "name": "text-b4bcd320",
+      "state": "done"
+    },
+    {
+      "pid": 2576,
+      "cwd": "C:\\Users\\path-03206b\\Documents\\path-875b93\\path-88848e",
+      "kind": "interactive",
+      "startedAt": 1789006392553,
+      "sessionId": "ca9e09f6-cc08-412b-a8f2-2fd7ae2b358c",
+      "name": "text-b0c1050c",
+      "status": "idle"
+    },
+    {
+      "pid": 30828,
+      "cwd": "C:\\Users\\path-03206b\\Documents\\path-875b93\\path-88848e",
+      "kind": "interactive",
+      "startedAt": 1789054034627,
+      "sessionId": "f649b906-1c81-4b41-a5f4-d0a89adc7d4f",
+      "name": "text-11376b7e",
+      "status": "idle"
+    },
+    {
+      "pid": 7508,
+      "cwd": "C:\\Users\\path-03206b\\Documents\\path-875b93\\path-b8be3a",
+      "kind": "interactive",
+      "startedAt": 1789060231300,
+      "sessionId": "6786edfa-c0ad-4885-a6ec-8c70521bb90d",
+      "name": "text-6e915db6",
+      "status": "busy"
+    },
+    {
+      "pid": 33680,
+      "id": "5ba454f6",
+      "cwd": "C:\\Users\\path-03206b\\AppData\\Local\\Temp\\claude\\path-833542\\path-80ee91\\scratchpad\\path-bb07c8",
+      "kind": "background",
+      "startedAt": 1789068771588,
+      "sessionId": "5ba454f6-632d-4e59-ad48-6872c703a5f7",
+      "name": "text-9bafae96",
+      "status": "idle",
+      "state": "done"
+    },
+    {
+      "pid": 35588,
+      "id": "3a30cfe4",
+      "cwd": "C:\\Users\\path-03206b\\AppData\\Local\\Temp\\claude\\path-833542\\path-80ee91\\scratchpad\\path-bb07c8",
+      "kind": "background",
+      "startedAt": 1789068804006,
+      "sessionId": "3a30cfe4-71ff-4fdb-a5e0-d8ed8af5c129",
+      "name": "text-d8d82ab5",
+      "status": "idle",
+      "state": "done"
+    },
+    {
+      "pid": 29076,
+      "id": "9a4dd595",
+      "cwd": "C:\\Users\\path-03206b\\AppData\\Local\\Temp\\claude\\path-833542\\path-80ee91\\scratchpad\\path-bb07c8",
+      "kind": "background",
+      "startedAt": 1789068842290,
+      "sessionId": "9a4dd595-f565-4a18-add0-390128ba0fbb",
+      "name": "text-08592650",
+      "status": "idle",
+      "state": "done"
+    },
+    {
+      "pid": 7768,
+      "id": "7ae4cbeb",
+      "cwd": "C:\\Users\\path-03206b\\AppData\\Local\\Temp\\claude\\path-833542\\path-80ee91\\scratchpad\\path-bb07c8",
+      "kind": "background",
+      "startedAt": 1789068844441,
+      "sessionId": "7ae4cbeb-fe79-4446-a2c8-f4c4d004a1a3",
+      "name": "text-1f835a92",
+      "status": "idle",
+      "state": "blocked"
+    },
+    {
+      "pid": 35452,
+      "id": "c81c5387",
+      "cwd": "C:\\Users\\path-03206b\\AppData\\Local\\Temp\\claude\\path-833542\\path-80ee91\\scratchpad\\path-bb07c8",
+      "kind": "background",
+      "startedAt": 1789069467542,
+      "sessionId": "c81c5387-b30f-4c21-a71a-e5e010692f76",
+      "name": "text-7469bf1a",
+      "status": "idle",
+      "state": "done"
+    },
+    {
+      "pid": 26876,
+      "id": "0026ca7b",
+      "cwd": "C:\\Users\\path-03206b\\AppData\\Local\\Temp\\claude\\path-833542\\path-80ee91\\scratchpad\\path-bb07c8",
+      "kind": "background",
+      "startedAt": 1789069539632,
+      "sessionId": "0026ca7b-5761-40ad-a18a-70b00386fd82",
+      "name": "text-eac6a8d6",
+      "status": "busy",
+      "state": "working"
+    }
+  ]
+}

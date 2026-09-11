@@ -1,0 +1,15 @@
+{
+  "claude_version": "2.1.267",
+  "transport": "command hook handler → stdin (http handlers are never invoked for SessionStart)",
+  "session_kind": "background",
+  "payload": {
+    "session_id": "eb01a4e2-46f5-4f15-ad00-93a2617be391",
+    "transcript_path": "C:\\Users\\path-03206b\\.claude-isg\\projects\\path-3a47dc\\path-c2108d.jsonl",
+    "cwd": "C:\\Users\\path-03206b\\Documents\\path-875b93\\path-bd76a4",
+    "scratchpad_dir": "C:\\Users\\path-03206b\\AppData\\Local\\Temp\\claude\\path-3a47dc\\path-eb01a4\\scratchpad",
+    "hook_event_name": "SessionStart",
+    "source": "startup",
+    "model": "claude-haiku-4-5",
+    "session_title": "text-41f953a2"
+  }
+}

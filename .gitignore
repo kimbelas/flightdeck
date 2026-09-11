@@ -1,0 +1,26 @@
+node_modules/
+.next/
+coverage/
+dist/
+out/
+*.log
+*.tsbuildinfo
+.env
+.env.*
+fixtures/raw/
+.vitest/
+src-tauri/target/
+
+# scripts/statusline-cost.py imports scripts/statusline-block.py to time it.
+__pycache__/
+
+# Runtime logs and local scratch
+.flightdeck-core.log
+.flightdeck-deck.log
+*.local.mjs
+
+# Local Claude Code overrides; the shared config is .claude/settings.json
+.claude/settings.local.json
+
+# The verbatim prompt log is kept locally, not published (D23).
+PROMPTS.md

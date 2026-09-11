@@ -1,0 +1,20 @@
+{
+  "claude_version": "2.1.267",
+  "source": "CFG/jobs/<shortId>/timeline.jsonl",
+  "session_kind": "background",
+  "note": "One line per state transition, newest last. detail and text are model-generated (SEC-UI-2); text is the full assistant message that caused the transition. This is a state history and an away recap without parsing a transcript.",
+  "entries": [
+    {
+      "at": "2020-09-11T19:34:11.183Z",
+      "state": "working",
+      "detail": "text-beb61c91",
+      "text": ""
+    },
+    {
+      "at": "2020-09-11T19:34:25.200Z",
+      "state": "blocked",
+      "detail": "text-923b9e44",
+      "text": "text-4c493a12"
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "claude_version": "2.1.267",
+  "source": "CFG/jobs/<shortId>/state.json",
+  "session_kind": "background",
+  "note": "state:blocked adds a needs field — a model-written sentence saying what the session wants from the user. This is the attention text the deck needs, without reading the transcript.",
+  "state_file": {
+    "state": "blocked",
+    "detail": "text-923b9e44",
+    "tempo": "blocked",
+    "inFlight": {
+      "tasks": 0,
+      "queued": 0,
+      "kinds": [],
+      "drainableMonitors": 0
+    },
+    "tokens": 454,
+    "needs": "text-65b0167b",
+    "output": null,
+    "children": null,
+    "linkScanOffset": 294303,
+    "linkScanPath": "C:\\Users\\path-03206b\\.claude-isg\\projects\\path-6be021\\path-8f6cc2.jsonl",
+    "template": "bg",
+    "respawnFlags": [
+      "-n",
+      "fd-spike-c",
+      "--model",
+      "haiku",
+      "--permission-mode",
+      "default"
+    ],
+    "intent": "text-65fa5598",
+    "name": "text-1f835a92",
+    "nameSource": "user",
+    "sessionId": "7ae4cbeb-fe79-4446-a2c8-f4c4d004a1a3",
+    "resumeSessionId": "7ae4cbeb-fe79-4446-a2c8-f4c4d004a1a3",
+    "daemonShort": "57218c6e",
+    "cliVersion": "2.1.267",
+    "cwd": "C:\\Users\\path-03206b\\AppData\\Local\\Temp\\claude\\path-833542\\path-80ee91\\scratchpad\\path-bb07c8",
+    "providerEnv": {
+      "CLAUDE_CONFIG_DIR": "C:/Users/path-03206b/.claude-isg"
+    },
+    "backend": "daemon",
+    "createdAt": "2020-09-11T19:34:01.011Z",
+    "updatedAt": "2020-09-11T19:34:25.200Z",
+    "firstTerminalAt": null
+  }
+}

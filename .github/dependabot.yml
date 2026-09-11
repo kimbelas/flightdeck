@@ -1,0 +1,39 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 5
+    groups:
+      # Families that only resolve as a set. A lone @eslint/js 10 against eslint ^9 turned main
+      # red on 2026-09-10: npm ci stopped resolving, and js.configs.recommended silently became
+      # eslint 10's rule set on an eslint 9 engine. These groups include majors deliberately --
+      # that is the case the split hurts, and a grouped major at least fails as one PR.
+      # SECURITY.md SEC-SUP-1.
+      eslint:
+        patterns: ['eslint', '@eslint/*', '@eslint-community/*', 'typescript-eslint',
+                   '@typescript-eslint/*', 'globals']
+      vitest:
+        patterns: ['vitest', '@vitest/*']
+      dev-tooling:
+        dependency-type: development
+        update-types: [minor, patch]
+      runtime-minor:
+        dependency-type: production
+        update-types: [minor, patch]
+    commit-message:
+      prefix: 'chore(deps)'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Berlin
+    commit-message:
+      prefix: 'chore(ci)'

@@ -1,0 +1,6 @@
+# .editorconfig declares eol=lf; this makes git enforce it regardless of core.autocrlf,
+# so Prettier's endOfLine:"lf" check can never fail on a clone made on Windows.
+* text=auto eol=lf
+
+*.png binary
+*.ico binary

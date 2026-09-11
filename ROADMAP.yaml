@@ -1,0 +1,923 @@
+# Flightdeck roadmap — the one place we track what is done.
+#
+# Update `status` (and `done_on`) as work lands.
+#   npm run roadmap         prints progress and what is next
+#   npm run roadmap:check   validates this file (also runs in CI)
+#
+# status: todo | doing | done | blocked | dropped
+# Task ids go in commit messages:   feat(core): reconciler skeleton [P1-T4]
+
+version: 1
+project: flightdeck
+updated: 2026-09-11
+
+docs:
+  spec: SPEC.md
+  research: RESEARCH.md
+  decisions: DECISIONS.md
+  build_plan: BUILD-PLAN.md
+  standards: CODING-STANDARDS.md
+  security: SECURITY.md
+
+rules:
+  - A phase starts only when the previous phase's gate sentence is true.
+  - A task is done when its tests pass in CI and the PR checklist is ticked.
+  - Every task id appears in at least one commit message.
+  - Anything security-relevant links the SECURITY.md control it satisfies.
+
+# DP1 and DP2 were answered on 2026-09-10 (DECISIONS.md D20, D21) and are gone from this list.
+decisions_pending:
+  - id: DP3
+    question: >-
+      Tauri shell — worth building for a tray badge and a global hotkey alone? The Ctrl+W argument
+      that scheduled it in D1 does not apply; the owner does not use Ctrl+W to delete words.
+    deferred_to: P5a
+    why_deferred: Five minutes of typing into a real pane answers it; deciding now is guessing.
+    blocks: [P5b-T1]
+    ref: DECISIONS.md D22
+
+milestones:
+  - id: M1
+    name: The deck answers "what needs me?" without a terminal
+    after: P2
+  - id: M2
+    name: Sessions start from the deck, named, on the subscription with more headroom
+    after: P4
+  - id: M3
+    name: A full working day with no hand-opened terminal
+    after: P6
+
+phases:
+  - id: P0
+    name: Spikes and scaffold
+    status: done
+    goal: Remove the technical unknowns before any product code exists.
+    gate: >-
+      Every shape a P1 task parses is captured as a scrubbed fixture, and the http-hook
+      receiver-down behaviour is documented. A shape first parsed in a later phase is captured by
+      the task that parses it, and carries a named deferral in capture-fixtures.mjs until then
+      (DECISIONS.md D28).
+    tasks:
+      - id: P0-T0
+        title: Repo scaffold — git, tooling, CI, coding standards, security policy, roadmap
+        status: done
+        done_on: 2026-09-10
+        notes: package.json, tsconfig (erasableSyntaxOnly), eslint flat config, prettier, vitest, .github workflows, this file.
+      - id: P0-T1
+        title: node-pty prebuild + ConPTY round trip on Node 26 and 20
+        status: done
+        done_on: 2026-09-10
+        notes: RESEARCH.md A.1 — N-API prebuilds, no compiler, resize confirmed.
+      - id: P0-T2
+        title: TypeScript executed directly by Node 26 (type stripping, erasable syntax only)
+        status: done
+        done_on: 2026-09-10
+        notes: scripts/roadmap-cli.ts runs with plain `node`; tsconfig enforces erasableSyntaxOnly.
+      - id: P0-T3
+        title: http hook behaviour — install SessionStart + Stop http hooks in one subscription, capture payloads, then observe the UX with the receiver down
+        status: done
+        done_on: 2026-09-10
+        notes: >-
+          RESEARCH.md F.1. Headline finding — http handlers are NEVER invoked for SessionStart
+          (a command handler on the same entry fires); Stop over http works. Receiver down is
+          silent in headless -p and shows a persistent non-blocking "Stop hook error occurred"
+          banner in interactive/--bg sessions, which is the measured evidence for D21. Ack 0.54–1.31 ms
+          steady state but 5.4–8.2 ms on the first request. Hooks installed in .claude-isg only and
+          removed again; .claude-365 untouched.
+        deliverables: [fixtures/hooks/*.json, RESEARCH.md F.1, scripts/hook-spike.ts, scripts/capture-fixtures.mjs]
+        security: [SEC-ING-1, SEC-ING-2]
+      - id: P0-T4
+        title: --bg end to end — running background session shape in agents --json, logs, attach inside node-pty, second-attach error, stop, resume, rm; time the idle retirement once
+        status: done
+        done_on: 2026-09-10
+        notes: >-
+          RESEARCH.md F.2. Spike sessions fd-spike-idle, -a, -b, -c, -d removed on completion;
+          TICKET-1898, orchestrator, docs-tool-f7 and a41e908d were never touched (SEC-PROC-5).
+          Headline findings —
+          (1) a LIVE background record has nine keys including pid AND status, so B.2 described the
+          retired shape, not the background shape; presence of pid is the liveness test.
+          (2) waitingFor never appears; the attention signal is state === 'blocked'.
+          (3) attach is LAST-one-wins — the documented "Can't open" refusal never fires, the earlier
+          attach is evicted with exit 0, so exclusivity is entirely ours (SEC-WS-3).
+          (4) --resume forks a copy unless it is `--resume <full-uuid>` with no other argument.
+          (5) rm removes a live session with no confirmation.
+          (6) daemon/roster.json holds rvAuth/ptyAuth and prompt text — see P1-T14.
+          (7) idle retirement fires at 60 min since last ACTIVITY, but the log line prints the
+          session's AGE — the two coincide only for a session nobody touched, and the reason word
+          (settled / idle-prompt / empty-idle) is the state it retired in. Low memory cuts it
+          to ~32 min, so nothing may assume a session survives an hour.
+        deliverables:
+          [
+            fixtures/agents/live-mixed.json,
+            fixtures/agents/retired.json,
+            fixtures/jobs/state.json,
+            fixtures/jobs/state-blocked.json,
+            fixtures/jobs/timeline.json,
+            RESEARCH.md F.2,
+            scripts/bg-spike.ts,
+            scripts/bg-spike-cli.ts,
+            tests/fixtures/agents.test.ts,
+          ]
+        security: [SEC-PROC-5, SEC-FS-1, SEC-FS-2]
+      - id: P0-T5
+        title: statusline.py POST — token read, 150 ms timeout, byte-identical render, refused connection under 5 ms
+        status: done
+        done_on: 2026-09-10
+        notes: >-
+          RESEARCH.md F.3. Byte-identical render proven in all four core states (disconnected,
+          connected, refused, hung). Headline findings — (1) the transport is chosen by PYTHON
+          IMPORT COST, not network cost: the status line is a fresh interpreter on every render,
+          and urllib.request/http.client cost ~70 ms to import against socket's 11 ms, so the
+          block hand-builds the request over a raw socket. (2) "refused connection under 5 ms" in
+          this title is NOT achievable and was measured wrong at design time — a closed loopback
+          port is not refused to Python on this machine, it is dropped (Node gets ECONNREFUSED in
+          1.4 ms on the same port at the same moment). Mitigated by splitting the budget into a
+          25 ms connect timeout and a 150 ms read timeout, which takes a dead core from 161 ms per
+          render to 51 ms; SEC-ING-3 reworded to match. (3) Per render: 0.10 ms disconnected,
+          21–26 ms connected, 51 ms core-down, 172–183 ms core-hung; receiver ack 0.29 ms median.
+          (4) A real statusLine payload is captured for the first time (fixtures/statusline/) —
+          before the first turn the context and usage numbers are present and NULL, not absent
+          and not zero, and prompt_cache carries far more than RESEARCH.md D.3 lists.
+        deliverables:
+          [
+            scripts/statusline-block.py,
+            scripts/statusline-patch.ts,
+            scripts/statusline-spike.ts,
+            scripts/statusline-cost.py,
+            scripts/statusline-spike-cli.ts,
+            fixtures/statusline/fresh.json,
+            fixtures/statusline/warm.json,
+            RESEARCH.md F.3,
+            tests/scripts/statusline-patch.test.ts,
+            tests/fixtures/statusline.test.ts,
+          ]
+        security: [SEC-ING-3]
+      - id: P0-T6
+        title: xterm.js 6 in Next — WebGL, fit, resize, alt-screen, custom key handler, measure the WebGL context cap and onContextLoss fallback
+        status: done
+        done_on: 2026-09-11
+        notes: >-
+          RESEARCH.md F.5. Headline findings — (1) a strict CSP and Next hydration are in direct
+          conflict and the failure is SILENT: script-src 'self' with no nonce blocks Next's own
+          inline scripts, the page renders as HTML and never hydrates, and the only evidence is a
+          minified React #412. Fixed with a per-request nonce from middleware.ts plus
+          'strict-dynamic' (the two are a package). A nonce cannot be stamped onto statically
+          prerendered HTML, so any route under this CSP must render per request — and
+          `export const dynamic` is ignored on a 'use client' module, which is why the harness is
+          split into a server page and a client component.
+          (2) The WebGL context cap is NOT ~16 here: 40 headless (SwiftShader), 76 headed (real
+          GPU). Eviction order is confirmed oldest-first in both, so the behaviour SPEC §5.3
+          depends on holds while the number it cites does not. The 8-10 pane budget is safe by a
+          wide margin; it just should not be justified by "~16 contexts".
+          (3) The REAL constraint is latency: @xterm/addon-webgl 0.19.0 fires onContextLoss from
+          its own setTimeout(..., 3000), measured at 3036 ms, so an evicted pane is dead for three
+          seconds before the DOM renderer repaints it. The addon also only notices on its next
+          draw, so renderer state is untrustworthy on idle panes.
+          (4) next build rewrites the tsconfig it is pointed at, which was the root one core/ is
+          checked by until typescript.tsconfigPath pinned it to tsconfig.app.json.
+        deliverables:
+          [
+            app/layout.tsx,
+            app/page.tsx,
+            app/globals.css,
+            app/spike/xterm/page.tsx,
+            app/spike/xterm/xterm-harness.tsx,
+            app/spike/xterm/terminal-pane.ts,
+            app/spike/xterm/pane-grid.ts,
+            app/spike/xterm/spike-api.ts,
+            next.config.ts,
+            middleware.ts,
+            tsconfig.app.json,
+            contracts/content-security-policy.ts,
+            scripts/xterm-spike-cli.ts,
+            tests/contracts/content-security-policy.test.ts,
+            RESEARCH.md F.5,
+          ]
+        security: [SEC-UI-1, SEC-NET-2]
+      - id: P0-T7
+        title: Security probe — cross-origin fetch POST and WebSocket to :4950 rejected by Host, Origin, token and Content-Type checks
+        status: done
+        done_on: 2026-09-11
+        notes: >-
+          RESEARCH.md F.4. Every control fires and the probe names which one did it. Two clients,
+          because only one of them can prove each half: Chromium for what a page cannot forge
+          (Origin, Sec-Fetch-Site, the unanswered preflight, the WS handshake), a raw Node client
+          for what forging faithfully models (Host, token, body limit). Headline findings —
+          (1) the DECK'S OWN ORIGIN is blocked from calling core directly: a port is part of an
+          origin, so :4949 to :4950 is cross-origin, and only the same-origin rewrite returned
+          200. The Next rewrite is load-bearing, not a convenience, and the token never has to
+          enter the browser for HTTP.
+          (2) A cross-origin text/plain POST is a CORS simple request, so it SKIPS the preflight
+          and really does land on core — Content-Type (SEC-HTTP-4) is what refuses it, not Origin.
+          A hostile tab can always deliver a POST; the browser only stops it reading the answer.
+          (3) A WebSocket handshake is not CORS-protected. From the deck origin the upgrade is
+          accepted, so the token in the first frame is the only thing between an injected script
+          and a live PTY — which, with (1), is why the token stays server-side.
+          (4) DNS rebinding is recorded as SIMULATED, not proven: a forged Host is the faithful
+          shape but a re-resolving name is not available offline.
+          (5) SEC-NET-1 holds, and the LAN address is dropped rather than refused, so doctor must
+          read a timeout as "not listening" (same behaviour as F.3.3).
+        deliverables:
+          [
+            scripts/loopback-guard.ts,
+            scripts/security-probe.ts,
+            scripts/page-origin.ts,
+            scripts/security-probe-browser.ts,
+            scripts/security-probe-client.ts,
+            scripts/security-probe-cli.ts,
+            tests/scripts/loopback-guard.test.ts,
+            RESEARCH.md F.4,
+          ]
+        security: [SEC-NET-1, SEC-HTTP-1, SEC-HTTP-2, SEC-HTTP-3, SEC-HTTP-4, SEC-HTTP-5, SEC-WS-1]
+      - id: P0-T8
+        title: SSE through the Next rewrite streams unbuffered in dev and start; fallback decided if not
+        status: done
+        done_on: 2026-09-11
+        notes: >-
+          RESEARCH.md F.6, DECISIONS.md D27. R16 is retired: the rewrite does NOT inherently buffer
+          SSE — both candidate transports streamed unbuffered in dev and in `next start`, median
+          inter-event 202-203 ms against a 200 ms cadence, worst gap 214 ms over three runs.
+          Headline findings —
+          (1) what buffers SSE is GZIP, not the rewrite. Next compresses the proxied response and a
+          compressor holds the stream to the end: 12 events arrive as one chunk at ~2.25 s, with a
+          200 OK and nothing in any log. Exactly one server-side header prevents it,
+          `Cache-Control: no-transform`; `Content-Encoding: identity` and `X-Accel-Buffering: no`
+          are both ignored, and `Accept-Encoding: identity` works but is a request header a
+          browser's EventSource cannot set. The control run stays in the harness permanently.
+          (2) the sub-question decided it before latency did. Middleware-set request headers DO
+          reach an external rewrite destination, but `middleware.ts` runs on the EDGE runtime where
+          `node:fs` does not exist, and the token is a per-boot file. Next 16 deprecates
+          `middleware` for `proxy` and PROXY ALWAYS RUNS ON NODE.JS — so the rename is what makes
+          the token readable at all. middleware.ts is now proxy.ts.
+          (3) SSE ships on a force-dynamic route handler at /api/stream, not because it is faster
+          (it is, by ~8 ms to first byte in `next start`, which decides nothing) but because it
+          keeps the anti-gzip mitigation inside the deck instead of depending on core to remember a
+          header from another process. /api/core/* keeps every non-stream call and stays
+          load-bearing (F.4.2).
+          (4) core down: the route handler answers a deliberate 503, the rewrite gives Next's 500
+          with an HTML error page — the same 500 the deck returns when the deck itself is broken.
+          (5) the rewrite strips Origin but forwards Sec-Fetch-Site, so a browser stream reaches
+          core looking like a hook POST plus an unforgeable `same-origin`. screenStream therefore
+          keeps SEC-HTTP-2's absent-Origin escape.
+          (6) a GET has no Content-Type backstop (F.4.3's role for SEC-HTTP-4), so Sec-Fetch-Site
+          and the token carry the stream route alone — the concrete reason the token stays
+          server-side rather than a stylistic one.
+          Also fixed while in there: `next build` was writing AGENTS.md and CLAUDE.md into the repo
+          root (agentRules: false), Turbopack was rooting the build at the home directory, and a
+          runtime path in readFileSync was tracing the whole project into the server bundle.
+        deliverables:
+          [
+            proxy.ts,
+            app/api/stream/route.ts,
+            contracts/core-token.ts,
+            scripts/sse-producer.ts,
+            scripts/sse-probe.ts,
+            scripts/sse-spike.ts,
+            scripts/sse-spike-browser.ts,
+            scripts/sse-spike-cli.ts,
+            next.config.ts,
+            tests/scripts/sse-probe.test.ts,
+            tests/contracts/core-token.test.ts,
+            tests/scripts/loopback-guard.test.ts,
+            RESEARCH.md F.6,
+          ]
+        security: [SEC-HTTP-1, SEC-HTTP-2, SEC-HTTP-3, SEC-HTTP-4, SEC-HTTP-5, SEC-NET-1, SEC-UI-1]
+
+      - id: P0-T9
+        title: Close the P0 gate — capture daemon/roster.json and stop the scrubber skipping what it cannot parse
+        status: done
+        done_on: 2026-09-11
+        notes: >-
+          RESEARCH.md F.7, DECISIONS.md D28. Found by checking the gate sentence rather than
+          assuming it. The clause "the http-hook receiver-down behaviour is documented" was already
+          true (F.1, D21); "every shape in P0 is captured as a scrubbed fixture" was not, for one
+          root cause — scripts/capture-fixtures.mjs only walked *.json and said nothing about the
+          rest, reporting "11 raw capture(s)" against twelve files while --check passed.
+          Headline findings —
+          (1) the scrubber now TRIAGES: a capture it cannot scrub must be on an explicit DEFERRED
+          list naming the task that will handle it, and anything else non-JSON fails the run. A
+          deferral is a written decision instead of an absence.
+          (2) roster.workers is the first fixture whose object KEYS are data rather than field
+          names — each key is the short session id and equals the first segment of that worker's
+          sessionId. Scrubbing the values and leaving the keys produced a fixture asserting a
+          relationship it no longer had, which is WORSE than an unscrubbed one: P1-T14 would have
+          been built against a lie. Keys of a DATA_KEYED_OBJECTS parent now track their own
+          scrubbed sessionId, tested on both sides.
+          (3) the roster's interesting half only exists while a --bg session does; an interactive
+          session never appears in it. The shape had to be provoked, so the capture script starts
+          one throwaway worker and removes it. the owner's TICKET-1898 and isg-6b were listed before and
+          after and are unchanged (SEC-PROC-5).
+          (4) `--bg` and `-p` are mutually exclusive — the prompt is the POSITIONAL argument.
+          SEC-PROC-2's flag allowlist permits a combination the CLI refuses; P4-T1 builds on this
+          verb.
+          (5) never derive an id for `rm` from prose. The first capture parsed the id out of stdout
+          with "last whitespace token" as a fallback, and ran `claude rm session`. `rm` removes a
+          live session with no confirmation (F.2.5). The id now comes from a roster diff — the one
+          worker key that was not there before the spawn — and anything other than exactly one new
+          worker fails closed without running a removal verb.
+          (6) SEC-FS-1 forbade reading `supervisorPid`, the one field D24's rationale for keeping
+          this file allowlisted depends on. Amended to name proto, supervisorPid and updatedAt.
+          (7) fakePath left path segments of 12 characters or fewer verbatim, so the machine
+          account name was in every committed fixture. Recorded here as accepted at the time
+          because the repo is public under a known account; reversed on 2026-09-11, since that
+          account name is not the Windows one and the same rule also published client project
+          folders and a ticket id. fakePath now keeps only STRUCTURAL_SEGMENTS (D23, F.7.8).
+          The two remaining captures move to the tasks that parse them (D28): `claude logs` output
+          to P5a-T4, daemon.log lifecycle lines to P7-T4.
+        deliverables:
+          [
+            contracts/daemon-roster.ts,
+            scripts/roster-capture.ts,
+            scripts/capture-fixtures.mjs,
+            fixtures/daemon/roster.json,
+            eslint.config.mjs,
+            tests/contracts/daemon-roster.test.ts,
+            tests/capture-fixtures.test.ts,
+            RESEARCH.md F.7,
+          ]
+        security: [SEC-FS-1, SEC-FS-2, SEC-DATA-2, SEC-PROC-1, SEC-PROC-2, SEC-PROC-5]
+
+  - id: P1
+    name: flightdeck-core (headless service)
+    status: doing
+    goal: A service that knows every live session across both subscriptions, with vitals and quota, within a second of any change.
+    gate: With both subscriptions connected, `flightdeck-core status` prints every live session with subscription, name, state, flags, model, context %, cost and 5h/7d quota, and a Stop in any session appears within one second.
+    depends_on: [P0]
+    tasks:
+      - id: P1-T1
+        title: Domain model — Session entity, value objects, state machine and derived flags, table-tested
+        status: done
+        done_on: 2026-09-11
+        notes: >-
+          DECISIONS.md D7 as corrected by D29. The first product code in the repo, and the first
+          task with no measurement to settle a dispute — so what it mostly did was reconcile D7
+          against what P0 observed. Three of D7's names do not survive contact with the listing:
+          waitingFor never appears on any record, `stopped` is never observed (`claude stop` leaves
+          `state: done`), and `retired` cannot be derived from the listing at all. So `done` means
+          "not running" and nothing more, and WHY a session ended is a separate axis — EndReason,
+          defaulting to `unknown`, which is the honest answer for most of P1.
+          Liveness is the presence of `pid`, never the run state (F.2.1), which is what keeps
+          `wedged` off every finished row ten minutes after it ends.
+          Shape: contracts/session.ts holds the unions with the reasons beside them; core/domain
+          holds SessionId (short id and uuid are ONE value — the short id is the uuid's first
+          segment, F.2.1), SessionVitals (null is not zero, F.3.5), SessionState (the transitions,
+          returning Result rather than throwing) and Session (immutable; every transition returns a
+          new instance, because the reconciler compares snapshots). core/shared has Result and
+          FlightdeckError, which §6 specified and nothing had needed yet.
+          88 of 88 lines in core/domain covered.
+        deliverables:
+          [
+            contracts/session.ts,
+            core/domain/session.ts,
+            core/domain/session-id.ts,
+            core/domain/session-state.ts,
+            core/domain/session-vitals.ts,
+            core/domain/session-flags.ts,
+            core/shared/result.ts,
+            core/shared/typed-error.ts,
+            tests/contracts/session.test.ts,
+            tests/core/domain/*.test.ts,
+            tests/core/shared/result.test.ts,
+          ]
+      - id: P1-T2
+        title: Ports and fakes — SessionSource, EventSink, ProcessRunner, Clock, Store, Notifier
+        status: done
+        done_on: 2026-09-11
+        notes: >-
+          Four of the six already existed — Clock, ProcessRunner and SessionSource arrived with
+          P1-T1/T3, and PtyHost, PtyCommands, TokenFile and Logger with the P5a slice — so this
+          task wrote the three nothing had needed yet (EventSink, Store, Notifier) and the fakes
+          for the set. Ten ports, ten fakes.
+          What the shapes commit to, each for a reason that would be expensive to reverse later:
+          an event is a DraftEvent until the store gives it an id, because `since=` paging is
+          only meaningful if the sequence has ONE author — a producer that numbered its own
+          events could let a consumer miss one. `FdEvent.type` stays a `string` against R12: hook
+          event names are Claude Code's to choose and it adds them between releases, so a union
+          would make an unrecognised event a type error in the component whose job is to record
+          it anyway (the same reason `Sweep.skipped` counts rather than throws). `source` IS
+          closed — a new one is a new adapter.
+          **Store is synchronous.** `node:sqlite` has no async API (R17), so a Promise-returning
+          signature would be a lie every caller pays for: it would make the reconciler and the
+          hooks queue async for a call that never yields. Sessions are NOT in the store — derived
+          flags come from events and never from stored truth (BUILD-PLAN §3), and the live set is
+          rebuilt from `agents --json` every sweep, so what survives a restart is what was
+          observed rather than what was concluded. Events plus audit rows (SEC-PROC-3) is the
+          whole interface; FTS5 widens it in P7, against a task that knows what it searches for.
+          `EventSink.publish` returns `void` and never throws — P1-T5's budget is a `200 {}` in
+          under 5 ms with the work queued behind it (F.1), and a sweep must not die because a
+          browser disconnected. `Notifier` carries no mute: per-session mute is a deck preference
+          (P6-T5), and a port that asked "should I?" as well as "do it" would be two jobs.
+          Promoted, not rewritten — the P1-T10 lesson, applied on purpose: `StubSource` came out
+          of deck-query.test.ts into FakeSessionSource and gained the case it lacked (a FAILED
+          sweep, which is not `sessions: []`), and the `as unknown as NodeJS.WritableStream` cast
+          that kept ConsoleLogger quiet in claude-cli-session-source.test.ts became FakeLogger —
+          a cast §4 bans in core had been living in a test. FakeStore is a real implementation,
+          not a stub: it keeps the id contract monotonic, gapless and separate per table, so a
+          broken pager fails here rather than against sqlite. 25 new tests, 434 in the suite.
+        deliverables:
+          [
+            contracts/fd-event.ts,
+            contracts/audit-row.ts,
+            core/ports/event-sink.ts,
+            core/ports/store.ts,
+            core/ports/notifier.ts,
+            tests/fakes/fake-event-sink.ts,
+            tests/fakes/fake-store.ts,
+            tests/fakes/fake-notifier.ts,
+            tests/fakes/fake-session-source.ts,
+            tests/fakes/fake-logger.ts,
+            tests/fakes/*.test.ts,
+          ]
+      - id: P1-T3
+        title: ClaudeCliAdapter — `agents --json` per config dir with timeout, JSON parsing, fixture tests for interactive/background/done shapes
+        status: done
+        done_on: 2026-09-11
+        depends_on: [P0-T4]
+        notes: >-
+          RESEARCH.md F.2.1–F.2.3. Three record shapes, not two: pid and status are OPTIONAL on a
+          background record and presence of pid is the liveness test. Sweep with --all or a stopped
+          session reads as gone (F.2.2). Nothing may key off waitingFor — it is never present.
+          state 'done' means "not running" and covers stopped, retired and finished alike, so the
+          reason comes from our own audit row or daemon.log, never from the listing.
+      - id: P1-T4
+        title: Reconciler — 10 s sweep, fs.watch nudge, 2 s stat poll, gone-detection
+        status: done
+        done_on: 2026-09-11
+        depends_on: [P1-T2, P1-T3]
+        notes: >-
+          Three feeds decide WHEN to look (D3); one decides what is true, and it is the sweep.
+          `fs.watch` is a nudge that may fire in bursts, spuriously, or not at all — E.5's
+          ReadDirectoryChangesW semantics are not a bug to work around but the contract the port
+          writes down — so the watcher adapter pairs it with a 2 s stat poll of the same
+          directories and both only ever make the next sweep early.
+          **The task turned up a bug in P1-T3 before it wrote a line of its own.** The source ran
+          `agents --json` WITHOUT `--all`, and F.2.2 had already measured that the plain listing
+          omits stopped and retired sessions entirely — so the first reconciler to run would have
+          announced `gone` for every `claude stop`. Fixed in the adapter, where fixtures/agents/
+          retired.json was already captured from the `--all` invocation. Verified on this machine:
+          of the ten sessions found, FIVE are not live and would have been invisible.
+          Two more traps, each refused with a test. (1) A failed sweep runs NO gone-detection for
+          that subscription — `claude.exe` unavailable for four seconds would otherwise report
+          every session on it as ended. (2) `gone` takes TWO consecutive successful sweeps of the
+          session's own subscription, because G.2 measured that a record carries `state: working`
+          before it carries `pid`: one sweep is never evidence that a session ended, and nothing
+          here latches.
+          Measured against the real machine, read-only, before the PR: first sweep 1497 ms for
+          both config dirs across ten sessions — B.2's ~763 ms per dir, almost exactly, which is
+          what the 10 s interval is sized against. A second sweep published NOTHING, so `sameRow`
+          does not manufacture `changed` events out of re-reads. The process exited on its own
+          after `stop()`, which is the test that no timer leaked: NodeScheduler deliberately does
+          not unref, so shutdown cancels or core never exits on Ctrl+C.
+          New ports: Scheduler and DirectoryWatcher (with Cancellation), both with fakes — timing
+          tests run on a fake clock, not on a ten-second wait. `toSessionRow` was promoted out of
+          DeckQuery so the deck and the reconciler cannot hold two opinions about `attachable`.
+          Core now reconciles for real (LoggingEventSink until P1-T7 and P1-T9 exist); the DECK
+          still polls, because it has nothing to subscribe to until P1-T9.
+        deliverables:
+          [
+            core/application/reconciler.ts,
+            core/application/session-rows.ts,
+            core/ports/scheduler.ts,
+            core/ports/directory-watcher.ts,
+            core/ports/cancellation.ts,
+            core/adapters/node/node-scheduler.ts,
+            core/adapters/node/fs-directory-watcher.ts,
+            core/adapters/logging-event-sink.ts,
+            tests/core/application/reconciler.test.ts,
+            tests/core/application/reconciler-harness.ts,
+            tests/core/application/session-rows.test.ts,
+            tests/core/adapters/fs-directory-watcher.test.ts,
+            tests/core/adapters/node-scheduler.test.ts,
+            tests/core/adapters/claude-install.test.ts,
+            tests/fakes/fake-scheduler.ts,
+            tests/fakes/fake-directory-watcher.ts,
+          ]
+      - id: P1-T5
+        title: Hooks receiver — POST /hooks, token, zod validation, size limit, fast ack, queued processing
+        status: todo
+        depends_on: [P0-T3]
+        notes: >-
+          RESEARCH.md F.1 — verify every event over the transport it will actually use before
+          depending on it; SessionStart needs a command handler, and the other events are unprobed.
+          Warm the HTTP path at start so the first ack is not 5–8 ms. Stop carries
+          last_assistant_message, so model text arrives here (SEC-UI-2).
+        security: [SEC-ING-1, SEC-ING-2, SEC-HTTP-4]
+      - id: P1-T6
+        title: statusLine receiver — POST /statusline; patch ~/.claude/hooks/statusline.py to POST
+        status: todo
+        depends_on: [P0-T5]
+        notes: >-
+          RESEARCH.md F.3. The block and its patcher already exist and are round-trip tested
+          (scripts/statusline-block.py, scripts/statusline-patch.ts) — this task wires them to a
+          real route and a real Connect. Two things F.3 obliges: core must DELETE the token file
+          on clean shutdown, not merely stop listening, because a stale token turns a dead core
+          from 0.10 ms into 51 ms on every render (F.3.3); and the payload parser must accept
+          null for used_percentage / remaining_percentage / current_usage and treat session_name,
+          prompt_id and the whole prompt_cache block as absent before the first turn (F.3.5).
+          If crashes leave stale tokens often, add a self-owned circuit breaker.
+        security: [SEC-ING-3]
+      - id: P1-T7
+        title: Transcript tail — byte offset, partial-line buffer, truncation detection; record parsers behind scrubbed fixtures; unknown shapes never throw
+        status: todo
+        security: [SEC-FS-2]
+      - id: P1-T8
+        title: SQLite store (node:sqlite) — schema, migrations, events, snapshots, audit table
+        status: todo
+        security: [SEC-DATA-1, SEC-DATA-3]
+      - id: P1-T9
+        title: SSE /stream with state replay on connect
+        status: todo
+      - id: P1-T10
+        title: Security middleware — Host, Origin, Sec-Fetch-Site, bearer token (constant-time), Content-Type, body limit, rate limit, no-store headers
+        status: doing
+        depends_on: [P0-T7]
+        notes: >-
+          RESEARCH.md F.4. Promoted, not rewritten: LoopbackGuard moved scripts/ → core/http/ with
+          its 28 tests intact, and CoreServer applies it to a real socket. One behavioural change —
+          isAuthorised now hashes both sides before timingSafeEqual, because the old length-check
+          short-circuit leaked the token length, as its own comment admitted. Host, Origin,
+          Sec-Fetch-Site, bearer, Content-Type, body limit and no-store are done and verified
+          against a running core (421/403/401/415). There is no unauthenticated route: /health
+          needs the token like everything else, since the deck reads it server-side in proxy.ts
+          and a core that is down fails the connection anyway. STILL OPEN, and why this is not
+          `done`: rate limiting (SEC-HTTP-6), which P0-T7 never probed; and F.4.5's question —
+          an oversize body still destroys the socket, so a hook that merely sent too much sees
+          ECONNRESET rather than 413. Both land with the first POST route (P1-T5).
+        security: [SEC-NET-1, SEC-HTTP-1, SEC-HTTP-2, SEC-HTTP-3, SEC-HTTP-4, SEC-HTTP-5]
+      - id: P1-T11
+        title: Connect — compute, dry-run diff, back up and atomically merge the hooks + statusLine blocks into $CFG/settings.json; Disconnect reverses it
+        status: todo
+        notes: >-
+          Refuse to install unless core is installed and running — RESEARCH.md F.1.5, hooks against
+          a dead receiver put an error banner in every interactive session. The backup/temp/atomic-rename
+          procedure was exercised by hand in P0-T3 and works. Open question for this task: whether the
+          http handler's allowedEnvVars can supply the token, so a per-boot token (SEC-HTTP-3) does not
+          have to be written literally into settings.json.
+        security: [SEC-FS-3]
+      - id: P1-T12
+        title: Operations — `flightdeck-core status`, scripts/doctor, logon-task installer with token file ACL
+        status: todo
+        notes: >-
+          DP2 answered yes (DECISIONS.md D21) — logon task, run only when logged on, never elevated
+          (SEC-OPS-3). doctor checks the task exists and the token ACL is right.
+        security: [SEC-OPS-1, SEC-OPS-2, SEC-OPS-3]
+      - id: P1-T13
+        title: Coverage thresholds on — core/domain 95 %, core overall 80 %
+        status: todo
+        notes: >-
+          Read the thresholds off the coverage MAP, not the text table. Found in P1-T1: on a full
+          run the text reporter silently omits rows it lists on a smaller one — core/domain and
+          contracts/session.ts were absent from the table while lcov.info recorded them complete
+          (88/88 lines). Anyone eyeballing the table would conclude the domain is uncovered, and
+          anyone wiring a gate to what the table prints would get a threshold that passes
+          vacuously — the same shape as the scrubber's silent skip in P0-T9. Vitest's own
+          thresholds read the map, so they are correct; the check to add here is that a
+          deliberately uncovered file actually FAILS the run.
+      - id: P1-T14
+        title: Narrow the roster read — named fields only; rvAuth, ptyAuth and dispatch on the deny-list with a test
+        status: todo
+        notes: >-
+          RESEARCH.md F.2.10. daemon/roster.json is allowlisted by SEC-FS-1, but it carries rvAuth
+          and ptyAuth (the pipe auth, equivalent to the .key files SEC-FS-2 forbids) and the full
+          prompt text under dispatch. Read only workers.<id>.{pid,sessionId,cwd,startedAt,cliVersion}.
+          The policy side is done — SEC-FS-1 is now a field allowlist, SEC-FS-2 names rvAuth,
+          ptyAuth and dispatch as never-read, and DECISIONS.md D24 records why the file stays
+          allowlisted at all. What is left here is the adapter plus the deny-list test that fails
+          if any of those three ever reaches a parsed value.
+        security: [SEC-FS-1, SEC-FS-2, SEC-DATA-2]
+
+  - id: P2
+    name: The deck — sessions view
+    status: todo
+    goal: One page that answers "what needs me?" for both subscriptions.
+    gate: '"What needs me?" is answerable from the deck alone, for both subscriptions, without opening or alt-tabbing to any terminal.'
+    depends_on: [P1]
+    tasks:
+      - id: P2-T1
+        title: Next.js app at repo root — CSP and security headers, same-origin rewrite to core, no external requests
+        status: todo
+        notes: >-
+          RESEARCH.md F.4.2. The same-origin rewrite is not a convenience — it is the only route
+          that works. A page on :4949 cannot fetch :4950 directly, because a port is part of an
+          origin: JSON triggers a preflight core never answers, and a simple request arrives as
+          Sec-Fetch-Site same-site and is refused. Measured, not assumed. The upside is that the
+          token never enters the browser for HTTP; only the WebSocket needs one, and only in its
+          first frame (F.4.4). The scaffold itself landed early under P0-T6, which needed a real
+          Next runtime to measure xterm in: app/, next.config.ts, middleware.ts and
+          tsconfig.app.json exist and npm run build is green. What is left here is the deck's own
+          views and the rewrite pointed at a real core. Two things F.5.1 settles in advance: the
+          CSP is per-request, not a constant (it carries a nonce, so it lives in middleware and
+          contracts/content-security-policy.ts), and the deck CANNOT be statically prerendered.
+        security: [SEC-UI-1, SEC-UI-2]
+      - id: P2-T2
+        title: DeckStore — SSE client, reconnect with replay, view models per row
+        status: todo
+      - id: P2-T3
+        title: Header — both subscriptions' 5h/7d gauges with reset countdowns, live count, spend today, version chip, core health
+        status: todo
+      - id: P2-T4
+        title: Dense attention-sorted rows with inline expansion (vitals, doing-now, away recap, files, tokens sparkline)
+        status: todo
+        notes: >-
+          RESEARCH.md F.2.4 and F.2.14 — doing-now, the away recap and the state history are already
+          written for us: jobs/<id>/state.json carries detail/needs/output.result, and
+          jobs/<id>/timeline.jsonl is an append-only state history with the assistant message that
+          caused each transition. Attention sort keys off state === 'blocked'; waitingFor does not
+          exist. All of it is model-generated text — display only (SEC-UI-2), and cap the size.
+      - id: P2-T5
+        title: Keyboard — Ctrl+K palette skeleton, j/k/Enter/Esc, ? shortcut sheet listing browser-owned keys
+        status: todo
+      - id: P2-T6
+        title: flightdeck.cmd — start core if absent, Next dev, Edge --app window; fail loudly if ports are taken
+        status: done
+        done_on: 2026-09-11
+        notes: >-
+          Production build, not `next dev` — the dev server renders the deck and never hydrates
+          (RESEARCH.md G.3, P2-T6b). Building it turned up SEC-NET-1's other half: `next start` and
+          `next dev` default to 0.0.0.0, so the DECK had been on the LAN since P0-T6 while core was
+          correctly bound (G.6). Both now pass -H 127.0.0.1, and the runner verifies the loopback
+          address rather than the port so a regression fails the start instead of exposing it.
+      - id: P2-T6b
+        title: Make `next dev` hydrate — the deck is production-build-only until it does
+        status: todo
+        depends_on: [P2-T6]
+        notes: >-
+          RESEARCH.md G.3. Under `next dev` the deck renders server-side and never hydrates: no
+          button works and no fetch is issued. The eval half is fixed (dev-only 'unsafe-eval');
+          what remains is `ws://127.0.0.1:4949/_next/hmr` failing ERR_INVALID_HTTP_RESPONSE on
+          every retry. Excluding `_next` from both the proxy matcher and next.config headers()
+          changed nothing. `next build && next start` works completely. Until this is solved,
+          editing the deck means rebuilding and `npm run dev` is misleading rather than useful —
+          note it in the README rather than letting the next person rediscover it.
+      - id: P2-T7
+        title: Playwright smoke against a fixture SSE stream
+        status: todo
+
+  - id: P3
+    name: Projects and the workflow map
+    status: todo
+    goal: Imported folders show what Claude is configured to do there and what it actually did.
+    gate: Importing app-next renders its agents, commands, skills, hook timeline, worktrees and MCP server correctly; importing docs-tool (no .claude) degrades gracefully to CLAUDE.md + stack + git.
+    depends_on: [P2]
+    tasks:
+      - id: P3-T1
+        title: Project registry — import by path with realpath canonicalisation and allowlist checks
+        status: todo
+        notes: >-
+          DECISIONS.md D26. This is the task that answers "everything in one place" — by importing
+          paths, never by moving anything. The registry ships EMPTY and importing is the owner's action
+          in the deck: he gives it a path, it canonicalises with realpath, checks the allowlist and
+          adds that folder to what core may read (SEC-FS-1). Nothing scans the disk, nothing is
+          discovered, and no project list is compiled in. The four below are ACCEPTANCE TARGETS —
+          what to import by hand to exercise the P3 gate, not a shipped list: app-next (the full
+          workflow map) and docs-tool (no .claude at all, the degrade-gracefully half) are named
+          by the gate itself; claude-kit (a marketplace registered in both config dirs) and
+          multi-business-system (its own product and remote) are the two D26 was argued over, so
+          importing them is what proves the argument.
+        security: [SEC-FS-1]
+      - id: P3-T2
+        title: Stack and git detection (branch, dirty, ahead/behind) lifted from statusline.py's cached approach
+        status: todo
+      - id: P3-T3
+        title: Workflow-map readers — instruction stack, agents, commands, skills, hook timeline, MCP, plugins, permissions, rules/specs/state
+        status: todo
+      - id: P3-T4
+        title: Worktree discovery with the lib/tree.mjs rules (main vs linked, never touch 4200/4201)
+        status: todo
+      - id: P3-T5
+        title: Observed behaviour — aggregate both subscriptions' transcripts per slug (sessions, cost, tools, skills, files, compactions)
+        status: todo
+      - id: P3-T6
+        title: By-project view, project groups, coach gates.json verdict deep link
+        status: todo
+      - id: P3-T7
+        title: Config-change snapshots and diff
+        status: todo
+
+  - id: P4
+    name: Launcher, quota-aware routing, Ask and Dispatch
+    status: todo
+    goal: Every way the owner starts Claude today is one click, on the right subscription.
+    gate: A new ticket session for app-next starts from the deck on the subscription with more headroom, named, in the right worktree, and no terminal command was typed.
+    depends_on: [P3]
+    tasks:
+      - id: P4-T0
+        title: Delete the diverging bash Claude aliases — the PowerShell profile is the only launch route
+        status: todo
+        notes: >-
+          DP1 answered delete (DECISIONS.md D20). .bashrc lines 24–33 go; the `claude` guard alias is
+          repointed at the PowerShell functions. Nothing in the product depends on them (SEC-PROC-2).
+      - id: P4-T1
+        title: Presets — per project, encoding the five profile functions and the plan-first ticket prompt; preset groups
+        status: todo
+      - id: P4-T2
+        title: Launcher adapter — PowerShell -EncodedCommand, profile-function allowlist, prompt via environment variable, --bg, name required
+        status: todo
+        notes: >-
+          RESEARCH.md F.2.7–F.2.8. Resume is `--bg --resume <full lowercase uuid>` and nothing else —
+          a short id, or any extra flag including -n, silently forks a copy under a new id and loses
+          the name. The prompt goes in after the wake, not on the resume command. rm deletes a live
+          session with no confirmation (F.2.8), so it needs its own confirm step and an audit row. A launch into a folder
+          the config dir has not trusted blocks on a modal that --dangerously-skip-permissions does
+          not bypass and Ctrl+C does not dismiss (F.3.6), so "started but never produced a session
+          id" is a distinct outcome the launcher reports, not a hang.
+        security: [SEC-PROC-1, SEC-PROC-2, SEC-PROC-3]
+      - id: P4-T3
+        title: Quota model and recommendation (most headroom, override allowed)
+        status: todo
+      - id: P4-T4
+        title: Ask — headless stream-json run with budget cap, streamed into the deck
+        status: todo
+        security: [SEC-PROC-4]
+      - id: P4-T5
+        title: Version chip — claude update, respawn --all, doctor output
+        status: todo
+      - id: P4-T6
+        title: Connect / Disconnect subscription UI with dry-run diff
+        status: todo
+
+  - id: P5a
+    name: Terminal grid
+    status: doing
+    goal: Terminals stop being opened on the desktop.
+    gate: Nine sessions in one window; typing in the focused pane is indistinguishable from a terminal; closing a pane never stops a session; reopening the deck re-attaches.
+    depends_on: [P4]
+    tasks:
+      - id: P5a-T1
+        title: PTY host — node-pty attach panes, exclusivity registry, detach on close
+        status: done
+        done_on: 2026-09-11
+        notes: >-
+          RESEARCH.md F.2.6. attach is last-one-wins: the CLI never refuses a second attach, it
+          evicts the first, which exits 0. So the exclusivity registry is the only thing enforcing
+          it, and a pane must read "my PTY exited 0 and I did not ask" as evicted, not as ended.
+          Killing an attach does not stop the session (the phase gate holds). node-pty keeps the
+          event loop alive after kill() — the host owns disposal explicitly.
+          DONE under D30: PaneRegistry holds one pane per subscription+sessionId, releases on both
+          socket close and process exit, and refuses the second with `held_elsewhere` WITHOUT
+          spawning. STILL OWED, and deliberately not claimed here: the pane has no way yet to tell
+          eviction from a normal exit — the socket reports `exit 0` either way, and distinguishing
+          them needs the "did I ask?" flag the deck does not have until P5a-T6. node-pty also
+          prints `AttachConsole failed` on stderr from its conpty_console_list helper when core has
+          no attached console; harmless, but it litters the logon task's log (D21) — silence or
+          redirect it in P1-T12.
+        security: [SEC-WS-2, SEC-WS-3]
+      - id: P5a-T2
+        title: WS /pty — Origin check, token in first frame, session binding, max payload, idle timeout
+        status: done
+        done_on: 2026-09-11
+        security: [SEC-WS-1, SEC-WS-2, SEC-WS-3]
+      - id: P5a-T2b
+        title: WS ticket — core mints a short-lived single-use ticket so the per-boot token never enters the page
+        status: done
+        done_on: 2026-09-11
+        depends_on: [P5a-T2]
+        notes: >-
+          DECISIONS.md D32, which supersedes D31. `POST /pty-ticket` mints a 256-bit ticket bound
+          to one PtyTarget, good for 10 s and burnt on presentation; the socket redeems it against
+          the target parsed from its own upgrade URL, so a ticket cannot open a pane it was not
+          minted for. The deck reaches the mint through the same-origin rewrite, which attaches the
+          bearer server-side — `app/api/pty-token/route.ts` is deleted and the token no longer
+          enters the browser at all. `LoopbackGuard.screenFirstFrame` is deleted with it rather
+          than left unused: a guard that still accepted the token there would re-open the hole.
+          It was nearer 120 lines than forty, mostly tests.
+        security: [SEC-HTTP-3, SEC-WS-1, SEC-UI-1]
+      - id: P5a-T3
+        title: Pane component — xterm.js 6, renderer budget (WebGL only where focused), DOM fallback on context loss
+        status: done
+        done_on: 2026-09-11
+        depends_on: [P0-T6]
+        notes: >-
+          RESEARCH.md F.5.2-F.5.3. The binding constraint is NOT the context count — measured at 40
+          headless and 76 on the real GPU here, against a 9-pane layout — it is that
+          @xterm/addon-webgl fires onContextLoss from a hard-coded setTimeout(..., 3000), so an
+          evicted pane stays dead for ~3 s before the DOM renderer takes over (measured 3036 ms).
+          Either accept that, or listen for webglcontextlost on the canvas directly and pre-empt
+          the addon. Two traps from the same section: the addon only notices a lost context when it
+          next tries to draw, so an idle pane keeps reporting `webgl` after its context is gone;
+          and a pane holds three canvases, so anything reaching for the GL context must scan rather
+          than take the first. app/spike/xterm/terminal-pane.ts is the working shape to start from.
+      - id: P5a-T3b
+        title: Renderer decision — a WebGL addon that actually paints on xterm 6, or drop the context budget
+        status: todo
+        depends_on: [P5a-T3]
+        notes: >-
+          RESEARCH.md G.4. addon-webgl 0.19.0 on xterm 6.0.0 activates, creates canvases, reports
+          renderer 'webgl' and paints nothing; neither package declares a peer range so npm never
+          warned. The deck ships on the DOM renderer, which works and puts real text in the DOM.
+          Decide here: find a matching addon version and re-measure P0-T6's budget against it, or
+          accept the DOM renderer and delete the per-pane context rationing that only existed to
+          make WebGL affordable. Do not re-enable WebGL without a test that asserts painted text.
+      - id: P5a-T4
+        title: Previews — claude logs when the daemon is up, transcript tail otherwise
+        status: todo
+        notes: >-
+          Owns the `claude logs` fixture (DECISIONS.md D28). fixtures/raw/logs-blocked.txt is
+          captured but git-ignored and unscrubbed: it is a 4723-line terminal frame, not JSON, and
+          scripts/capture-fixtures.mjs names it in DEFERRED against this task id. Scrubbing it
+          needs a non-JSON path, and that path should be designed against this task's parser rather
+          than guessed — RESEARCH.md F.2.5 measured 330 046 bytes from one short session, so what
+          matters in the frame is a question only a consumer can answer.
+      - id: P5a-T5
+        title: Layouts 1/2/4/6/9 + focus, saved per project, keyboard rearrange
+        status: todo
+      - id: P5a-T6
+        title: Per-pane controls — interrupt, stop, respawn, resume, rename, mute; "held elsewhere" state
+        status: todo
+        notes: >-
+          Two defects found in P5a-T3 belong here (RESEARCH.md G.5). (1) The first keystroke after a
+          pane opens is lost: focus() runs while the socket is still handshaking, so PaneSocket.send
+          drops the frame — buffer input until `ready` instead of discarding it. (2) ConPTY's
+          `ESC[?9001h` win32-input-mode sequence paints as `$$$$…5555` on the first row because
+          xterm does not recognise it; filter it or find an xterm that does.
+      - id: P5a-T7
+        title: Keybindings helper — write Ctrl+W/Ctrl+T remaps into both config dirs with diff and backup
+        status: todo
+        security: [SEC-FS-3]
+      - id: P5a-T8
+        title: Scrollback cap and image-paste handler
+        status: todo
+
+  - id: P5b
+    name: Tauri shell
+    status: todo
+    goal: Tray badge, global summon hotkey, own taskbar entry.
+    gate: The deck is summoned from the tray by hotkey with no browser window involved.
+    depends_on: [P5a]
+    notes: >-
+      Parked, not dropped (DECISIONS.md D22). D1 scheduled this on the Ctrl+W argument, which does not
+      apply to the owner; toasts are not a reason either (D16 fires them from core). Whether the phase runs
+      at all is decided at the end of P5a. The app is the same localhost app in every shell, so the
+      swap stays low-regret.
+    tasks:
+      - id: P5b-T1
+        title: Probe — bare Tauri window loading the deck; confirm the tray, the global hotkey and WebView2 key handling
+        status: blocked
+        depends_on: [P5a]
+      - id: P5b-T2
+        title: Shell — start core + Next if absent, tray badge, global hotkey, notification plugin
+        status: todo
+      - id: P5b-T3
+        title: Core Origin allowlist extended to the Tauri origin
+        status: todo
+        security: [SEC-HTTP-2]
+
+  - id: P6
+    name: One browser, zero terminals
+    status: todo
+    goal: F7 is true day to day.
+    gate: A full working day with no terminal window opened by hand.
+    depends_on: [P5a]
+    tasks:
+      - id: P6-T1
+        title: Plain PowerShell panes
+        status: todo
+      - id: P6-T2
+        title: Pop out to Windows Terminal (AppX path resolution from open-tab.mjs), detach first
+        status: todo
+      - id: P6-T3
+        title: Windows toasts from core (toasted-notifier) with per-session mute
+        status: todo
+      - id: P6-T4
+        title: Preset groups ("morning") launch in one click
+        status: todo
+      - id: P6-T5
+        title: Duplicate-cwd warning across subscriptions
+        status: todo
+      - id: P6-T6
+        title: Session handoff — resume into a new worktree with --resume --fork-session
+        status: todo
+      - id: P6-T7
+        title: Adopt externally started sessions when they exit
+        status: todo
+
+  - id: P7
+    name: Search and analytics
+    status: todo
+    goal: Every transcript searchable; cost visible per project, subscription and week.
+    gate: '"Where did I do that Cloudflare Workers deploy?" returns the session in under a second.'
+    depends_on: [P2]
+    tasks:
+      - id: P7-T1
+        title: FTS5 indexer over both subscriptions' transcripts, incremental by byte offset
+        status: todo
+        security: [SEC-DATA-1]
+      - id: P7-T2
+        title: Search UI with filters (project, subscription, date, tool, session)
+        status: todo
+      - id: P7-T3
+        title: Cost and activity analytics from cost-state
+        status: todo
+      - id: P7-T4
+        title: Daemon visibility (roster, retire events) and scheduled-task visibility
+        status: todo
+        notes: >-
+          Owns the daemon.log fixture (DECISIONS.md D28). The lifecycle lines and the retirement
+          reason words settled / idle-prompt / empty-idle are quoted in RESEARCH.md B.3 and F.2.7
+          but captured nowhere; capture them here, with the same non-JSON scrubber path P5a-T4
+          needs. The roster half is already captured — fixtures/daemon/roster.json, projected
+          through contracts/daemon-roster.ts, including the supervisorPid this task reads to spot
+          a dead daemon (F.2.16, F.7.7).
+      - id: P7-T5
+        title: Optional OTLP http/json receiver
+        status: todo

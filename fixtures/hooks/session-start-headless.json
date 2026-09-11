@@ -1,0 +1,12 @@
+{
+  "claude_version": "2.1.267",
+  "transport": "command hook handler → stdin (http handlers are never invoked for SessionStart)",
+  "session_kind": "headless",
+  "payload": {
+    "session_id": "2abe42cd-9c6d-4a9c-a018-3572a4b985ef",
+    "transcript_path": "C:\\Users\\path-03206b\\.claude-isg\\projects\\path-3a47dc\\path-f95e2f.jsonl",
+    "cwd": "C:\\Users\\path-03206b\\Documents\\path-875b93\\path-bd76a4",
+    "hook_event_name": "SessionStart",
+    "source": "startup"
+  }
+}

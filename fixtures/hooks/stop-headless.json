@@ -1,0 +1,27 @@
+{
+  "claude_version": "2.1.267",
+  "transport": "http hook handler → POST /hooks",
+  "session_kind": "headless",
+  "request_headers": {
+    "accept": "application/json, text/plain, */*",
+    "content-type": "application/json",
+    "authorization": "<redacted>",
+    "user-agent": "axios/1.15.2",
+    "content-length": "467",
+    "accept-encoding": "gzip, compress, deflate, br",
+    "host": "127.0.0.1:4950",
+    "connection": "keep-alive"
+  },
+  "payload": {
+    "session_id": "2abe42cd-9c6d-4a9c-a018-3572a4b985ef",
+    "transcript_path": "C:\\Users\\path-03206b\\.claude-isg\\projects\\path-3a47dc\\path-f95e2f.jsonl",
+    "cwd": "C:\\Users\\path-03206b\\Documents\\path-875b93\\path-bd76a4",
+    "prompt_id": "6b35608b-4209-4588-aaf1-34728c199a5d",
+    "permission_mode": "default",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false,
+    "last_assistant_message": "OK",
+    "background_tasks": [],
+    "session_crons": []
+  }
+}

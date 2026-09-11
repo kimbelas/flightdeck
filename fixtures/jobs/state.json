@@ -1,0 +1,49 @@
+{
+  "claude_version": "2.1.267",
+  "source": "CFG/jobs/<shortId>/state.json",
+  "session_kind": "background",
+  "note": "Resting state after a completed turn. detail/output.result/needs are model-generated (SEC-UI-2); intent is the user prompt. respawnFlags is what --resume replays.",
+  "state_file": {
+    "state": "done",
+    "detail": "text-15416216",
+    "tempo": "idle",
+    "inFlight": {
+      "tasks": 0,
+      "queued": 0,
+      "kinds": [],
+      "drainableMonitors": 0
+    },
+    "tokens": 48,
+    "output": {
+      "result": "text-0dfe1f65"
+    },
+    "children": null,
+    "linkScanOffset": 287527,
+    "linkScanPath": "C:\\Users\\path-03206b\\.claude-isg\\projects\\path-6be021\\path-6b7c2e.jsonl",
+    "template": "bg",
+    "respawnFlags": [
+      "-n",
+      "text-9bafae96",
+      "--model",
+      "haiku",
+      "--permission-mode",
+      "default"
+    ],
+    "intent": "text-e6301629",
+    "name": "text-9bafae96",
+    "nameSource": "user",
+    "sessionId": "5ba454f6-632d-4e59-ad48-6872c703a5f7",
+    "resumeSessionId": "5ba454f6-632d-4e59-ad48-6872c703a5f7",
+    "daemonShort": "6b113e49",
+    "cliVersion": "2.1.267",
+    "cwd": "C:\\Users\\path-03206b\\AppData\\Local\\Temp\\claude\\path-833542\\path-80ee91\\scratchpad\\path-bb07c8",
+    "providerEnv": {
+      "CLAUDE_CONFIG_DIR": "C:/Users/path-03206b/.claude-isg"
+    },
+    "backend": "daemon",
+    "createdAt": "2020-09-11T19:32:44.652Z",
+    "updatedAt": "2020-09-11T19:32:56.844Z",
+    "firstTerminalAt": "2020-09-11T19:32:56.844Z",
+    "lastTerminalAt": "2020-09-11T19:32:56.844Z"
+  }
+}

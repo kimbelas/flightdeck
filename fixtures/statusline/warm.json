@@ -1,0 +1,72 @@
+{
+  "session_id": "cb5e8102-f057-4d5c-ad98-eac21a12f37d",
+  "transcript_path": "C:\\Users\\path-03206b\\.claude-isg\\projects\\path-6be021\\path-c9f7fc.jsonl",
+  "cwd": "C:\\Users\\path-03206b\\AppData\\Local\\Temp\\claude\\path-833542\\path-80ee91\\scratchpad\\path-bb07c8",
+  "scratchpad_dir": "C:\\Users\\path-03206b\\AppData\\Local\\Temp\\claude\\path-6be021\\path-cb5e81\\scratchpad",
+  "prompt_id": "9421d276-71dc-4b96-a808-367909c6ea66",
+  "session_name": "text-70796d57",
+  "model": {
+    "id": "claude-haiku-4-5-20251001",
+    "display_name": "Haiku 4.5"
+  },
+  "workspace": {
+    "current_dir": "C:\\Users\\path-03206b\\AppData\\Local\\Temp\\claude\\path-833542\\path-80ee91\\scratchpad\\path-bb07c8",
+    "project_dir": "C:\\Users\\path-03206b\\AppData\\Local\\Temp\\claude\\path-833542\\path-80ee91\\scratchpad\\path-bb07c8",
+    "added_dirs": []
+  },
+  "version": "2.1.267",
+  "output_style": {
+    "name": "default"
+  },
+  "cost": {
+    "total_cost_usd": 0.0207387,
+    "total_duration_ms": 11571,
+    "total_api_duration_ms": 2853,
+    "total_lines_added": 0,
+    "total_lines_removed": 0
+  },
+  "context_window": {
+    "total_input_tokens": 39569,
+    "total_output_tokens": 41,
+    "context_window_size": 200000,
+    "current_usage": {
+      "input_tokens": 10,
+      "output_tokens": 41,
+      "cache_creation_input_tokens": 8222,
+      "cache_read_input_tokens": 31337
+    },
+    "used_percentage": 20,
+    "remaining_percentage": 80
+  },
+  "exceeds_200k_tokens": false,
+  "prompt_cache": {
+    "warm": true,
+    "caching_observed": true,
+    "ttl": "1h",
+    "expires_at": 1789075670,
+    "requests": 1,
+    "misses": 0,
+    "expected_rebuilds": 0,
+    "hit_ratio": 0.7919583512345523,
+    "cache_write_tokens": 8222,
+    "miss_recache_tokens": 0,
+    "last_miss_at": null,
+    "last_miss_cause": null,
+    "miss_causes": {},
+    "recache_tokens_if_cold": 39569
+  },
+  "fast_mode": false,
+  "thinking": {
+    "enabled": true
+  },
+  "rate_limits": {
+    "five_hour": {
+      "used_percentage": 23,
+      "resets_at": 1789080600
+    },
+    "seven_day": {
+      "used_percentage": 7.000000000000001,
+      "resets_at": 1789650000
+    }
+  }
+}

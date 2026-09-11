@@ -1,0 +1,60 @@
+name: Release
+
+# "Deployment" for Flightdeck means a versioned, checked build that flightdeck.cmd can install
+# on the owner's PC. Tag `vX.Y.Z` on main → full check → zipped build attached to a GitHub Release.
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Check, build, publish release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # create the release and upload the asset
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - run: npm ci
+
+      - name: Full check (lint, types, format, roadmap, tests)
+        run: npm run check
+
+      - name: Build (no-op until the UI exists)
+        run: npm run build --if-present
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          name="flightdeck-${GITHUB_REF_NAME}"
+          mkdir -p "dist/$name"
+          cp -r core contracts scripts package.json package-lock.json .node-version README.md SPEC.md SECURITY.md "dist/$name/" 2>/dev/null || true
+          [ -d .next ] && cp -r .next "dist/$name/.next" || true
+          [ -d app ] && cp -r app "dist/$name/app" || true
+          [ -d public ] && cp -r public "dist/$name/public" || true
+          (cd dist && zip -qr "$name.zip" "$name")
+          sha256sum "dist/$name.zip" > "dist/$name.zip.sha256"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Flightdeck $GITHUB_REF_NAME" \
+            --generate-notes \
+            "dist/flightdeck-$GITHUB_REF_NAME.zip" \
+            "dist/flightdeck-$GITHUB_REF_NAME.zip.sha256"
