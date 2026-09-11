@@ -555,6 +555,11 @@ phases:
           deck. Nothing was batching yet, which is what made it worth writing down. (2) **G.8: the
           deck is blank for ~1.2 s after core restarts**, because the first snapshot from a core
           that has bound its port but not finished a sweep is honestly empty. Left alone.
+          A third finding, from probing rather than from the page (RESEARCH.md G.9): `stream.closeAll()`
+          must come BEFORE `server.close()` and the order is not interchangeable. `close()` reaps idle
+          connections once, on the way in, and stops the interval that would reap them later, so a
+          stream closed afterwards leaves a keep-alive socket nothing collects and core never exits.
+          Both halves are pinned by tests.
           Verified in a real browser against a real core: the page hydrates under the production
           CSP, opens the stream, renders from the replay, fetches `/api/core/sessions` on mount
           never again; and killing core mid-session gives `core down`, the last known rows, one
@@ -585,6 +590,7 @@ phases:
             tests/core/adapters/fan-out-event-sink.test.ts,
             tests/core/http/sse-stream.test.ts,
             tests/core/http/session-stream-route.test.ts,
+            tests/core/http/core-server-stream.test.ts,
             tests/app/deck-store.test.ts,
           ]
         security: [SEC-HTTP-1, SEC-HTTP-2, SEC-HTTP-3, SEC-HTTP-5, SEC-UI-2]

@@ -1334,3 +1334,24 @@ That window is B.2's ~763 ms per config dir, swept concurrently, and it is left 
 the snapshot is what core knows, and a deck that kept showing rows through it would be inventing
 continuity core cannot vouch for. It is also the end-to-end proof that the delta path works — nine
 rows appeared in a real browser, from a real sweep, with nothing asked of the page.
+
+### G.9 `server.close()` cannot be rescued by closing a stream afterwards
+
+Probed while wiring P1-T9's shutdown, because "does core still exit on Ctrl+C with a deck open?"
+is not a question a unit suite answers by itself. `http.Server.close()` waits for open connections
+to end, and an SSE response never does on its own — so far, expected. What was not expected is that
+the order is **not interchangeable**:
+
+| Order | Result |
+|---|---|
+| close the streams, then `server.close()` | resolves in **4 ms** |
+| `server.close()`, then close the streams | never resolves; only the client going away frees it |
+
+Node reaps idle connections once, inside `close()`, and clears the interval that would reap them
+later. A stream that ends after that point leaves a keep-alive socket that nothing is left to
+collect, so the server sits at one connection forever.
+
+`core/main.ts` `stopCore` therefore closes the streams second — after the reconciler's timers and
+before everything else — and both halves are pinned by tests in `core-server-stream.test.ts`. The
+failure mode this avoids is core surviving Ctrl+C for as long as one deck tab is open, which is
+indistinguishable from a hung process and is fixed by the wrong thing (a `taskkill`) every time.

@@ -130,9 +130,12 @@ async function stopCore(running: Running): Promise<void> {
   // First, because NodeScheduler does not unref: a live sweep timer keeps the loop alive and the
   // process would never exit.
   running.reconciler.stop();
-  // Second, and for a stricter version of the same reason: `server.close()` waits for open
-  // connections to end, and an SSE response is one that never does on its own. A single deck tab
-  // would hold core open through Ctrl+C.
+  // Second, and BEFORE the server, which is not interchangeable: `server.close()` waits for open
+  // connections to end and an SSE response never does on its own, so a single deck tab would hold
+  // core open through Ctrl+C. Closing the streams afterwards would not rescue it either —
+  // `close()` reaps idle connections once, on the way in, and stops the interval that would reap
+  // them later, so a stream that ends after that leaves a keep-alive socket nothing collects.
+  // Measured, and pinned by two tests in core-server.test.ts.
   running.stream.closeAll();
   running.issuer.revoke();
   // An outstanding ticket must not outlive the token that authorised minting it.
