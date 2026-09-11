@@ -264,7 +264,9 @@ function main() {
     const output = join(ROOT, 'fixtures', source, basename(file));
     const text = `${JSON.stringify(scrub(parsed, undefined), null, 2)}\n`;
 
-    let existing = null;
+    // No initialiser: both paths below assign, and eslint 10's `no-useless-assignment` is right
+    // that writing one here only hides which of them ran.
+    let existing;
     try {
       existing = readFileSync(output, 'utf8');
     } catch {
