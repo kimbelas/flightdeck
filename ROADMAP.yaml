@@ -494,15 +494,66 @@ phases:
             tests/fakes/fake-directory-watcher.ts,
           ]
       - id: P1-T5
-        title: Hooks receiver — POST /hooks, token, zod validation, size limit, fast ack, queued processing
-        status: todo
+        title: Hooks receiver — POST /hooks, token, validation, size limit, fast ack, queued processing
+        status: done
+        done_on: 2026-09-11
         depends_on: [P0-T3]
         notes: >-
-          RESEARCH.md F.1 — verify every event over the transport it will actually use before
-          depending on it; SessionStart needs a command handler, and the other events are unprobed.
-          Warm the HTTP path at start so the first ack is not 5–8 ms. Stop carries
-          last_assistant_message, so model text arrives here (SEC-UI-2).
-        security: [SEC-ING-1, SEC-ING-2, SEC-HTTP-4]
+          RESEARCH.md F.1. Measured on a running core: a valid hook acks in **1.7–2.9 ms**, inside
+          SEC-ING-2's 5 ms budget, and the first one after boot is already warm — `warmUp()` makes
+          core call its own `/health` once at start, which is where F.1.4's 26 ms cold cost is now
+          spent instead of on somebody's session.
+          **Validation is hand-rolled, not zod.** The title said zod; the repo has no schema library
+          and three contracts files already parse by hand for the reason pty-protocol.ts states. A
+          receiver that must ack in under 5 ms is not the place to add one. `session_id` is checked
+          against the uuid shape because it reaches a command line later (SEC-ING-1, F.2.7).
+          **A hook is evidence, never truth.** It says something happened; the sweep says what is
+          true (D3). So the queue publishes the event and then `nudge()`s the reconciler — which is
+          what makes the P1 gate sentence reachable through the path that already exists rather than
+          through a second one that would have to be kept in agreement with it.
+          **Which subscription sent it is read off `transcript_path`, not claimed.** The same token
+          authenticates both, so a field would be worth the sender's honesty; a path that has to
+          fall under one of two known config dirs cannot be talked into a third. A payload matching
+          neither is refused, not guessed at.
+          **No hook payload reaches a browser.** `last_assistant_message` is model text (SEC-UI-2);
+          it is parsed for the store (P1-T8), never logged — verified against the live log — and the
+          stream still refuses every event that is not the reconciler's.
+          **P1-T10's two open items are closed here**, as its notes said they would be: SEC-HTTP-6
+          rate limiting (60/min per token for control routes, 600/min per session id for ingest,
+          and they cannot spend each other's budget — verified live, `hook=200` while `health=429`)
+          and F.4.5's oversize body, which now answers 413 rather than resetting the socket.
+          Three things found by running it, all in RESEARCH.md §G. **G.10:** a transient
+          `spawn UNKNOWN` killed core — `execFile` throws on the calling stack, which became a
+          rejected promise, an unhandled rejection and an exited process. Fixed in the runner (a
+          spawn that never happened is a failed run) and in `reconcile`, whose `@throws never` was
+          aspirational. **G.11:** a 413 must say `Connection: close`, or the sender's NEXT request
+          on the pooled socket is the one that fails — worse than the ECONNRESET it replaced,
+          because that one at least blamed the right request. And the single 256 KB body cap core
+          shipped with would have refused a 300 KB `PostToolUse`; SEC-HTTP-4 had said 4 MB for
+          hooks all along.
+          **Not done here, deferred to P1-T11 by the owner:** F.1.1's "verify each event over the
+          transport it will actually use". The receiver depends on no event name — `hook_event_name`
+          is a string, not a union — so nothing here is waiting on it, and P1-T11 is the task that
+          writes settings.json with the backup and dry-run procedure that probe needs.
+        deliverables:
+          [
+            contracts/hook-event.ts,
+            core/application/hook-queue.ts,
+            core/application/subscription-paths.ts,
+            core/http/hooks-route.ts,
+            core/http/rate-limiter.ts,
+            core/http/limits.ts,
+            core/adapters/claude-cli/execfile-process-runner.ts,
+            tests/contracts/hook-event.test.ts,
+            tests/fixtures/hooks.test.ts,
+            tests/core/application/hook-queue.test.ts,
+            tests/core/application/subscription-paths.test.ts,
+            tests/core/http/hooks-route.test.ts,
+            tests/core/http/rate-limiter.test.ts,
+            tests/core/http/core-server-limits.test.ts,
+            tests/core/adapters/execfile-process-runner.test.ts,
+          ]
+        security: [SEC-ING-1, SEC-ING-2, SEC-HTTP-4, SEC-HTTP-6]
       - id: P1-T6
         title: statusLine receiver — POST /statusline; patch ~/.claude/hooks/statusline.py to POST
         status: todo
@@ -596,7 +647,8 @@ phases:
         security: [SEC-HTTP-1, SEC-HTTP-2, SEC-HTTP-3, SEC-HTTP-5, SEC-UI-2]
       - id: P1-T10
         title: Security middleware — Host, Origin, Sec-Fetch-Site, bearer token (constant-time), Content-Type, body limit, rate limit, no-store headers
-        status: doing
+        status: done
+        done_on: 2026-09-11
         depends_on: [P0-T7]
         notes: >-
           RESEARCH.md F.4. Promoted, not rewritten: LoopbackGuard moved scripts/ → core/http/ with
@@ -610,13 +662,24 @@ phases:
           `done`: rate limiting (SEC-HTTP-6), which P0-T7 never probed; and F.4.5's question —
           an oversize body still destroys the socket, so a hook that merely sent too much sees
           ECONNRESET rather than 413. Both land with the first POST route (P1-T5).
-        security: [SEC-NET-1, SEC-HTTP-1, SEC-HTTP-2, SEC-HTTP-3, SEC-HTTP-4, SEC-HTTP-5]
+          **Both landed there, and both are verified against a running core** — 429 past 60 control
+          requests a minute, and a 413 that a sender can actually read. The 413 needed one thing
+          nobody had predicted: `Connection: close`, or the sender's next request on the pooled
+          socket is the one that fails (RESEARCH.md G.11).
+        security: [SEC-NET-1, SEC-HTTP-1, SEC-HTTP-2, SEC-HTTP-3, SEC-HTTP-4, SEC-HTTP-5, SEC-HTTP-6]
       - id: P1-T11
         title: Connect — compute, dry-run diff, back up and atomically merge the hooks + statusLine blocks into $CFG/settings.json; Disconnect reverses it
         status: todo
         notes: >-
           Refuse to install unless core is installed and running — RESEARCH.md F.1.5, hooks against
-          a dead receiver put an error banner in every interactive session. The backup/temp/atomic-rename
+          a dead receiver put an error banner in every interactive session.
+          **This task now also carries F.1.1's probe**, moved here from P1-T5 by the owner on
+          2026-09-11: `SessionStart` is never delivered over `http` at all, and `SessionEnd`,
+          `UserPromptSubmit`, `Notification`, `PreCompact`, `SubagentStop` and the tool hooks are
+          unprobed. Assume nothing — install them one at a time against the real receiver and
+          capture what arrives, because a handler that never fires is indistinguishable from a
+          quiet machine. P1-T5's receiver is event-agnostic, so nothing is waiting on the answer;
+          what needs it is deciding which handlers Connect writes. The backup/temp/atomic-rename
           procedure was exercised by hand in P0-T3 and works. Open question for this task: whether the
           http handler's allowedEnvVars can supply the token, so a per-boot token (SEC-HTTP-3) does not
           have to be written literally into settings.json.

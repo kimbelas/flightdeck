@@ -17,7 +17,9 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { LOOPBACK_ADDRESS } from '../../contracts/origins.ts';
 import type { Logger } from '../ports/logger.ts';
+import { budgetFor } from './limits.ts';
 import type { LoopbackGuard, RequestFacts, Rejection } from './loopback-guard.ts';
+import type { RateLimiter } from './rate-limiter.ts';
 import type { RequestRouter } from './request-router.ts';
 import { json, type JsonResponse, type Route, type StreamRoute } from './route.ts';
 import { SseStream } from './sse-stream.ts';
@@ -31,6 +33,9 @@ const NO_STORE_HEADERS: Readonly<Record<string, string>> = {
   'x-content-type-options': 'nosniff',
 };
 
+/** Added to a `413` only. See `refuseOversize` — the connection cannot survive a refused body. */
+const CLOSE_HEADERS: Readonly<Record<string, string>> = { connection: 'close' };
+
 /**
  * Everything the server dispatches to.
  *
@@ -43,6 +48,8 @@ export interface CoreServerParts {
   readonly router: RequestRouter<Route>;
   /** Routes that take over the socket. Empty is normal; a server with no stream still works. */
   readonly streams: RequestRouter<StreamRoute>;
+  /** SEC-HTTP-6. Shared with the routes that limit per session rather than per token. */
+  readonly limiter: RateLimiter;
   readonly logger: Logger;
 }
 
@@ -50,6 +57,7 @@ export class CoreServer {
   private readonly guard: LoopbackGuard;
   private readonly router: RequestRouter<Route>;
   private readonly streams: RequestRouter<StreamRoute>;
+  private readonly limiter: RateLimiter;
   private readonly logger: Logger;
   private readonly server: Server;
 
@@ -57,6 +65,7 @@ export class CoreServer {
     this.guard = parts.guard;
     this.router = parts.router;
     this.streams = parts.streams;
+    this.limiter = parts.limiter;
     this.logger = parts.logger;
     this.server = createServer((request, response) => {
       void this.dispatch(request, response);
@@ -132,18 +141,59 @@ export class CoreServer {
       return;
     }
 
+    const budget = budgetFor(route.limit);
+    // Per token, and only on the routes a person drives: the ingest routes are limited per session
+    // id inside the handler, because one runaway session must not be able to spend the budget of
+    // the nine that are behaving (SEC-HTTP-6).
+    if (route.limit === 'control' && !this.allowed(facts)) {
+      this.logger.warn('request_denied', { control: 'SEC-HTTP-6', reason: 'rate' });
+      respond(response, json(429, { error: 'too many requests' }));
+      return;
+    }
+
     try {
-      const body = await readBody(request, this.guard.bodyLimitBytes);
+      const body = await readBody(request, budget.bodyBytes);
       respond(response, await route.handle(facts, body));
     } catch (cause) {
-      const oversize = cause instanceof Error && cause.message === 'body_too_large';
-      const rejected = oversize ? this.guard.oversize(this.guard.bodyLimitBytes) : undefined;
-      this.logger.warn('route_failed', { path: pathOf(request.url), oversize });
-      respond(
-        response,
-        json(rejected?.status ?? 500, { error: oversize ? 'too large' : 'internal' }),
-      );
+      if (cause instanceof Error && cause.message === OVERSIZE) {
+        this.refuseOversize(request, response, budget.bodyBytes);
+        return;
+      }
+      this.logger.warn('route_failed', { path: pathOf(request.url) });
+      respond(response, json(500, { error: 'internal' }));
     }
+  }
+
+  /**
+   * Answers `413` and then hangs up — P1-T10's open question, settled (RESEARCH.md F.4.5).
+   *
+   * Three things have to happen together, and each of them was found by getting it wrong.
+   *
+   *  1. **Write the status first.** The old path destroyed the socket the moment the cap was
+   *     passed, so a sender that merely sent too much saw `ECONNRESET` and could not tell "too
+   *     large" from "core died mid-request".
+   *  2. **Say `Connection: close`.** The sender is mid-body, so the connection cannot be reused
+   *     whatever we do — and a client that was not told keeps the socket in its pool and fails its
+   *     NEXT request on it. For a hook client that is an error banner in a live session for
+   *     something it did a request ago (F.1.5). Measured: without this header the following
+   *     request on the same agent gets `ECONNRESET`.
+   *  3. **Then destroy it.** Node would otherwise drain the rest of the body to make the
+   *     connection reusable, which is to say it would read the gigabyte we just refused.
+   */
+  private refuseOversize(request: IncomingMessage, response: ServerResponse, limit: number): void {
+    const rejection = this.guard.oversize(limit);
+    this.logger.warn('request_denied', { control: rejection.control, reason: rejection.reason });
+    response.once('finish', () => {
+      request.destroy();
+    });
+    respond(response, json(rejection.status, { error: 'too large' }), CLOSE_HEADERS);
+  }
+
+  /** One bucket for the token, which is one per boot — so this is the deck's whole allowance. */
+  private allowed(facts: RequestFacts): boolean {
+    const header = facts.headers['authorization'];
+    const token = Array.isArray(header) ? header[0] : header;
+    return this.limiter.allow(`control:${token ?? ''}`, budgetFor('control').perMinute);
   }
 
   /**
@@ -181,7 +231,17 @@ function pathOf(url: string | undefined): string {
   return (url ?? '/').split('?')[0] ?? '/';
 }
 
-/** Reads at most `limit` bytes, destroying the socket rather than buffering past the cap. */
+/** Thrown past `readBody` so `serve` can tell an oversize body from a handler that failed. */
+const OVERSIZE = 'body_too_large';
+
+/**
+ * Reads at most `limit` bytes.
+ *
+ * It stops buffering at the cap and rejects immediately — it does NOT destroy the socket, because
+ * the caller still has a `413` to write on it (`refuseOversize`). Nothing more is accumulated in
+ * the meantime: whatever else the sender is still pushing lands in the kernel buffer and dies with
+ * the connection.
+ */
 function readBody(request: IncomingMessage, limit: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -189,8 +249,8 @@ function readBody(request: IncomingMessage, limit: number): Promise<string> {
     request.on('data', (chunk: Buffer) => {
       size += chunk.length;
       if (size > limit) {
-        request.destroy();
-        reject(new Error('body_too_large'));
+        request.pause();
+        reject(new Error(OVERSIZE));
         return;
       }
       chunks.push(chunk);
@@ -202,7 +262,11 @@ function readBody(request: IncomingMessage, limit: number): Promise<string> {
   });
 }
 
-function respond(response: ServerResponse, result: JsonResponse): void {
-  response.writeHead(result.status, NO_STORE_HEADERS);
+function respond(
+  response: ServerResponse,
+  result: JsonResponse,
+  extra: Readonly<Record<string, string>> = {},
+): void {
+  response.writeHead(result.status, { ...NO_STORE_HEADERS, ...extra });
   response.end(JSON.stringify(result.body));
 }

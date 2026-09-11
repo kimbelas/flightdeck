@@ -16,10 +16,16 @@ frame, and takes deltas after that. Nothing polls, and `refresh` is now a delibe
 rather than the only way to find out. Core restarting is handled without a reload — the deck says
 `core down`, reconnects on its own, and comes back with a fresh replay.
 
-**What it does not do yet.** No quota gauges, no projects map, no search. Hooks and the statusLine
-receiver (P1-T5, P1-T6) are not built, so a session that goes blocked is noticed by the 10 s sweep
-rather than the instant it happens. One banner is still as old as your connection: a subscription
-core could not read publishes no event, so `refresh` is what updates it.
+**Hooks are received but not yet installed.** `POST /hooks` is built (P1-T5) — it acks in about
+2 ms, records what arrived, and asks the reconciler to sweep, so a session that goes blocked shows
+up in about a second rather than in up to ten. Nothing points a hook at it yet: installing the
+handlers into `settings.json` is Connect (P1-T11), and hooks pointed at a receiver that is down put
+an error banner in every interactive session, so that step refuses to run unless core is up.
+
+**What it does not do yet.** No quota gauges, no projects map, no search. The statusLine receiver
+(P1-T6) is not built, so there is no context percentage or quota anywhere. One banner is still as
+old as your connection: a subscription core could not read publishes no event, so `refresh` is what
+updates it.
 
 **Only background sessions can be attached.** `claude attach` takes background sessions only, so
 an interactive session — one you started in a terminal yourself — shows on the deck read-only,

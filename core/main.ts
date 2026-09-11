@@ -4,13 +4,16 @@
 // against fakes and `scripts/flightdeck-core.ts` can own the printing. No DI container, no
 // globals: everything below is constructor injection, read top to bottom.
 import { readFileSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
 import { join } from 'node:path';
-import { CORE_PORT, UI_ORIGIN } from '../contracts/origins.ts';
+import { CORE_PORT, LOOPBACK_ADDRESS, UI_ORIGIN } from '../contracts/origins.ts';
 import { DeckQuery } from './application/deck-query.ts';
 import { EventHub } from './application/event-hub.ts';
+import { HookQueue } from './application/hook-queue.ts';
 import { PaneRegistry } from './application/pane-registry.ts';
 import { Reconciler } from './application/reconciler.ts';
 import { SessionLauncher } from './application/session-launcher.ts';
+import { SubscriptionPaths } from './application/subscription-paths.ts';
 import { TicketOffice } from './application/ticket-office.ts';
 import { TokenIssuer } from './application/token-issuer.ts';
 import { ClaudeCliSessionSource } from './adapters/claude-cli/claude-cli-session-source.ts';
@@ -26,8 +29,11 @@ import { WindowsPtyCommands } from './adapters/windows/windows-pty-commands.ts';
 import { WindowsTokenFile } from './adapters/windows/windows-token-file.ts';
 import { CoreServer } from './http/core-server.ts';
 import { HealthRoute } from './http/health-route.ts';
+import { HooksRoute } from './http/hooks-route.ts';
 import { LaunchRoute } from './http/launch-route.ts';
+import { BUDGETS } from './http/limits.ts';
 import { LoopbackGuard } from './http/loopback-guard.ts';
+import { RateLimiter } from './http/rate-limiter.ts';
 import { PtySocketServer } from './http/pty-socket-server.ts';
 import { RequestRouter } from './http/request-router.ts';
 import type { Route, StreamRoute } from './http/route.ts';
@@ -36,9 +42,6 @@ import { SessionsRoute } from './http/sessions-route.ts';
 import { TicketRoute } from './http/ticket-route.ts';
 import { SystemClock } from './ports/clock.ts';
 import type { Logger } from './ports/logger.ts';
-
-/** SEC-HTTP-4. Nothing core accepts is near this big; a hook payload is a few KB. */
-const MAX_BODY_BYTES = 256 * 1024;
 
 export interface Core {
   readonly server: CoreServer;
@@ -52,6 +55,18 @@ export interface Core {
   readonly tokenPath: string;
   /** Where `claude.exe` was found, or `undefined` — panes on sessions need it, shells do not. */
   readonly claudePath: string | undefined;
+  /**
+   * Makes one request against itself, so the first real one does not pay Node's HTTP warm-up.
+   *
+   * P0-T3 measured the first hook ack after boot at 5.37 / 8.21 ms against 0.54–1.31 ms in steady
+   * state (RESEARCH.md F.1.4) — over the SEC-ING-2 budget, once, for the first session to finish a
+   * turn after core starts. Called by the caller rather than by `buildCore` for the same reason the
+   * reconciler is: a core that failed to bind has nothing to warm.
+   *
+   * @throws never — it is an optimisation, and a core that could not talk to itself is a problem
+   * for `/health` to report, not a reason to refuse to start.
+   */
+  warmUp(): Promise<void>;
   /** Drops the token, closes every pane and stops listening. Idempotent. */
   shutdown(): Promise<void>;
 }
@@ -72,7 +87,9 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
     port: CORE_PORT,
     uiOrigin: UI_ORIGIN,
     token,
-    bodyLimitBytes: MAX_BODY_BYTES,
+    // The control cap. Core enforces the per-route caps itself (limits.ts) now that a hook may
+    // send 4 MB and a launch may not; this is here so the guard's own answer agrees with it.
+    bodyLimitBytes: BUDGETS.control.bodyBytes,
   });
   // One install, shared: the panes attach with the same config dir the listing was read with, or
   // the deck shows a session a pane cannot find.
@@ -85,14 +102,18 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
   const deck = new DeckQuery(sessions, clock);
   const launcher = new SessionLauncher(install, runner, logger);
 
-  const { reconciler, stream } = buildFeeds(install, sessions, clock, logger);
+  const { reconciler, stream, hooks } = buildFeeds(install, sessions, clock, logger);
 
   // The tickets the PTY socket takes in its first frame, so the token never reaches the page (D32).
   const tickets = new TicketOffice(clock);
+  // SEC-HTTP-6, shared: the server spends the control budget per token, the hooks route spends the
+  // ingest budget per session id, and one limiter means one place the windows live.
+  const limiter = new RateLimiter(clock);
   const server = new CoreServer({
     guard,
-    router: buildRouter(deck, launcher, tickets),
+    router: buildRouter({ deck, launcher, tickets, hooks, limiter, install, logger }),
     streams: new RequestRouter<StreamRoute>([stream]),
+    limiter,
     logger,
   });
 
@@ -108,9 +129,47 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
     logger,
     tokenPath: tokenFile.location(),
     claudePath: install.executable,
+    warmUp: () => warmUp(token, logger),
     shutdown: () =>
       stopCore({ reconciler, stream, issuer, tickets, sockets, panes, server, logger }),
   };
+}
+
+/**
+ * One `GET /health` against ourselves, awaited, with everything ignored but the timing.
+ *
+ * It goes over a real socket rather than calling the route directly, because what is cold is
+ * Node's HTTP stack — the parser, the socket path, the first allocation — and a direct call warms
+ * none of it. It spends one of the minute's 60 control requests, which is the right price.
+ */
+async function warmUp(token: string, logger: Logger): Promise<void> {
+  const startedAt = Date.now();
+  const status = await new Promise<number>((resolve) => {
+    const probe = httpRequest(
+      {
+        host: LOOPBACK_ADDRESS,
+        port: CORE_PORT,
+        path: '/health',
+        headers: {
+          authorization: `Bearer ${token}`,
+          host: `${LOOPBACK_ADDRESS}:${String(CORE_PORT)}`,
+        },
+      },
+      (response) => {
+        response.resume();
+        response.on('end', () => {
+          resolve(response.statusCode ?? 0);
+        });
+      },
+    );
+    probe.on('error', () => {
+      resolve(0);
+    });
+    probe.end();
+  });
+  // Logged rather than discarded: a non-200 here is core failing to answer its own token, which is
+  // worth knowing at boot rather than when the first hook arrives.
+  logger.info('core_warm', { status, ms: Date.now() - startedAt });
 }
 
 /** Everything that has to be let go of on the way out. The ORDER is the documentation. */
@@ -148,10 +207,11 @@ async function stopCore(running: Running): Promise<void> {
   running.logger.info('core_stopped');
 }
 
-/** The two halves of the event side: what notices things, and what hands them to a browser. */
+/** The event side: what notices things, what is told about them, and what hands them to a browser. */
 interface Feeds {
   readonly reconciler: Reconciler;
   readonly stream: SessionStreamRoute;
+  readonly hooks: HookQueue;
 }
 
 /**
@@ -173,9 +233,10 @@ function buildFeeds(
 ): Feeds {
   const scheduler = new NodeScheduler();
   const hub = new EventHub(logger);
+  const sink = new FanOutEventSink([new LoggingEventSink(logger), hub]);
   const reconciler = new Reconciler({
     source: sessions,
-    sink: new FanOutEventSink([new LoggingEventSink(logger), hub]),
+    sink,
     scheduler,
     watcher: new FsDirectoryWatcher(install.watchTargets(), scheduler, logger),
     clock,
@@ -184,20 +245,40 @@ function buildFeeds(
   return {
     reconciler,
     stream: new SessionStreamRoute({ sessions: reconciler, feed: hub, scheduler, logger }),
+    // A hook publishes into the same sink and then asks the reconciler to look — evidence that
+    // something happened, never a claim about what is true now (D3, P1-T5).
+    hooks: new HookQueue({ sink, trigger: reconciler, scheduler, clock, logger }),
   };
 }
 
+interface RouterParts {
+  readonly deck: DeckQuery;
+  readonly launcher: SessionLauncher;
+  readonly tickets: TicketOffice;
+  readonly hooks: HookQueue;
+  readonly limiter: RateLimiter;
+  readonly install: ClaudeInstall;
+  readonly logger: Logger;
+}
+
 /** Every path core answers, in one list. There are no patterns and no prefixes (RequestRouter). */
-function buildRouter(
-  deck: DeckQuery,
-  launcher: SessionLauncher,
-  tickets: TicketOffice,
-): RequestRouter<Route> {
+function buildRouter(parts: RouterParts): RequestRouter<Route> {
   return new RequestRouter<Route>([
     new HealthRoute(readVersion()),
-    new SessionsRoute(deck),
-    new LaunchRoute(launcher),
-    new TicketRoute(tickets),
+    new SessionsRoute(parts.deck),
+    new LaunchRoute(parts.launcher),
+    new TicketRoute(parts.tickets),
+    new HooksRoute({
+      queue: parts.hooks,
+      // The two config dirs as data, so a hook can be attributed to the subscription whose
+      // directory its transcript lives under rather than to one it claims (SEC-FS-1).
+      paths: new SubscriptionPaths({
+        '365': parts.install.configDirFor('365'),
+        isg: parts.install.configDirFor('isg'),
+      }),
+      limiter: parts.limiter,
+      logger: parts.logger,
+    }),
   ]);
 }
 

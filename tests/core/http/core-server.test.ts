@@ -13,8 +13,10 @@ import { ConsoleLogger } from '../../../core/adapters/console-logger.ts';
 import { CoreServer } from '../../../core/http/core-server.ts';
 import { HealthRoute } from '../../../core/http/health-route.ts';
 import { LoopbackGuard } from '../../../core/http/loopback-guard.ts';
+import { RateLimiter } from '../../../core/http/rate-limiter.ts';
 import { RequestRouter } from '../../../core/http/request-router.ts';
 import type { Route, StreamRoute } from '../../../core/http/route.ts';
+import { SystemClock } from '../../../core/ports/clock.ts';
 
 const TOKEN = 'c'.repeat(64);
 const BODY_LIMIT = 1024;
@@ -76,6 +78,7 @@ describe('CoreServer', () => {
       guard: guardFor(0),
       router: new RequestRouter<Route>([]),
       streams: new RequestRouter<StreamRoute>([]),
+      limiter: new RateLimiter(new SystemClock()),
       logger: silent,
     });
     await probe.listen(EPHEMERAL);
@@ -87,6 +90,7 @@ describe('CoreServer', () => {
       guard: guardFor(port),
       router: new RequestRouter<Route>([new HealthRoute('9.9.9')]),
       streams: new RequestRouter<StreamRoute>([]),
+      limiter: new RateLimiter(new SystemClock()),
       logger: silent,
     });
     await server.listen(port);
@@ -159,6 +163,7 @@ describe('CoreServer', () => {
       guard: guardFor(port),
       router: new RequestRouter<Route>([]),
       streams: new RequestRouter<StreamRoute>([]),
+      limiter: new RateLimiter(new SystemClock()),
       logger: silent,
     });
 

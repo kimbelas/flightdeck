@@ -21,6 +21,9 @@ async function start(): Promise<void> {
 
   // Only now: a core that could not bind has nothing to reconcile for (core/main.ts).
   core.reconciler.start();
+  // Before anything else can be the first request: SEC-ING-2's 5 ms budget is missed by the first
+  // one after boot and by no other (RESEARCH.md F.1.4), and a hook is a bad thing to be first.
+  await core.warmUp();
 
   console.log(`flightdeck-core listening on 127.0.0.1:${String(CORE_PORT)}`);
   console.log(`token: ${core.tokenPath}`);

@@ -9,6 +9,7 @@
 // never touches the socket: it is handed an `EventStream`, which is the only thing that writes, and
 // the header block is that class's, not the route's. The structural guarantee is unchanged; what
 // changes is which class holds it.
+import type { RouteLimit } from './limits.ts';
 import type { RequestFacts } from './loopback-guard.ts';
 
 export interface JsonResponse {
@@ -23,6 +24,9 @@ export interface Routable {
 }
 
 export interface Route extends Routable {
+  /** Which body cap and rate budget it spends — the table is in limits.ts (SEC-HTTP-4, -6). */
+  readonly limit: RouteLimit;
+
   /** @throws never — a route that cannot answer returns a status, so one bad request is not a 500. */
   handle(request: RequestFacts, body: string): Promise<JsonResponse> | JsonResponse;
 }
