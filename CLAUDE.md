@@ -19,6 +19,13 @@ A control tower for every Claude Code session on this machine, across both subsc
 Work is tracked in `ROADMAP.yaml`, not in chat. A task's `status` is updated in the same PR that
 finishes it.
 
+## Skills
+
+Three procedures live in `.claude/skills/`, loaded on demand rather than read every session:
+`run` (launching and verifying the app — it overrides the built-in fallback that would reach for
+`npm run dev`), `ship` (branch, gate, roadmap update, commit, PR) and `capture` (the raw → scrubbed
+fixture pipeline). The rules below are the summary; the skills are the procedure.
+
 ## Rules that are easy to get wrong
 
 - **Run it with `flightdeck.cmd`, not `npm run dev`.** Dev mode renders the deck and never
