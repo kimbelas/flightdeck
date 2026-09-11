@@ -1131,8 +1131,9 @@ Every fixture was regenerated from `fixtures/raw/` and the diff is confined to t
 
 ## G. Slice results (measured on this machine, 2026-09-11, binary 2.1.268)
 
-Measured while building the D30 terminal slice. Both were found by running the thing, not by
-reading, and both had already shipped past a green unit suite.
+Measured while building the D30 terminal slice, and extended by P1-T9. Every one of these was found
+by running the thing rather than by reading it, and most had already shipped past a green unit
+suite.
 
 ### G.1 `claude attach` takes the SHORT id. The full uuid fails. — **the slice's worst bug**
 
@@ -1289,3 +1290,68 @@ fails the start instead of quietly exposing the deck again.
 
 **Worth generalising:** the security model was verified end to end on core's port and assumed on
 the deck's. A control that is only asserted on one of two processes is asserted on neither.
+
+### G.7 `next.config` headers REPLACE a route handler's own — and took `no-transform` with them
+
+Found by running P1-T9, not by reading it, and it is a quiet undoing of the decision D27 was made
+for. The deck's stream route sets `Cache-Control: no-store, no-transform` on its own response
+(RESEARCH.md F.6.3: `no-transform` is the only server-side lever that stops Next gzipping an event
+stream into one chunk at the end). `next.config.ts` also stamps a `SECURITY_HEADERS` block —
+including `Cache-Control: no-store` — onto every path that is not under `_next`. What arrives is:
+
+```
+cache-control: no-store               <- the config's, not the route's
+content-type: text/event-stream; charset=utf-8
+```
+
+The config wins. Not merged, not appended — the route's value is gone, and with it the mitigation
+whose entire argument in D27 was that it must live in the same file as the request that needs it.
+
+**It was not batching, which is the part worth naming.** Both `curl` and a browser `Accept-Encoding`
+streamed unbuffered anyway, so nothing was visibly broken and nothing would have been until some
+Next release started compressing this response — at which point the deck would have looked like a
+slow reconciler and been debugged in core, in the other process. That is F.6.3's silent failure,
+re-armed by a file nobody thought was about streaming.
+
+**Fix:** `source: '/((?!_next|api/).*)'`. Nothing under `api/` is a document: `/api/core/*` is
+answered by core, which puts `no-store` and `nosniff` on every response itself (`CoreServer`), and
+`/api/stream` sets its own. Verified after the change — `cache-control: no-store, no-transform`
+survives on the stream and `/deck` keeps the full header set and its CSP.
+
+**Worth generalising:** a header a route sets is not a header a route has. Next's `headers()` is a
+second writer on the same response, and P1-T6 and P1-T5 will add route handlers with their own
+cache and content-type needs. Assert the header on the wire, not in the file that sets it.
+
+### G.8 The deck goes blank for ~1.2 s after core restarts, and that is the honest answer
+
+The reconnect drill: kill core with the deck open, restart it, watch the page. The deck reports
+`core down`, keeps the last rows it was told about, reconnects on its own within one retry, and is
+`live` again with no page reload. But the snapshot it replays on that first reconnect is **empty**
+— core has bound its port and has not finished a sweep — so the list clears, and the rows arrive
+**1171 ms later** as `session.upsert` deltas from that first sweep.
+
+That window is B.2's ~763 ms per config dir, swept concurrently, and it is left alone deliberately:
+the snapshot is what core knows, and a deck that kept showing rows through it would be inventing
+continuity core cannot vouch for. It is also the end-to-end proof that the delta path works — nine
+rows appeared in a real browser, from a real sweep, with nothing asked of the page.
+
+### G.9 `server.close()` cannot be rescued by closing a stream afterwards
+
+Probed while wiring P1-T9's shutdown, because "does core still exit on Ctrl+C with a deck open?"
+is not a question a unit suite answers by itself. `http.Server.close()` waits for open connections
+to end, and an SSE response never does on its own — so far, expected. What was not expected is that
+the order is **not interchangeable**:
+
+| Order | Result |
+|---|---|
+| close the streams, then `server.close()` | resolves in **4 ms** |
+| `server.close()`, then close the streams | never resolves; only the client going away frees it |
+
+Node reaps idle connections once, inside `close()`, and clears the interval that would reap them
+later. A stream that ends after that point leaves a keep-alive socket that nothing is left to
+collect, so the server sits at one connection forever.
+
+`core/main.ts` `stopCore` therefore closes the streams second — after the reconciler's timers and
+before everything else — and both halves are pinned by tests in `core-server-stream.test.ts`. The
+failure mode this avoids is core surviving Ctrl+C for as long as one deck tab is open, which is
+indistinguishable from a hung process and is fixed by the wrong thing (a `taskkill`) every time.

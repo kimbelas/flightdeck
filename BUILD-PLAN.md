@@ -141,7 +141,7 @@ All mutating routes and `/pty` require `Authorization: Bearer <token>`. All rout
 |---|---|
 | `POST /hooks` | Claude Code `http` hook target. Body = hook JSON (R §D.2). Replies `200 {}` in < 5 ms, work is queued. |
 | `POST /statusline` | statusline.py heartbeat. Body = the statusLine stdin JSON. Same fast-ack rule. |
-| `GET /stream` | SSE: `session.upsert`, `session.gone`, `quota`, `event`, `pty.*`. Replays current state on connect. |
+| `GET /stream` | SSE. **Built (P1-T9):** `snapshot` on connect (every row plus the unreadable subscriptions), then `session.upsert` / `session.gone`. To come: `quota` (P1-T6), `event` (P1-T5, which decides what of a hook payload is safe to show — SEC-UI-2) and `pty.*`. |
 | `GET /sessions` · `GET /sessions/:id` · `GET /sessions/:id/events?since=` | merged view of both subscriptions |
 | `GET /sessions/:id/tail` | SSE of parsed transcript records from the stored offset (enrichment view) |
 | `POST /sessions/:id/stop` · `/rm` · `/respawn` · `/resume` · `/rename` | wrappers over the CLI, per subscription (`$CFG` set on the child) |

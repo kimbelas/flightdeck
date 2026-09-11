@@ -1,6 +1,8 @@
 // The server over a real socket. LoopbackGuard's refusals are table-tested in its own file; this
 // pins the wiring — that the screen is actually applied, and that every reply looks the same.
 //
+// The stream half lives in core-server-stream.test.ts — same server, different contract.
+//
 // `node:http` rather than `fetch`: undici refuses to let a caller set `Host`, and forging `Host`
 // is precisely the attack SEC-HTTP-1 answers. A test that cannot send the hostile header cannot
 // prove the refusal.
@@ -12,6 +14,7 @@ import { CoreServer } from '../../../core/http/core-server.ts';
 import { HealthRoute } from '../../../core/http/health-route.ts';
 import { LoopbackGuard } from '../../../core/http/loopback-guard.ts';
 import { RequestRouter } from '../../../core/http/request-router.ts';
+import type { Route, StreamRoute } from '../../../core/http/route.ts';
 
 const TOKEN = 'c'.repeat(64);
 const BODY_LIMIT = 1024;
@@ -69,13 +72,23 @@ describe('CoreServer', () => {
   beforeAll(async () => {
     // The guard matches on host:port, so the real port has to be known before it is built. A
     // permissive stand-in here would test a screen that never ships.
-    const probe = new CoreServer(guardFor(0), new RequestRouter([]), silent);
+    const probe = new CoreServer({
+      guard: guardFor(0),
+      router: new RequestRouter<Route>([]),
+      streams: new RequestRouter<StreamRoute>([]),
+      logger: silent,
+    });
     await probe.listen(EPHEMERAL);
     const address = probe.raw.address();
     port = typeof address === 'object' && address !== null ? address.port : 0;
     await probe.close();
 
-    server = new CoreServer(guardFor(port), new RequestRouter([new HealthRoute('9.9.9')]), silent);
+    server = new CoreServer({
+      guard: guardFor(port),
+      router: new RequestRouter<Route>([new HealthRoute('9.9.9')]),
+      streams: new RequestRouter<StreamRoute>([]),
+      logger: silent,
+    });
     await server.listen(port);
   });
 
@@ -142,7 +155,12 @@ describe('CoreServer', () => {
   });
 
   it('refuses to bind a port that is already taken, rather than choosing another', async () => {
-    const second = new CoreServer(guardFor(port), new RequestRouter([]), silent);
+    const second = new CoreServer({
+      guard: guardFor(port),
+      router: new RequestRouter<Route>([]),
+      streams: new RequestRouter<StreamRoute>([]),
+      logger: silent,
+    });
 
     await expect(second.listen(port)).rejects.toThrow(/EADDRINUSE/);
   });

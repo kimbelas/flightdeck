@@ -18,11 +18,22 @@ import { readCoreToken } from './contracts/core-token.ts';
 /** Everything under here is forwarded to core by the rewrite in next.config.ts. */
 const CORE_PREFIX = '/api/core/';
 
+/** Everything under here is answered by a route handler in the deck — today, `/api/stream`. */
+const API_PREFIX = '/api/';
+
 export function proxy(request: NextRequest): NextResponse {
   const headers = new Headers(request.headers);
+  const { pathname } = request.nextUrl;
 
-  if (request.nextUrl.pathname.startsWith(CORE_PREFIX)) {
+  if (pathname.startsWith(CORE_PREFIX)) {
     return forwardToCore(headers);
+  }
+  // Not a document, so neither a nonce nor a CSP: a policy on an event stream protects nothing, and
+  // P0-T8 measured that a response header set here is forwarded to core as a REQUEST header
+  // (RESEARCH.md F.6.6). Harmless for a CSP, not harmless as a habit — so the habit is that only
+  // documents get one.
+  if (pathname.startsWith(API_PREFIX)) {
+    return NextResponse.next();
   }
 
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64');

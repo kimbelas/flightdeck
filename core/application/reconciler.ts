@@ -19,7 +19,11 @@
 //     stopped and retired sessions entirely (F.2.2), which would make every `claude stop` look
 //     like an `rm`. The source passes `--all`; this is the class that would be wrong without it.
 import type { DraftEvent } from '../../contracts/fd-event.ts';
-import type { SessionRow } from '../../contracts/session-row.ts';
+import {
+  byAttentionThenAge,
+  type DeckSnapshot,
+  type SessionRow,
+} from '../../contracts/session-row.ts';
 import { SUBSCRIPTION_IDS, type SubscriptionId } from '../../contracts/session.ts';
 import type { Cancellation } from '../ports/cancellation.ts';
 import type { Clock } from '../ports/clock.ts';
@@ -45,7 +49,7 @@ const NUDGE_DEBOUNCE_MS = 200;
  */
 const SWEEPS_BEFORE_GONE = 2;
 
-/** What the reconciler says happened. P1-T9 fans these out; the store keeps them. */
+/** What the reconciler says happened. `SessionStreamRoute` fans these out; the store keeps them. */
 export type ReconcileEventType = 'seen' | 'changed' | 'gone';
 
 export interface ReconcilerParts {
@@ -92,6 +96,25 @@ export class Reconciler {
   /** Subscriptions whose last sweep failed. Not the same as a subscription with no sessions. */
   public get unreadable(): readonly SubscriptionId[] {
     return [...this.unreadableSubscriptions];
+  }
+
+  /**
+   * What core knows right now, in the deck's shape — the replay `GET /stream` opens with (P1-T9).
+   *
+   * Free, and that is the point: it reads the map the sweeps already fill, so a browser connecting
+   * costs no `claude.exe` call and cannot disagree with the events that follow it. `DeckQuery`
+   * answers the same question by sweeping, which is the right answer for `GET /sessions` and the
+   * wrong one for a connect — 1.5 s per subscriber, and a second opinion about what is live.
+   *
+   * `takenAt` is when this was asked, not when it was last swept: the deck uses it to order, never
+   * to claim freshness.
+   */
+  public snapshot(): DeckSnapshot {
+    return {
+      rows: [...this.known.values()].sort(byAttentionThenAge),
+      unreadable: this.unreadable,
+      takenAt: this.clock.now().getTime(),
+    };
   }
 
   /**

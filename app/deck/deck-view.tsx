@@ -7,8 +7,12 @@
 // component's — which panes are open, and what time it is for the "started 4m ago" column. The
 // PTY credential is not among them any more: each pane mints its own ticket when it connects
 // (DECISIONS.md D32), so there is nothing page-wide to hold.
+//
+// The rows arrive on their own since P1-T9: the store subscribes to core's stream, so nothing here
+// fetches, polls or re-renders on a timer to stay current.
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type JSX } from 'react';
 import type { PtyTarget } from '../../contracts/pty-protocol.ts';
+import { BrowserStreamTransport } from './browser-stream-transport.ts';
 import { DeckBanners } from './deck-banners.tsx';
 import { DeckHeader } from './deck-header.tsx';
 import { DeckStore } from './deck-store.ts';
@@ -27,9 +31,9 @@ const AGE_TICK_MS = 10_000;
 const SHELL_PANE: OpenPane = { key: 'shell', title: 'shell', target: { kind: 'shell' } };
 
 export function DeckView(): JSX.Element {
-  const store = useMemo(() => new DeckStore(), []);
+  const store = useMemo(() => new DeckStore(new BrowserStreamTransport()), []);
   const state = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot);
-  useFirstSweep(store);
+  useLiveStream(store);
   const { panes, openPane, closePane } = useOpenPanes();
   const now = useTickingClock();
 
@@ -66,10 +70,19 @@ export function DeckView(): JSX.Element {
   );
 }
 
-/** The first read, once, on mount. Nothing else is fetched page-wide — see the header. */
-function useFirstSweep(store: DeckStore): void {
+/**
+ * The stream, open for as long as the deck is mounted — P1-T9.
+ *
+ * The cleanup is not a formality: without it StrictMode's second mount in development leaves the
+ * first connection open, and core would hold a subscription and a heartbeat for a page that no
+ * longer exists. `connect` and `disconnect` are both idempotent for the same reason.
+ */
+function useLiveStream(store: DeckStore): void {
   useEffect(() => {
-    void store.refresh();
+    store.connect();
+    return () => {
+      store.disconnect();
+    };
   }, [store]);
 }
 

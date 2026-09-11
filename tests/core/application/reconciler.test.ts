@@ -287,3 +287,56 @@ describe('Reconciler — what it knows', () => {
     expect(reconciler.sessions[0]?.attachable).toBe(false);
   });
 });
+
+describe('Reconciler — the snapshot the stream replays (P1-T9)', () => {
+  it('is empty before the first sweep, rather than a guess', () => {
+    const { reconciler } = rig();
+
+    expect(reconciler.snapshot().rows).toEqual([]);
+    expect(reconciler.snapshot().unreadable).toEqual([]);
+  });
+
+  it('holds every session the sweeps found, in the deck’s order', async () => {
+    const { reconciler, source } = rig();
+    source.willReturn('365', [
+      session({ id: 'aaaaaaaa', runState: 'working' }, '365'),
+      session({ id: 'bbbbbbbb', runState: 'blocked' }, '365'),
+    ]);
+    await reconciler.reconcile();
+
+    // Attention first — the same comparator the deck and DeckQuery use (contracts/session-row.ts).
+    expect(reconciler.snapshot().rows.map((row) => row.shortId)).toEqual(['bbbbbbbb', 'aaaaaaaa']);
+  });
+
+  it('names the subscription it could not read, which no event ever does', async () => {
+    const { reconciler, source } = rig();
+    source.willFail('isg');
+    await reconciler.reconcile();
+
+    expect(reconciler.snapshot().unreadable).toEqual(['isg']);
+  });
+
+  it('drops a session that has gone, so a reconnecting deck does not resurrect it', async () => {
+    const { reconciler, source } = rig();
+    source.willReturn('365', [session({ id: 'aaaaaaaa' }, '365')]);
+    await reconciler.reconcile();
+
+    source.willReturn('365', []);
+    await reconciler.reconcile();
+    await reconciler.reconcile();
+
+    expect(reconciler.snapshot().rows).toEqual([]);
+  });
+
+  it('costs no sweep, which is what makes a replay free', async () => {
+    const { reconciler, source } = rig();
+    source.willReturn('365', [session({ id: 'aaaaaaaa' }, '365')]);
+    await reconciler.reconcile();
+    const sweeps = source.swept.length;
+
+    reconciler.snapshot();
+    reconciler.snapshot();
+
+    expect(source.swept).toHaveLength(sweeps);
+  });
+});

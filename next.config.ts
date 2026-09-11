@@ -34,7 +34,14 @@ const nextConfig: NextConfig = {
     // Not `/:path*`: that stamps these onto `_next/hmr` too, and adding response headers to a
     // WebSocket upgrade breaks the handshake — the browser reports ERR_INVALID_HTTP_RESPONSE and
     // the dev page never hydrates (RESEARCH.md G.3). Nothing under `_next` is a document.
-    return Promise.resolve([{ source: '/((?!_next).*)', headers: SECURITY_HEADERS }]);
+    //
+    // `api/` is excluded for a sharper reason, found by running P1-T9 rather than by reading it:
+    // these headers REPLACE a route handler's own, and `Cache-Control: no-store` here silently
+    // overwrote the stream's `no-store, no-transform` — the one header that stops Next gzipping an
+    // event stream into a single chunk at the end (RESEARCH.md F.6.3, DECISIONS.md D27). Nothing
+    // under `api/` is a document either: `/api/core/*` is answered by core, which sets its own
+    // `no-store` and `nosniff` on every response, and `/api/stream` sets its own.
+    return Promise.resolve([{ source: '/((?!_next|api/).*)', headers: SECURITY_HEADERS }]);
   },
   // The only route from the browser to core. Server-to-server, so no CORS is involved and the
   // token never reaches the page (RESEARCH.md F.4.2, SEC-HTTP-5).
