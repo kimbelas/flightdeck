@@ -18,7 +18,11 @@ REM
 
 
 
-REM Core drops its token file on the way out, so nothing that learned it stays valid.
+REM Core drops its token file on a CLEAN shutdown -- but this script is taskkill /F, which runs
+
+REM no handler, so it drops the token itself. A token left behind with nothing listening costs
+
+REM every statusline render 51 ms instead of 0.10 ms (RESEARCH.md F.3.3).
 
 
 
@@ -82,6 +86,9 @@ for %%P in (4950 4949) do (
 
 
 
+node "%~dp0scripts\drop-token.ts" >nul 2>&1
+if exist "%LOCALAPPDATA%\flightdeck\token" (echo   -        token file could not be removed) else (echo   dropped  the core token)
+
 echo.
 
 

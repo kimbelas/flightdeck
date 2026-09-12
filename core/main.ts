@@ -10,10 +10,12 @@ import { CORE_PORT, LOOPBACK_ADDRESS, UI_ORIGIN } from '../contracts/origins.ts'
 import { DeckQuery } from './application/deck-query.ts';
 import { EventHub } from './application/event-hub.ts';
 import { HookQueue } from './application/hook-queue.ts';
+import { StatuslineQueue } from './application/statusline-queue.ts';
 import { PaneRegistry } from './application/pane-registry.ts';
 import { Reconciler } from './application/reconciler.ts';
 import { SessionLauncher } from './application/session-launcher.ts';
 import { SubscriptionPaths } from './application/subscription-paths.ts';
+import { VitalsRegistry } from './application/vitals-registry.ts';
 import { TicketOffice } from './application/ticket-office.ts';
 import { TokenIssuer } from './application/token-issuer.ts';
 import { ClaudeCliSessionSource } from './adapters/claude-cli/claude-cli-session-source.ts';
@@ -39,6 +41,7 @@ import { RequestRouter } from './http/request-router.ts';
 import type { Route, StreamRoute } from './http/route.ts';
 import { SessionStreamRoute } from './http/session-stream-route.ts';
 import { SessionsRoute } from './http/sessions-route.ts';
+import { StatuslineRoute } from './http/statusline-route.ts';
 import { TicketRoute } from './http/ticket-route.ts';
 import { SystemClock } from './ports/clock.ts';
 import type { Logger } from './ports/logger.ts';
@@ -51,6 +54,15 @@ export interface Core {
    * can reach. `scripts/flightdeck-core.ts` starts it once `listen` has succeeded.
    */
   readonly reconciler: Reconciler;
+  /**
+   * The newest vitals per session, from the statusLine receiver (P1-T6).
+   *
+   * Held in memory rather than in the store, because until P1-T8 there is no store and because
+   * vitals are the newest observation rather than a record of what happened — the same reasoning
+   * that keeps the live session set out of `Store` (BUILD-PLAN §3). `flightdeck-core status`
+   * (P1-T12) is what prints it; P2-T3 is what draws it.
+   */
+  readonly vitals: VitalsRegistry;
   readonly logger: Logger;
   readonly tokenPath: string;
   /** Where `claude.exe` was found, or `undefined` — panes on sessions need it, shells do not. */
@@ -82,15 +94,7 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
   const issuer = new TokenIssuer(tokenFile);
   const token = issuer.issue();
 
-  // One screen for every inbound connection, promoted from the P0-T7 probe unchanged.
-  const guard = new LoopbackGuard({
-    port: CORE_PORT,
-    uiOrigin: UI_ORIGIN,
-    token,
-    // The control cap. Core enforces the per-route caps itself (limits.ts) now that a hook may
-    // send 4 MB and a launch may not; this is here so the guard's own answer agrees with it.
-    bodyLimitBytes: BUDGETS.control.bodyBytes,
-  });
+  const guard = buildGuard(token);
   // One install, shared: the panes attach with the same config dir the listing was read with, or
   // the deck shows a session a pane cannot find.
   const install = new ClaudeInstall();
@@ -102,7 +106,8 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
   const deck = new DeckQuery(sessions, clock);
   const launcher = new SessionLauncher(install, runner, logger);
 
-  const { reconciler, stream, hooks } = buildFeeds(install, sessions, clock, logger);
+  const feeds = buildFeeds(install, sessions, clock, logger);
+  const { reconciler, stream } = feeds;
 
   // The tickets the PTY socket takes in its first frame, so the token never reaches the page (D32).
   const tickets = new TicketOffice(clock);
@@ -111,7 +116,7 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
   const limiter = new RateLimiter(clock);
   const server = new CoreServer({
     guard,
-    router: buildRouter({ deck, launcher, tickets, hooks, limiter, install, logger }),
+    router: buildRouter({ feeds, deck, launcher, tickets, limiter, install, logger }),
     streams: new RequestRouter<StreamRoute>([stream]),
     limiter,
     logger,
@@ -126,6 +131,7 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
   return {
     server,
     reconciler,
+    vitals: feeds.vitals,
     logger,
     tokenPath: tokenFile.location(),
     claudePath: install.executable,
@@ -207,11 +213,30 @@ async function stopCore(running: Running): Promise<void> {
   running.logger.info('core_stopped');
 }
 
+/**
+ * One screen for every inbound connection, promoted from the P0-T7 probe unchanged.
+ *
+ * The body limit here is the CONTROL cap. Core enforces the per-route caps itself (limits.ts) now
+ * that a hook may send 4 MB and a launch may not; this keeps the guard's own answer agreeing with
+ * what the server does.
+ */
+function buildGuard(token: string): LoopbackGuard {
+  return new LoopbackGuard({
+    port: CORE_PORT,
+    uiOrigin: UI_ORIGIN,
+    token,
+    bodyLimitBytes: BUDGETS.control.bodyBytes,
+  });
+}
+
 /** The event side: what notices things, what is told about them, and what hands them to a browser. */
 interface Feeds {
   readonly reconciler: Reconciler;
   readonly stream: SessionStreamRoute;
   readonly hooks: HookQueue;
+  readonly statusline: StatuslineQueue;
+  /** The newest vitals per session. `flightdeck-core status` (P1-T12) and P2-T3 read it. */
+  readonly vitals: VitalsRegistry;
 }
 
 /**
@@ -234,6 +259,7 @@ function buildFeeds(
   const scheduler = new NodeScheduler();
   const hub = new EventHub(logger);
   const sink = new FanOutEventSink([new LoggingEventSink(logger), hub]);
+  const vitals = new VitalsRegistry();
   const reconciler = new Reconciler({
     source: sessions,
     sink,
@@ -248,14 +274,19 @@ function buildFeeds(
     // A hook publishes into the same sink and then asks the reconciler to look — evidence that
     // something happened, never a claim about what is true now (D3, P1-T5).
     hooks: new HookQueue({ sink, trigger: reconciler, scheduler, clock, logger }),
+    // The statusLine posts on every render and asks for nothing: it records vitals and publishes
+    // only when they moved. No nudge — a sweep per repaint would be `agents --json` twice a
+    // second for news that is already in the payload (P1-T6).
+    statusline: new StatuslineQueue({ sink, registry: vitals, scheduler, clock, logger }),
+    vitals,
   };
 }
 
 interface RouterParts {
+  readonly feeds: Feeds;
   readonly deck: DeckQuery;
   readonly launcher: SessionLauncher;
   readonly tickets: TicketOffice;
-  readonly hooks: HookQueue;
   readonly limiter: RateLimiter;
   readonly install: ClaudeInstall;
   readonly logger: Logger;
@@ -269,17 +300,29 @@ function buildRouter(parts: RouterParts): RequestRouter<Route> {
     new LaunchRoute(parts.launcher),
     new TicketRoute(parts.tickets),
     new HooksRoute({
-      queue: parts.hooks,
-      // The two config dirs as data, so a hook can be attributed to the subscription whose
-      // directory its transcript lives under rather than to one it claims (SEC-FS-1).
-      paths: new SubscriptionPaths({
-        '365': parts.install.configDirFor('365'),
-        isg: parts.install.configDirFor('isg'),
-      }),
+      queue: parts.feeds.hooks,
+      paths: subscriptionPaths(parts.install),
+      limiter: parts.limiter,
+      logger: parts.logger,
+    }),
+    new StatuslineRoute({
+      queue: parts.feeds.statusline,
+      paths: subscriptionPaths(parts.install),
       limiter: parts.limiter,
       logger: parts.logger,
     }),
   ]);
+}
+
+/**
+ * The two config dirs as data, so an ingested payload is attributed to the subscription whose
+ * directory its transcript lives under rather than to one it claims (SEC-FS-1, SEC-ING-1).
+ */
+function subscriptionPaths(install: ClaudeInstall): SubscriptionPaths {
+  return new SubscriptionPaths({
+    '365': install.configDirFor('365'),
+    isg: install.configDirFor('isg'),
+  });
 }
 
 function readVersion(): string {

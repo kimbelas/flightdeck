@@ -555,19 +555,56 @@ phases:
           ]
         security: [SEC-ING-1, SEC-ING-2, SEC-HTTP-4, SEC-HTTP-6]
       - id: P1-T6
-        title: statusLine receiver — POST /statusline; patch ~/.claude/hooks/statusline.py to POST
-        status: todo
+        title: statusLine receiver — POST /statusline, vitals registry, token dropped on stop
+        status: done
+        done_on: 2026-09-12
         depends_on: [P0-T5]
         notes: >-
-          RESEARCH.md F.3. The block and its patcher already exist and are round-trip tested
-          (scripts/statusline-block.py, scripts/statusline-patch.ts) — this task wires them to a
-          real route and a real Connect. Two things F.3 obliges: core must DELETE the token file
-          on clean shutdown, not merely stop listening, because a stale token turns a dead core
-          from 0.10 ms into 51 ms on every render (F.3.3); and the payload parser must accept
-          null for used_percentage / remaining_percentage / current_usage and treat session_name,
-          prompt_id and the whole prompt_cache block as absent before the first turn (F.3.5).
-          If crashes leave stale tokens often, add a self-owned circuit breaker.
-        security: [SEC-ING-3]
+          RESEARCH.md F.3. Measured on a running core: **2.2–3.9 ms** per ack, and seven posts of
+          the two real captures produced **three** events — which is the whole design.
+          **A render is not news.** The block posts on every repaint, so `VitalsRegistry` holds the
+          last report and the queue publishes only when context, cost, model, name or either quota
+          percentage moved — the reconciler's `sameRow` idea, for the same reason. Without it the
+          log and, from P1-T8, the store would fill with hundreds of identical lines a minute per
+          session.
+          **It does not nudge the reconciler**, and that is the difference from a hook. A hook says
+          something happened to a session; a render says a status line was painted. A sweep per
+          repaint would be `agents --json` twice a second for news already in the payload.
+          **F.3.5's trap is held in the contract**: before the first turn the numbers are present
+          and NULL, so null and absent both become `undefined` and neither becomes `0`. The payload
+          is PROJECTED rather than mirrored — `prompt_cache` alone carries fourteen fields nobody
+          reads — and `resets_at` is converted from seconds to milliseconds once, at the boundary.
+          `IngestQueue` was extracted from `HookQueue` because a second caller appeared: the parts
+          worth not copying are the subtle ones — drop the newest, one timer per batch, and a drain
+          that cannot throw from a timer callback (G.10).
+          **F.3.3, checked rather than assumed (RESEARCH.md G.12).** Core does delete the token on
+          a clean shutdown and has since P5a-T1 — but `flightdeck-stop.cmd` is `taskkill /F`, which
+          runs no handler, so the normal way this project stops left the token behind and taxed
+          every render on the machine 51 ms instead of 0.10 ms. No in-process fix covers a forced
+          kill, so the stop script now drops it (`scripts/drop-token.ts`, reading the path from
+          contracts/core-token.ts). A crash still leaves one; F.3.3's circuit breaker stays on the
+          table and is not built.
+          **Not done here: the statusline.py patch itself.** The patcher was dry-run against the
+          real 506-line CRLF file — both anchors found, +74 lines in two marked regions, and
+          `remove(apply(x)) === x` byte for byte — so the evidence that it still fits is in the PR.
+          Writing it is Connect's (P1-T11), which is where the owner already moved the hook
+          install and which owns the backup and dry-run procedure. Nothing posts to this route
+          until then.
+        deliverables:
+          [
+            contracts/statusline-report.ts,
+            core/application/statusline-queue.ts,
+            core/application/vitals-registry.ts,
+            core/application/ingest-queue.ts,
+            core/http/statusline-route.ts,
+            scripts/drop-token.ts,
+            tests/contracts/statusline-report.test.ts,
+            tests/core/application/statusline-queue.test.ts,
+            tests/core/application/vitals-registry.test.ts,
+            tests/core/http/statusline-route.test.ts,
+            tests/scripts/drop-token.test.ts,
+          ]
+        security: [SEC-ING-3, SEC-HTTP-6]
       - id: P1-T7
         title: Transcript tail — byte offset, partial-line buffer, truncation detection; record parsers behind scrubbed fixtures; unknown shapes never throw
         status: todo
@@ -673,8 +710,13 @@ phases:
         notes: >-
           Refuse to install unless core is installed and running — RESEARCH.md F.1.5, hooks against
           a dead receiver put an error banner in every interactive session.
-          **This task now also carries F.1.1's probe**, moved here from P1-T5 by the owner on
-          2026-09-11: `SessionStart` is never delivered over `http` at all, and `SessionEnd`,
+          **This task carries the two installs and F.1.1's probe.** P1-T5's receiver and P1-T6's are
+          both built and neither is connected to anything: Connect is what writes the hooks block
+          into `$CFG/settings.json` and merges the statusLine block into `~/.claude/hooks/statusline.py`.
+          The statusLine patcher was dry-run against the real file on 2026-09-12 — both anchors
+          found, +74 lines, reversible byte for byte — so what is left is the write, its backup and
+          the refusal path when an anchor has moved (F.3.7).
+          **The probe**, moved here from P1-T5 by the owner on 2026-09-11: `SessionStart` is never delivered over `http` at all, and `SessionEnd`,
           `UserPromptSubmit`, `Notification`, `PreCompact`, `SubagentStop` and the tool hooks are
           unprobed. Assume nothing — install them one at a time against the real receiver and
           capture what arrives, because a handler that never fires is indistinguishable from a

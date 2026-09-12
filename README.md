@@ -7,7 +7,7 @@ session to a pane in the browser that you can type into.
 
 ```
 flightdeck.cmd          # core + the deck + an Edge app window
-flightdeck-stop.cmd     # stop both (the sessions they were attached to keep running)
+flightdeck-stop.cmd     # stop both, and drop the token (the sessions they were attached to keep running)
 ```
 
 **The deck updates itself.** Core reconciles both subscriptions every 10 s (P1-T4) and publishes
@@ -16,16 +16,20 @@ frame, and takes deltas after that. Nothing polls, and `refresh` is now a delibe
 rather than the only way to find out. Core restarting is handled without a reload — the deck says
 `core down`, reconnects on its own, and comes back with a fresh replay.
 
-**Hooks are received but not yet installed.** `POST /hooks` is built (P1-T5) — it acks in about
-2 ms, records what arrived, and asks the reconciler to sweep, so a session that goes blocked shows
-up in about a second rather than in up to ten. Nothing points a hook at it yet: installing the
-handlers into `settings.json` is Connect (P1-T11), and hooks pointed at a receiver that is down put
-an error banner in every interactive session, so that step refuses to run unless core is up.
+**Both receivers are built; neither is connected yet.** `POST /hooks` (P1-T5) acks in about 2 ms
+and asks the reconciler to sweep, so a session that goes blocked shows up in about a second rather
+than in up to ten. `POST /statusline` (P1-T6) keeps the newest context percentage, cost and 5h/7d
+quota for each session, and publishes only when one of them actually moves — the status line posts
+on every repaint and almost none of those carry news.
 
-**What it does not do yet.** No quota gauges, no projects map, no search. The statusLine receiver
-(P1-T6) is not built, so there is no context percentage or quota anywhere. One banner is still as
-old as your connection: a subscription core could not read publishes no event, so `refresh` is what
-updates it.
+Nothing points at either of them yet. Installing the hook handlers into `settings.json` and merging
+the statusLine block into `~/.claude/hooks/statusline.py` is Connect (P1-T11) — hooks pointed at a
+receiver that is down put an error banner in every interactive session, so that step refuses to run
+unless core is up.
+
+**What it does not do yet.** No quota gauges on the deck, no projects map, no search — the vitals
+are collected but nothing draws them until P2-T3. One banner is still as old as your connection: a
+subscription core could not read publishes no event, so `refresh` is what updates it.
 
 **Only background sessions can be attached.** `claude attach` takes background sessions only, so
 an interactive session — one you started in a terminal yourself — shows on the deck read-only,
