@@ -6,6 +6,7 @@
 // accepts the shape; one that treats "no value" as "key missing" rejects a real payload, and one
 // that defaults null to 0 paints a 0 % context bar on every new session.
 import { describe, expect, it } from 'vitest';
+import { parseStatuslineReport } from '../../contracts/statusline-report.ts';
 import fresh from '../../fixtures/statusline/fresh.json' with { type: 'json' };
 import warm from '../../fixtures/statusline/warm.json' with { type: 'json' };
 
@@ -52,5 +53,37 @@ describe('statusLine payload', () => {
     expect(warm.scratchpad_dir).toBeTypeOf('string');
     expect(warm.output_style.name).toBeTypeOf('string');
     expect(warm.thinking.enabled).toBeTypeOf('boolean');
+  });
+});
+
+describe('the captured payloads through the real parser (P1-T6)', () => {
+  it('accepts both shapes', () => {
+    expect(parseStatuslineReport(fresh)).toBeDefined();
+    expect(parseStatuslineReport(warm)).toBeDefined();
+  });
+
+  it('reads the fresh capture as no context usage rather than as none used', () => {
+    const report = parseStatuslineReport(fresh);
+
+    expect(report?.usedPercentage).toBeUndefined();
+    expect(report?.contextWindowSize).toBe(200_000);
+  });
+
+  it('reads the warm capture as a real percentage and a real cost', () => {
+    const report = parseStatuslineReport(warm);
+
+    expect(report?.usedPercentage).toBe(20);
+    expect(report?.costUsd).toBeGreaterThan(0);
+    expect(report?.sessionName).toBe(warm.session_name);
+  });
+
+  it('gets both quota windows off either capture, in milliseconds', () => {
+    for (const capture of [fresh, warm]) {
+      const report = parseStatuslineReport(capture);
+
+      expect(report?.fiveHour.usedPercentage).toBe(capture.rate_limits.five_hour.used_percentage);
+      expect(report?.fiveHour.resetsAt).toBe(capture.rate_limits.five_hour.resets_at * 1000);
+      expect(report?.sevenDay.resetsAt).toBe(capture.rate_limits.seven_day.resets_at * 1000);
+    }
   });
 });
