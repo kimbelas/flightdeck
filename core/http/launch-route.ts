@@ -4,7 +4,7 @@
 // a prompt, which is user text on its way to a process, so it is validated for shape and length
 // here and passed as an argv element by SessionLauncher — never interpolated (SEC-PROC-1).
 import { SUBSCRIPTION_IDS, type SubscriptionId } from '../../contracts/session.ts';
-import type { RequestFacts } from './loopback-guard.ts';
+import type { Credential, RequestFacts } from './loopback-guard.ts';
 import type { LaunchRequest, SessionLauncher } from '../application/session-launcher.ts';
 import type { RouteLimit } from './limits.ts';
 import { json, type JsonResponse, type Route } from './route.ts';
@@ -13,6 +13,8 @@ export class LaunchRoute implements Route {
   public readonly method = 'POST';
   public readonly path = '/sessions';
   public readonly limit: RouteLimit = 'control';
+
+  public readonly credential: Credential = 'token';
   private readonly launcher: SessionLauncher;
 
   constructor(launcher: SessionLauncher) {

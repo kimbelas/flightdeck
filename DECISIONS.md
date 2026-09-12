@@ -655,3 +655,50 @@ flight. The grid lost its page-wide "no core token" banner; each pane reports it
 instead, which is more honest anyway. Roughly 120 lines, mostly tests: the first frame now has a
 suite of its own (`tests/core/http/pty-socket-auth.test.ts`), including the regression that the
 per-boot token presented as a ticket closes 1008.
+
+## D33 — Hooks authenticate with a stable ingest key, not the per-boot token (decided 2026-09-12, P1-T11)
+
+**Question.** P1-T11's open question was whether the http handler's `allowedEnvVars` could supply
+the bearer token, so a per-boot secret (SEC-HTTP-3) would not have to be written literally into
+`settings.json`.
+
+**It can, and that turned out to be the smaller half of the question** (RESEARCH.md F.1.7).
+`"Authorization": "Bearer ${FLIGHTDECK_TOKEN}"` with `"allowedEnvVars": ["FLIGHTDECK_TOKEN"]`
+resolves; an undeclared name resolves to the empty string rather than being left alone. So the
+secret need never appear in a config file. But the value is read from the **session process's own
+environment**, which Windows fixes at process creation — so a session started before core restarts
+carries the previous boot's token and cannot be told otherwise.
+
+**And a stale bearer is not a silent degradation.** It is a `401`, which Claude Code renders as
+`Stop hook error occurred · ctrl+o to see` for every turn afterwards (F.1.5) — the exact banner
+this task refuses to install into, except caused by us and while core is running. Writing the token
+literally into `settings.json` has the identical failure plus a credential in a config file, so
+`allowedEnvVars` is strictly better and still not sufficient.
+
+**Decided: a second, narrower credential** — SEC-HTTP-7, a 256-bit ingest key created once per
+install, kept beside the token with the same ACL, never rotated on restart, and accepted on
+`POST /hooks` and nothing else. Three options were on the table:
+
+| | Never stale | New control | Cost |
+|---|---|---|---|
+| Per-boot token in the env var | no | none | a banner in every session older than core |
+| **Stable ingest key** | **yes** | **SEC-HTTP-7** | **a second secret to rotate** |
+| `command` hooks reading the token file | yes | none | a process spawn per tool call, every turn |
+
+**The principle, which is the part worth keeping: a secret a client cannot re-read must not rotate
+under it.** Control routes are driven by a person through the deck, which re-reads the token file
+per request; the statusLine block re-reads it per render (SEC-ING-3). Hooks are the one client that
+captures its credential at spawn and lives for hours. Per-boot is right for the first two and
+impossible for the third.
+
+**What the key is worth to someone who steals it:** posting fabricated hook events into the local
+log and the deck. It cannot launch a session, read `/sessions`, open a stream or mint a PTY ticket.
+It is no more exposed than the token file already is — any process running as the owner can read
+either — and it is not in `settings.json`, which is the file most likely to be pasted into a
+conversation.
+
+**Consequences.** `Rotate token` (SEC-OPS-2) rotates the ingest key as well, which costs every
+running session a restart — acceptable when a person asked for it, which is exactly why a core
+restart must not do it. Connect publishes the key as the `FLIGHTDECK_TOKEN` user environment
+variable and Disconnect withdraws it; terminals already open do not see it, which is a one-time
+cost because the key never changes.

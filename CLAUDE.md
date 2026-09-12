@@ -41,7 +41,11 @@ fixture pipeline). The rules below are the summary; the skills are the procedure
   design around, not a bug to fix.
 - **Never write to anything under `~/.claude*` without showing the diff first and backing the
   file up.** That is the owner's live config on both profiles; a bad write costs them working sessions.
-  `scripts/statusline-patch.ts` is the only sanctioned writer, and it is additive and reversible
+  `npm run connect` / `npm run disconnect` are the only sanctioned writers (P1-T11): dry run is the
+  default, `--apply` is the opt-in, every file is backed up `*.bak-<timestamp>` before an atomic
+  rename, and Disconnect restores byte for byte. Re-print JSON in the file's OWN line endings —
+  365 is LF and isg is CRLF, and `JSON.stringify` turns that into a whole-file rewrite (G.13).
+  The change is additive and reversible
   (SEC-ING-3 / SEC-OPS-2).
 - **Dependency bumps land as a set or not at all** — two Dependabot PRs green in isolation turned
   `main` red together. Check `main`'s CI after each merge.

@@ -20,7 +20,7 @@ import { parseHookPayload, parseJsonBody } from '../../contracts/hook-event.ts';
 import type { HookQueue } from '../application/hook-queue.ts';
 import type { SubscriptionPaths } from '../application/subscription-paths.ts';
 import type { Logger } from '../ports/logger.ts';
-import type { RequestFacts } from './loopback-guard.ts';
+import type { Credential, RequestFacts } from './loopback-guard.ts';
 import type { RateLimiter } from './rate-limiter.ts';
 import { BUDGETS, type RouteLimit } from './limits.ts';
 import { json, type JsonResponse, type Route } from './route.ts';
@@ -40,6 +40,15 @@ export class HooksRoute implements Route {
   public readonly path = '/hooks';
   /** Ingestion, so it gets the 4 MB body and the 600/min budget rather than the control ones. */
   public readonly limit: RouteLimit = 'ingest';
+
+  /**
+   * The one route that also takes the ingest key (SEC-HTTP-7, RESEARCH.md F.1.7).
+   *
+   * A session interpolates this header from the environment it was spawned with and can never
+   * refresh it, so the per-boot token would 401 every session that predates the current core —
+   * and a 401 here is `Stop hook error occurred` in front of the owner for every turn (F.1.5).
+   */
+  public readonly credential: Credential = 'token-or-ingest-key';
 
   private readonly queue: HookQueue;
   private readonly paths: SubscriptionPaths;

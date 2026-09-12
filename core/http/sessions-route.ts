@@ -5,12 +5,15 @@
 // so. The cost is a ~1.5 s round trip and a deck that does not update itself until asked.
 import type { DeckQuery } from '../application/deck-query.ts';
 import type { RouteLimit } from './limits.ts';
+import type { Credential } from './loopback-guard.ts';
 import { json, type JsonResponse, type Route } from './route.ts';
 
 export class SessionsRoute implements Route {
   public readonly method = 'GET';
   public readonly path = '/sessions';
   public readonly limit: RouteLimit = 'control';
+
+  public readonly credential: Credential = 'token';
   private readonly deck: DeckQuery;
 
   constructor(deck: DeckQuery) {

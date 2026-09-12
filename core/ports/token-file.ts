@@ -7,6 +7,15 @@ export interface TokenFile {
   /** Writes the token, replacing any previous one, with an ACL for the current user only. */
   write(token: string): void;
 
+  /**
+   * The secret on disk, or `undefined` if there is none.
+   *
+   * Added for the ingest key (SEC-HTTP-7), which is read-or-create rather than issued fresh: it
+   * must survive a core restart or it would be no better than the per-boot token it exists to
+   * complement (contracts/ingest-key.ts). The per-boot token never calls it.
+   */
+  read(): string | undefined;
+
   /** Removes it. Called on shutdown so a stale token never outlives the core that issued it. */
   remove(): void;
 

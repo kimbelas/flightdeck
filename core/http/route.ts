@@ -10,7 +10,7 @@
 // the header block is that class's, not the route's. The structural guarantee is unchanged; what
 // changes is which class holds it.
 import type { RouteLimit } from './limits.ts';
-import type { RequestFacts } from './loopback-guard.ts';
+import type { Credential, RequestFacts } from './loopback-guard.ts';
 
 export interface JsonResponse {
   readonly status: number;
@@ -26,6 +26,15 @@ export interface Routable {
 export interface Route extends Routable {
   /** Which body cap and rate budget it spends — the table is in limits.ts (SEC-HTTP-4, -6). */
   readonly limit: RouteLimit;
+
+  /**
+   * Which secrets authenticate it (SEC-HTTP-7). Declared, never defaulted.
+   *
+   * Same reasoning as `limit`: a new route has to answer the question rather than inherit
+   * whichever answer happened to be written first. Exactly one route says `token-or-ingest-key`,
+   * and the JSDoc on `Credential` says why it is the only one that may.
+   */
+  readonly credential: Credential;
 
   /** @throws never — a route that cannot answer returns a status, so one bad request is not a 500. */
   handle(request: RequestFacts, body: string): Promise<JsonResponse> | JsonResponse;

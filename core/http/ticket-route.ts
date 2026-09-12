@@ -10,7 +10,7 @@
 // socket (DECISIONS.md D32). The per-boot token stays on the server side of the rewrite.
 import { parseTargetPayload } from '../../contracts/pty-protocol.ts';
 import type { TicketOffice } from '../application/ticket-office.ts';
-import type { RequestFacts } from './loopback-guard.ts';
+import type { Credential, RequestFacts } from './loopback-guard.ts';
 import type { RouteLimit } from './limits.ts';
 import { json, type JsonResponse, type Route } from './route.ts';
 
@@ -18,6 +18,8 @@ export class TicketRoute implements Route {
   public readonly method = 'POST';
   public readonly path = '/pty-ticket';
   public readonly limit: RouteLimit = 'control';
+
+  public readonly credential: Credential = 'token';
   private readonly tickets: TicketOffice;
 
   constructor(tickets: TicketOffice) {

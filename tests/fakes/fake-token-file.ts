@@ -14,6 +14,10 @@ export class FakeTokenFile implements TokenFile {
     this.written = token;
   }
 
+  public read(): string | undefined {
+    return this.written;
+  }
+
   public remove(): void {
     this.removals += 1;
     this.written = undefined;

@@ -19,10 +19,26 @@
 // an Origin refusal from a Sec-Fetch-Site refusal, and the whole point of P0-T7 is to say which
 // control did the work (SECURITY.md §4: P0 is not done until SEC-HTTP-1..5 and SEC-WS-1 are
 // proven by this spike).
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
 export type ControlId =
-  'SEC-HTTP-1' | 'SEC-HTTP-2' | 'SEC-HTTP-3' | 'SEC-HTTP-4' | 'SEC-HTTP-5' | 'SEC-WS-1';
+  | 'SEC-HTTP-1'
+  | 'SEC-HTTP-2'
+  | 'SEC-HTTP-3'
+  | 'SEC-HTTP-4'
+  | 'SEC-HTTP-5'
+  | 'SEC-HTTP-7'
+  | 'SEC-WS-1';
+
+/**
+ * Which secrets a route accepts (SEC-HTTP-7).
+ *
+ * `token` is every route: the per-boot bearer, rotated on restart. `token-or-ingest-key` is
+ * `POST /hooks` alone, and it is not laxness — it is the only route whose client is a process
+ * that captured its credential at spawn and cannot re-read it (contracts/ingest-key.ts). The
+ * default is the strict one, and a route declares the loose one out loud.
+ */
+export type Credential = 'token' | 'token-or-ingest-key';
 
 export interface Rejection {
   readonly status: number;
@@ -35,6 +51,14 @@ export interface GuardOptions {
   /** The one origin a browser may carry. Anything else is a page in another tab. */
   readonly uiOrigin: string;
   readonly token: string;
+  /**
+   * SEC-HTTP-7. Stable across restarts, accepted on `POST /hooks` only.
+   *
+   * Optional so a guard built for a test, or for a core that could not write one, simply has no
+   * second credential — `undefined` is not "accept anything", it is "there is no ingest key", and
+   * `screenToken` treats it as a value nothing can present.
+   */
+  readonly ingestKey?: string | undefined;
   readonly bodyLimitBytes: number;
 }
 
@@ -71,14 +95,22 @@ export class LoopbackGuard {
     return Array.isArray(value) ? value[0] : value;
   }
 
-  /** An HTTP request to a mutating route. Order is deliberate — see `screenUpgrade`. */
-  public screenRequest(facts: RequestFacts): Rejection | undefined {
+  /**
+   * An HTTP request to a mutating route. Order is deliberate — see `screenUpgrade`.
+   *
+   * `credential` says which secrets this route takes, and it defaults to the strict one so a
+   * caller that forgot to pass it gets the tighter answer rather than the looser (SEC-HTTP-7).
+   */
+  public screenRequest(
+    facts: RequestFacts,
+    credential: Credential = 'token',
+  ): Rejection | undefined {
     return (
       this.screenHost(facts) ??
       this.screenContentType(facts) ??
       this.screenOrigin(facts) ??
       this.screenFetchSite(facts) ??
-      this.screenToken(facts)
+      this.screenToken(facts, credential)
     );
   }
 
@@ -101,7 +133,7 @@ export class LoopbackGuard {
       this.screenHost(facts) ??
       this.screenOrigin(facts) ??
       this.screenFetchSite(facts) ??
-      this.screenToken(facts)
+      this.screenToken(facts, 'token')
     );
   }
 
@@ -135,6 +167,17 @@ export class LoopbackGuard {
    */
   public isAuthorised(presentedToken: string): boolean {
     return timingSafeEqual(sha256(presentedToken), sha256(this.options.token));
+  }
+
+  /**
+   * The ingest key, compared the same way (SEC-HTTP-7).
+   *
+   * A core with no ingest key compares against a fresh random value rather than returning early,
+   * so "there is no key" costs the same time as "that is the wrong key" and cannot be told apart
+   * by a caller — the same reasoning that made `isAuthorised` hash first.
+   */
+  public isIngestAuthorised(presented: string): boolean {
+    return timingSafeEqual(sha256(presented), sha256(this.options.ingestKey ?? absentKey()));
   }
 
   public oversize(bytes: number): Rejection {
@@ -179,13 +222,31 @@ export class LoopbackGuard {
     return { status: 403, control: 'SEC-HTTP-5', reason: `sec-fetch-site ${site}` };
   }
 
-  private screenToken(facts: RequestFacts): Rejection | undefined {
+  /**
+   * Both comparisons always run on an ingest route, deliberately.
+   *
+   * Short-circuiting on the token would make a presented ingest key take measurably longer than a
+   * presented token, which leaks which of the two secrets a caller is guessing at.
+   */
+  private screenToken(facts: RequestFacts, credential: Credential): Rejection | undefined {
     const header = LoopbackGuard.header(facts, 'authorization') ?? '';
-    if (this.isAuthorised(header.replace(/^Bearer\s+/i, ''))) return undefined;
-    return { status: 401, control: 'SEC-HTTP-3', reason: 'bearer token absent or wrong' };
+    const presented = header.replace(/^Bearer\s+/i, '');
+    const byToken = this.isAuthorised(presented);
+    if (credential === 'token') {
+      if (byToken) return undefined;
+      return { status: 401, control: 'SEC-HTTP-3', reason: 'bearer token absent or wrong' };
+    }
+    const byKey = this.isIngestAuthorised(presented);
+    if (byToken || byKey) return undefined;
+    return { status: 401, control: 'SEC-HTTP-7', reason: 'neither token nor ingest key' };
   }
 }
 
 function sha256(value: string): Buffer {
   return createHash('sha256').update(value, 'utf8').digest();
+}
+
+/** A value no caller can present, so "no ingest key configured" is a mismatch, not a bypass. */
+function absentKey(): string {
+  return randomBytes(32).toString('hex');
 }

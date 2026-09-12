@@ -362,9 +362,9 @@ it contradicts the assumption behind D3 feed 1.
   fired normally. Adding `"matcher": "startup"` changed nothing.
 - So the event fires; the `http` transport does not carry it. **`SessionStart` must be collected
   by a `command` handler**, or inferred from the reconciler (D3 feed 3) and `fs.watch` (feed 5).
-- Not yet probed for the same defect: `SessionEnd`, `UserPromptSubmit`, `Notification`,
-  `PreCompact`/`PostCompact`, `SubagentStart`/`SubagentStop`. **Assume nothing** — P1-T5 must
-  verify each event it depends on over the transport it will actually use.
+- The rest were not probed here, and "assume nothing" was the right instruction: **F.1.6 probed
+  all of them in P1-T11** and found `SessionStart` to be the only event http drops. `SessionEnd`,
+  `UserPromptSubmit`, `Notification`, `PreCompact`, `SubagentStart` and `SubagentStop` all arrive.
 
 **F.1.2 Observed payloads.** Scrubbed into `fixtures/hooks/`. Fields beyond the §D.2 list:
 `stop_hook_active`, `last_assistant_message`, `background_tasks`, `session_crons` on `Stop`;
@@ -415,6 +415,87 @@ request waits out the 5 s timeout.
    health from session behaviour; it must probe the port itself.
 3. `Connect` (P1-T11) must not install hooks unless core is installed and running, and
    `Disconnect` is the documented fix when the banner appears (SECURITY.md §5.3).
+
+**F.1.6 Every event, over the transport it will actually use — P1-T11 (2026-09-12, Claude Code
+2.1.269).** F.1.1 left seven events unprobed and said "assume nothing". This is the answer.
+
+**Method.** Every event got **two** handlers at once: an `http` handler pointed at a recording
+receiver, and a `command` handler that appends a line to a file. The pairing is the whole design —
+a handler that never fires is indistinguishable from a quiet machine, so "the event did not
+happen" and "http did not carry it" are only told apart by something that fires on the other
+transport. Driven through `--settings`, so **neither config dir was written to**.
+
+| Event | `command` fired | `http` arrived | Verdict |
+|---|---|---|---|
+| `SessionStart` | 5 | **0** | **fires; http does not carry it** — F.1.1 still true on 2.1.269 |
+| `UserPromptSubmit` | 5 | 5 | http OK |
+| `Stop` | 5 | 5 | http OK |
+| `SessionEnd` | 4 | 4 | http OK |
+| `PreToolUse` | 3 | 3 | http OK |
+| `PostToolUse` | 3 | 3 | http OK |
+| `SubagentStart` | 1 | 1 | http OK |
+| `SubagentStop` | 1 | 1 | http OK |
+| `Notification` | 1 | 1 | http OK |
+| `PreCompact` | 1 | 1 | http OK |
+| `PostCompact` | 0 | 0 | **not reached** — compaction was declined, so neither transport was tested |
+
+- **`SessionStart` is the only defect, and it is unchanged.** Same result as 2.1.267 across five
+  sessions and three session kinds.
+- **`Notification` works**, which matters more than the rest put together: it is the "needs you"
+  signal and SPEC's whole question. It did not fire on a `-p` run that needed permission; it fired
+  on a `--bg` session left idle.
+- **`PreCompact` fires before the decision** — it arrived on a `/compact` that Claude Code then
+  refused with "Not enough messages to compact".
+- New field sets: `SubagentStart` carries `agent_id`, `agent_type`; `SubagentStop` adds
+  `agent_transcript_path` and `last_assistant_message` (model text — SEC-UI-2 applies as it does to
+  `Stop`); `SessionEnd` carries `reason`; `PostToolUse` carries `duration_ms` and `tool_response`.
+
+**What Connect writes, and the three deliberate absences** (contracts/connect-plan.ts):
+`UserPromptSubmit`, `Notification`, `Stop`, `SubagentStop`, `SessionEnd`.
+
+- **`SessionStart` is not installed even as a `command` handler.** http cannot carry it, and the
+  reconciler already learns of a new session from the 10 s sweep and `fs.watch` (D3 feeds 3 and 5).
+  A handler here would be a second mechanism to keep in agreement with the first, for news the
+  first already has — and it would cost a process spawn per session start.
+- **`PreToolUse` / `PostToolUse` are not installed.** They work and they fire per tool call rather
+  than per turn. Nothing in P1 or P2 reads them. Adding them later is one line; taking back a
+  per-tool-call POST from the owner's sessions is not.
+- **`PreCompact` / `SubagentStart` are not installed** — verified working, nothing reads them yet.
+
+**F.1.7 `allowedEnvVars` supplies the header, and that does not make a per-boot token usable.**
+P1-T11's open question, answered in two halves.
+
+*The mechanism works.* With `"headers": {"Authorization": "Bearer ${FLIGHTDECK_TOKEN}"}` and
+`"allowedEnvVars": ["FLIGHTDECK_TOKEN"]`, the receiver saw the resolved value.
+
+| Header written | Arrived as |
+|---|---|
+| `v=${FLIGHTDECK_TOKEN}` | `v=<the value>` |
+| `v=$FLIGHTDECK_TOKEN` | `v=<the value>` |
+| `v=$FLIGHTDECK_OTHER` (set, not declared) | `v=` — **the empty string, not the literal** |
+| `v=literal-control` | unchanged |
+
+- Both `${VAR}` and bare `$VAR` interpolate. An **undeclared** name becomes empty rather than being
+  left alone, so a typo in `allowedEnvVars` is a 401 rather than anything a reader would recognise.
+- The per-hook list alone is enough. `FLIGHTDECK_TOKEN` is not caught by the CLI's credential
+  filter on this version; the debug log carries
+  `Hooks: env var $X is a credential and is not interpolated into an HTTP hook header` when it is.
+- **The global `httpHookAllowedEnvVars` is deliberately NOT written.** When it is present Claude
+  Code *intersects* every hook's `allowedEnvVars` with it, so Connect would silently narrow any
+  http hook the owner adds later. Declaring a name there is also the documented escape from the
+  credential filter, so it stays available if a future version starts refusing this one.
+
+*And it does not solve the problem it was asked about.* The value is read from the **session
+process's own environment**, which Windows fixes at process creation. A session started before core
+restarts cannot see a new token, and a stale bearer is a `401` — which is
+`Stop hook error occurred · ctrl+o to see` for every turn afterwards (F.1.5), i.e. worse than the
+dead receiver this task refuses to install into, because it happens while core is running.
+
+**Consequence: a secret a client cannot re-read must not rotate under it.** Hence SEC-HTTP-7, a
+stable per-install ingest key accepted on `POST /hooks` and nowhere else (DECISIONS.md D33). The
+statusLine block needs none of this — it re-reads the token file on every render (SEC-ING-3), so
+per-boot costs it nothing, and `/statusline` stays token-only. Verified against a running core:
+ingest key → `/hooks` **200**, → `/statusline` **401**, → `/health` **401**; wrong key → **401**.
 
 ### F.2 `--bg` end to end — P0-T4 (2026-09-10, Claude Code 2.1.267)
 
@@ -1471,3 +1552,56 @@ behind by an earlier forced kill, which is how the stale one on this machine was
 it — "so a stopped Flightdeck costs 0.10 ms" — was false, because nothing checked that the project's
 own stop script produces a clean shutdown. A control that is only true on a path nobody takes is
 not a control.
+
+### G.13 `JSON.stringify` rewrote every line of one subscription's settings.json, and not the other's
+
+The two config dirs disagree about line endings on this machine, and nothing had ever had to care:
+
+| File | Endings |
+|---|---|
+| `~\.claude-365\settings.json` | **LF** |
+| `~\.claude-isg\settings.json` | **CRLF** |
+| `~\.claude\hooks\statusline.py` | CRLF (already known — F.3.7) |
+
+`JSON.stringify(value, undefined, 2)` only ever emits `\n`. So the obvious way to write a merged
+settings.json back produced, for isg, a diff of **+173 −88 on an 88-line file** — a whole-file
+rewrite — while producing **+85 −0** on 365 from identical code. Connect's entire promise is that
+the change is additive (D13, SEC-FS-3), and here it silently was not, for one subscription out of
+two.
+
+**It was invisible to everything except the diff.** Every unit test passed: they compare parsed
+objects, and the parsed objects were correct. The live dry run printed it, and only because the
+dry run prints whole files rather than a summary. A Connect that had reported "5 hook entries
+added" would have been telling the truth and still rewriting the file.
+
+`core/shared/json-format.ts` now reads the ending, the indent and the trailing newline off the
+original text and re-prints in the file's own convention. Both subscriptions are +85 −0.
+
+**This is F.3.7's trap in a second file, three days later.** The patcher had already learned to
+detect CRLF because statusline.py is CRLF and the repo's block is LF; the lesson did not transfer
+because it had been written down as a fact about statusline.py rather than as a fact about writing
+to files somebody else owns. It is now a class with a name and a test per convention.
+
+### G.14 The first live Connect could not write at all — and the backup order is why that was fine
+
+`BackingUpConfigFile` built its temp file from a hand-rolled basename:
+
+```ts
+return path.split(/[\/]/).pop() ?? 'file';   // intended [\\/], matches only '/'
+```
+
+On Windows nothing split, so the temp path became
+`C:\Users\…\.claude-365\.C:\Users\…\.claude-365\settings.json.flightdeck-tmp` and `writeFileSync`
+answered `ENOENT`. Fixed by using `basename` from `node:path` rather than re-implementing it.
+
+**What matters is what the failure looked like.** Back up → write temp → rename means the failure
+landed between the backup and the rename, so: the backup existed, the original was untouched, the
+temp file was removed, and the operator was told which file failed and why. Three files were
+planned; none was left half-written. The same bug with an in-place write would have truncated a
+live `settings.json` on both subscriptions.
+
+The bug itself came from an escape that collapsed on its way into the file — `[\\/]` written as
+`[\/]`. The same collapse hit `setx.exe`'s path (`C:\WINDOWS` + `System32` with no separator) and
+five Windows paths in the new tests, where it was harmless because both sides of every assertion
+used the same wrong constant. ESLint's `no-useless-escape` caught all of them; `tsc` caught none,
+because `'C:\cfg'` is a perfectly good string that just is not the one anybody meant.
