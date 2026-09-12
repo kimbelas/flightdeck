@@ -1433,3 +1433,41 @@ Measured on a running core after the fix:
 route until this task, so a large `PostToolUse` payload would have been refused — and SEC-HTTP-4
 had said 4 MB for hooks since the policy was written. A body limit that is too small does not lose
 an event quietly; it puts a banner in front of the owner.
+
+### G.12 The normal way to stop Flightdeck left a stale token, and a stale token taxes every render
+
+F.3.3 measured the cost of a token file that outlives core: the statusLine block reads the token
+first and returns before importing anything if it is absent, so a disconnected machine pays
+**0.10 ms** per render — but with the file present and nothing listening, every render pays
+**51 ms**, because a Python connect to a closed loopback port here is not refused, it is dropped.
+Its conclusion was one line: "core should *delete* the token file on clean shutdown".
+
+Core does. `stopCore` calls `TokenIssuer.revoke()` and has since P5a-T1. What P1-T6 checked, and
+should have been checked when that line was written, is whether the shutdown is ever clean:
+
+```
+> .\flightdeck-stop.cmd
+  stopping Flightdeck
+  stopped  127.0.0.1:4950
+  stopped  127.0.0.1:4949
+> Test-Path $env:LOCALAPPDATA\flightdeck\token
+True
+```
+
+`flightdeck-stop.cmd` is `taskkill /PID … /T /F`. `TerminateProcess` runs no handler, so the one
+line that deletes the token never executes — and **the forced kill is the normal way this project
+stops**, not an edge case. Every statusline render on the machine then pays 51 ms until core is
+started again. Nothing reports it: the block swallows every exception by design (SEC-ING-3), so
+the only symptom is a status line that feels slightly slow to repaint.
+
+**No in-process fix can cover this.** `process.on('exit')` does not run for `TerminateProcess`, and
+neither does anything else. The deletion has to be done by whoever did the killing, so
+`flightdeck-stop.cmd` now runs `scripts/drop-token.ts` after the kill — which reads the path from
+`contracts/core-token.ts` rather than spelling it, because the deck, core and the stop script
+agreeing about that path is the whole reason that file exists. It also cleans up a token left
+behind by an earlier forced kill, which is how the stale one on this machine was cleared.
+
+**Worth generalising:** "core deletes it on clean shutdown" was true, and the conclusion drawn from
+it — "so a stopped Flightdeck costs 0.10 ms" — was false, because nothing checked that the project's
+own stop script produces a clean shutdown. A control that is only true on a path nobody takes is
+not a control.
