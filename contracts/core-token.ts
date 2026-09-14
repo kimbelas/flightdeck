@@ -48,3 +48,21 @@ export function readCoreToken(): string | undefined {
     return undefined;
   }
 }
+
+/**
+ * Puts the bearer on a request headed for core, and takes off anything that was already there.
+ *
+ * The `delete` is the fail-closed half and is not redundant with the `set`. A script on the deck
+ * page can put its own `Authorization` header on a `fetch`; without it, a core that is down — no
+ * token file, so no token — would let that forged header through untouched (SECURITY.md §3 rule 3).
+ *
+ * It lives here rather than in `proxy.ts` so it can be tested at all: a test that imported the
+ * proxy would pull `next/server` into the TypeScript project core/ is checked by (deck-routes.ts).
+ *
+ * @param headers mutated in place — the headers the rewrite destination will see.
+ * @param token from `readCoreToken()`; `undefined` means core is not running.
+ */
+export function attachCoreToken(headers: Headers, token: string | undefined): void {
+  if (token === undefined) headers.delete('authorization');
+  else headers.set('authorization', `Bearer ${token}`);
+}

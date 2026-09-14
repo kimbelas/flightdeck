@@ -123,7 +123,9 @@ in components**:
 
 - The UI never talks to `claude.exe`, the filesystem or child processes. It talks to core.
 - All HTTP goes through the same-origin rewrite; WebSocket goes to core with the token (§11).
-- Security headers and a strict CSP are set in `next.config.ts` (SECURITY.md SEC-UI-1).
+- The constant security headers are set in `next.config.ts`; the CSP is per-request and is set
+  in `proxy.ts`, because it carries a nonce (SECURITY.md SEC-UI-1, RESEARCH.md F.5.1). `proxy.ts`,
+  not `middleware.ts` — only proxy runs on Node, which is what lets it read the token file (D27).
 - Fonts are self-hosted; no third-party scripts, analytics, or CDNs at runtime.
 - Tailwind for layout and spacing; semantic colours only through tokens defined once.
 - Every interactive element is keyboard reachable and has a visible focus state.

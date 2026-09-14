@@ -14,6 +14,13 @@ cd /d "%~dp0"
 set CORE_PORT=4950
 set UI_PORT=4949
 
+REM SEC-NET-2 - the deck makes no outbound request, and a build is not an exception. Next
+REM telemetry POSTs to telemetry.nextjs.org on every `next build` and `next dev` unless this
+REM is set. CI and the release workflow already set it; this is the local build, the one that
+REM actually runs on the owner machine. Set here rather than by `next telemetry disable`, which
+REM writes a per-user global - a fresh machine, or another checkout, would report again.
+set NEXT_TELEMETRY_DISABLED=1
+
 echo.
 echo   Flightdeck
 echo   ----------

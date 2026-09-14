@@ -160,7 +160,7 @@ phases:
           RESEARCH.md F.5. Headline findings — (1) a strict CSP and Next hydration are in direct
           conflict and the failure is SILENT: script-src 'self' with no nonce blocks Next's own
           inline scripts, the page renders as HTML and never hydrates, and the only evidence is a
-          minified React #412. Fixed with a per-request nonce from middleware.ts plus
+          minified React #412. Fixed with a per-request nonce from proxy.ts plus
           'strict-dynamic' (the two are a package). A nonce cannot be stamped onto statically
           prerendered HTML, so any route under this CSP must render per request — and
           `export const dynamic` is ignored on a 'use client' module, which is why the harness is
@@ -182,11 +182,11 @@ phases:
             app/globals.css,
             app/spike/xterm/page.tsx,
             app/spike/xterm/xterm-harness.tsx,
-            app/spike/xterm/terminal-pane.ts,
+            app/panes/terminal-pane.ts,
             app/spike/xterm/pane-grid.ts,
             app/spike/xterm/spike-api.ts,
             next.config.ts,
-            middleware.ts,
+            proxy.ts,
             tsconfig.app.json,
             contracts/content-security-policy.ts,
             scripts/xterm-spike-cli.ts,
@@ -1129,27 +1129,62 @@ phases:
 
   - id: P2
     name: The deck — sessions view
-    status: todo
+    status: doing
     goal: One page that answers "what needs me?" for both subscriptions.
     gate: '"What needs me?" is answerable from the deck alone, for both subscriptions, without opening or alt-tabbing to any terminal.'
     depends_on: [P1]
     tasks:
       - id: P2-T1
         title: Next.js app at repo root — CSP and security headers, same-origin rewrite to core, no external requests
-        status: todo
+        status: done
+        done_on: 2026-09-14
         notes: >-
           RESEARCH.md F.4.2. The same-origin rewrite is not a convenience — it is the only route
           that works. A page on :4949 cannot fetch :4950 directly, because a port is part of an
           origin: JSON triggers a preflight core never answers, and a simple request arrives as
           Sec-Fetch-Site same-site and is refused. Measured, not assumed. The upside is that the
           token never enters the browser for HTTP; only the WebSocket needs one, and only in its
-          first frame (F.4.4). The scaffold itself landed early under P0-T6, which needed a real
-          Next runtime to measure xterm in: app/, next.config.ts, middleware.ts and
-          tsconfig.app.json exist and npm run build is green. What is left here is the deck's own
-          views and the rewrite pointed at a real core. Two things F.5.1 settles in advance: the
-          CSP is per-request, not a constant (it carries a nonce, so it lives in middleware and
-          contracts/content-security-policy.ts), and the deck CANNOT be statically prerendered.
-        security: [SEC-UI-1, SEC-UI-2]
+          first frame (F.4.4).
+          The app and the views landed ahead of this task — the scaffold under P0-T6, which needed
+          a real Next runtime to measure xterm in, and the deck's own views under P1-T9 and P5a —
+          so what this task actually did was prove the posture rather than write it. Three findings.
+          (1) The CSP lives in proxy.ts, NOT middleware.ts, and these notes said middleware for four
+          days: Next 16 deprecated the convention, and only proxy runs on Node, which is the whole
+          reason it can read the token file (F.6.2, D27). Corrected here, in P0-T6's deliverables,
+          in next.config.ts, CODING-STANDARDS §5 and the eslint config.
+          (2) A test cannot import next.config.ts or proxy.ts. Doing so pulls Next's global type
+          augmentation into the ROOT TypeScript project and breaks tsc for core/ and scripts/ — the
+          exact leak tsconfig.app.json exists to stop, and it fails as ten unrelated errors about
+          ProcessEnv. So every decision those two files encoded moved into contracts/, which is the
+          only folder both projects compile: the headers and both matchers to deck-routes.ts, the
+          per-request nonce to content-security-policy.ts, and the bearer — including the delete
+          that fails closed when core is down — to core-token.ts. The Next files keep the wiring.
+          (2b) And then the build broke on the one value that cannot move. Next PARSES
+          `export const config` out of proxy.ts rather than evaluating it, so an imported matcher is
+          not a string to it — `next build` fails with "Missing `source` in `matcher[0]` object".
+          next.config.ts is genuinely executed and is unaffected. So the matcher is a literal, and
+          tests/app/proxy-matcher.test.ts reads proxy.ts as TEXT to hold it to PROXIED_ROUTES.
+          `npm run check` was green against a build that could not complete — the sixth time §G has
+          been learned here, and the first where the evidence was a build rather than a page.
+          (3) SEC-NET-2 had a hole on the one route that matters: ci.yml and release.yml set
+          NEXT_TELEMETRY_DISABLED, flightdeck.cmd did not, so every local build POSTed to
+          telemetry.nextjs.org. Set in the launcher rather than by `next telemetry disable`, which
+          writes a per-user global that a fresh checkout would not carry.
+        deliverables:
+          [
+            contracts/deck-routes.ts,
+            contracts/content-security-policy.ts,
+            contracts/core-token.ts,
+            next.config.ts,
+            proxy.ts,
+            flightdeck.cmd,
+            tests/contracts/deck-routes.test.ts,
+            tests/contracts/content-security-policy.test.ts,
+            tests/contracts/core-token.test.ts,
+            tests/app/proxy-matcher.test.ts,
+            RESEARCH.md G.21,
+          ]
+        security: [SEC-UI-1, SEC-UI-2, SEC-NET-2, SEC-HTTP-3, SEC-HTTP-5]
       - id: P2-T2
         title: DeckStore — SSE client, reconnect with replay, view models per row
         status: todo

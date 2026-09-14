@@ -1,8 +1,9 @@
 // SEC-UI-1 — the policy, built in one place so it can be asserted on.
 //
-// It lives in contracts/ rather than in middleware.ts because the middleware cannot be imported
-// by a test without pulling in `next/server`, and a policy nobody can test is a policy that
-// quietly loses a directive. P0-T6 found two ways this breaks in Next, both silent:
+// It lives in contracts/ rather than in proxy.ts (which is where P0-T6 wrote it, back when the
+// file was still called middleware.ts — D27) because the policy should be assertable without
+// pulling in `next/server`, and a policy nobody can test is a policy that quietly loses a
+// directive. P0-T6 found two ways this breaks in Next, both silent:
 // a missing nonce blocks Next's own hydration scripts, and a statically prerendered page cannot
 // carry one at all (RESEARCH.md F.5.1).
 //
@@ -47,4 +48,18 @@ export function contentSecurityPolicy(nonce: string, development = false): strin
     "form-action 'self'",
     "object-src 'none'",
   ].join('; ');
+}
+
+/**
+ * A fresh nonce for one request.
+ *
+ * Fresh is the whole point: a nonce reused across requests is a static `script-src` entry with
+ * extra steps, and an attacker who sees one page's HTML can then write a script tag the policy
+ * admits. `randomUUID` is a CSPRNG; base64 keeps it out of the CSP's delimiter set.
+ *
+ * Here rather than in `proxy.ts` so it is testable without `next/server` (contracts/deck-routes.ts
+ * carries the argument).
+ */
+export function newNonce(): string {
+  return Buffer.from(crypto.randomUUID()).toString('base64');
 }

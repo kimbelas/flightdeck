@@ -1826,3 +1826,59 @@ Also worth recording, because it is the whole design working in one screen: the 
 `done/idle` **and** `live` within 17 s of launch, with vitals attached — `done` means "not running
 a turn" and liveness is the presence of `pid` (F.2.1, P1-T1's correction to D7). A build that
 conflated them would have shown it as finished while it was still there to attach to.
+
+### G.21 A test that imports `next.config.ts` breaks `tsc` for `core/` — and the matcher it pushed into contracts/ then broke the build (P2-T1, 2026-09-14)
+
+Two findings from one attempt, and the second is the §G one: the unit suite was green and
+`next build` was broken.
+
+**Importing a Next file from a test leaks Next's types into the ROOT TypeScript project.** The
+first version of P2-T1's tests imported `next.config.ts` and `proxy.ts` directly, which is the
+obvious way to assert the headers, the rewrite and the bearer. `tsc -p tsconfig.json` then failed
+with **ten errors in files the diff never touched** — `core/adapters/claude-cli/execfile-process-runner.ts`,
+`scripts/roster-capture.ts`, `scripts/statusline-spike.ts` — all variants of *"Property 'NODE_ENV'
+is missing in type '{ [x: string]: string \| undefined; }' but required in type 'ProcessEnv'"*, plus
+`Cannot find module 'next/server'`. Next's global augmentation makes `NODE_ENV` a required readonly
+property of `ProcessEnv`, so every `execFile` call that passes a constructed `env` stops
+type-checking. This is exactly the leak `typescript.tsconfigPath` was pinned for in P0-T6 (F.5.4),
+arriving by the other door: not `next build` rewriting the root config, but a test importing across
+the boundary. **`tests/**` is compiled by the Node project; nothing in it may import a Next file.**
+
+The fix follows content-security-policy.ts's own precedent — the values move to `contracts/`, the
+only folder both projects compile, and the Next files keep the wiring. Headers, both route matchers
+and the rewrite to `contracts/deck-routes.ts`; the nonce to `contentSecurityPolicy`'s file; the
+bearer, including the `delete` that fails closed, to `core-token.ts` as `attachCoreToken`.
+
+**Then `next build` failed on the one value that cannot move.**
+
+```
+./proxy.ts:52:14
+Error: Next.js can't recognize the exported `config` field in route.
+       Missing `source` in `matcher[0]` object
+Error: Next.js can't recognize the exported `config` field in route.
+       `source` in `matcher[0]` object must be a string
+```
+
+Next **parses** `export const config` out of the source at build time rather than evaluating it, so
+`{ source: PROXIED_ROUTES }` is not a string to it however constant the import is. `next.config.ts`
+is unaffected — it is genuinely executed (`✓ Running next.config.ts took 271ms`), so `DOCUMENT_ROUTES`
+and `CORE_REWRITE` work there. Only the `config` export is static-parsed.
+
+So the matcher is a literal in `proxy.ts`, and `tests/app/proxy-matcher.test.ts` reads the file as
+**text** and asserts the literal equals `PROXIED_ROUTES`. Reading the source is the right level
+rather than a workaround: the source is what Next reads too.
+
+**Neither failure was visible to `npm run check`.** The first was — `typecheck` is in the gate — but
+it named ten innocent files and no test. The second was not visible at all: lint, types, format,
+roadmap and 1096 tests were green against a build that could not complete. That is the sixth time
+this project has learned §G's lesson, and the first where the evidence was a *build* rather than a
+running page.
+
+**Measured while verifying the fix**, deck and core both up (`npm run build`, `flightdeck.cmd`):
+the document carries all five constant headers plus a per-request CSP with `'nonce-…'`,
+`'strict-dynamic'` and **no** `'unsafe-eval'`; `GET /api/core/sessions` from the browser with no
+credential returns 200 and thirteen rows, and the same request with `Authorization: Bearer forged`
+also returns 200 — the proxy replaced it; `/api/stream` answers `text/event-stream` with
+`cache-control: no-store, no-transform`; both ports listen on `127.0.0.1` only. Driven headless, the
+deck hydrates, the chip reads `live`, thirteen rows render attention-first and `refresh` round-trips
+through `BrowserDeckApi` to a `GET 200` with no console error and no failed request.

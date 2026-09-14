@@ -74,8 +74,8 @@ export default tseslint.config(
   {
     languageOptions: {
       // Both projects, because the app compiles against the DOM and core/ must not
-      // (tsconfig.app.json). The service only discovers `tsconfig.json`, so app/, middleware.ts
-      // and next.config.ts would otherwise be parsed by no project and fail to lint at all.
+      // (tsconfig.app.json). The service only discovers `tsconfig.json`, so app/, proxy.ts and
+      // next.config.ts would otherwise be parsed by no project and fail to lint at all.
       parserOptions: {
         project: ['./tsconfig.json', './tsconfig.app.json'],
         tsconfigRootDir: import.meta.dirname,
