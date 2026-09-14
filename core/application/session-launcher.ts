@@ -9,6 +9,7 @@
 // and never interpolated into a command string — it is user text heading for a process, which is
 // exactly SEC-PROC-1's case.
 import type { AuditOutcome } from '../../contracts/audit-row.ts';
+import type { LaunchFailure } from '../../contracts/launch-reply.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
 import type { ClaudeInstall } from '../adapters/claude-cli/claude-install.ts';
 import type { Logger } from '../ports/logger.ts';
@@ -16,7 +17,9 @@ import type { ProcessRunner } from '../ports/process-runner.ts';
 import { err, ok, type Result } from '../shared/result.ts';
 import type { AuditLog } from './audit-log.ts';
 
-export type LaunchFailure = 'no_claude' | 'bad_request' | 'launch_failed';
+// The codes themselves are in contracts/launch-reply.ts: the deck reads them off the wire, so a
+// second copy here is how a rename turns into a message nobody sees.
+export type { LaunchFailure };
 
 export interface LaunchRequest {
   readonly subscription: SubscriptionId;

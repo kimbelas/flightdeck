@@ -12,6 +12,7 @@
 // fetches, polls or re-renders on a timer to stay current.
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type JSX } from 'react';
 import type { PtyTarget } from '../../contracts/pty-protocol.ts';
+import { BrowserDeckApi } from './browser-deck-api.ts';
 import { BrowserStreamTransport } from './browser-stream-transport.ts';
 import { DeckBanners } from './deck-banners.tsx';
 import { DeckHeader } from './deck-header.tsx';
@@ -31,7 +32,10 @@ const AGE_TICK_MS = 10_000;
 const SHELL_PANE: OpenPane = { key: 'shell', title: 'shell', target: { kind: 'shell' } };
 
 export function DeckView(): JSX.Element {
-  const store = useMemo(() => new DeckStore(new BrowserStreamTransport()), []);
+  const store = useMemo(
+    () => new DeckStore(new BrowserStreamTransport(), new BrowserDeckApi()),
+    [],
+  );
   const state = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot);
   useLiveStream(store);
   const { panes, openPane, closePane } = useOpenPanes();

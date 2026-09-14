@@ -1187,7 +1187,36 @@ phases:
         security: [SEC-UI-1, SEC-UI-2, SEC-NET-2, SEC-HTTP-3, SEC-HTTP-5]
       - id: P2-T2
         title: DeckStore — SSE client, reconnect with replay, view models per row
-        status: todo
+        status: done
+        done_on: 2026-09-14
+        notes: >-
+          The SSE client, the reconnect and the per-row view model landed early under P1-T9 and
+          P5a-T3, so this task is what they left behind: the two paths that are NOT the stream.
+          `refresh()` and `launch()` called `fetch` directly and cast the JSON straight into state
+          — `as DeckSnapshot` and `as { sessionId: string }` — while the stream beside them parsed
+          every frame and dropped what did not match. Same rows, same core, one of them checking
+          (CODING-STANDARDS §11 rule 1). They were also the only paths in the class with no test,
+          which is the same fact: a bare `fetch` has nothing to inject, and an untested path is
+          where a cast survives.
+          So: a `DeckApi` port with a `BrowserDeckApi` adapter, the twin of StreamTransport; both
+          replies through a parser; and the wire shape of `POST /sessions` written down once in
+          contracts/launch-reply.ts, with `LaunchFailure` moved there out of SessionLauncher so the
+          deck reads the codes core sends rather than a second copy of the list.
+          Three things the tests now pin that used to render: a 200 carrying a Next HTML error page
+          became an empty deck; a 201 with an empty sessionId became a pane key matching nothing;
+          and `no_claude` — a 503 — read as "flightdeck-core is not running", which is exactly
+          wrong, since core is running and answered. It says so now.
+        deliverables:
+          [
+            app/deck/deck-api.ts,
+            app/deck/browser-deck-api.ts,
+            app/deck/deck-store.ts,
+            contracts/launch-reply.ts,
+            tests/app/deck-store-requests.test.ts,
+            tests/contracts/launch-reply.test.ts,
+            tests/fakes/fake-deck-api.ts,
+          ]
+        security: [SEC-UI-2]
       - id: P2-T3
         title: Header — both subscriptions' 5h/7d gauges with reset countdowns, live count, spend today, version chip, core health
         status: todo
