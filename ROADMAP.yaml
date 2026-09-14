@@ -1402,7 +1402,27 @@ phases:
         security: [SEC-FS-1, SEC-FS-2, SEC-UI-2, SEC-DATA-2, SEC-ING-1]
       - id: P2-T5
         title: Keyboard — Ctrl+K palette skeleton, j/k/Enter/Esc, ? shortcut sheet listing browser-owned keys
-        status: todo
+        status: done
+        done_on: 2026-09-14
+        notes: >-
+          DECISIONS.md D34. The keymap was never the hard part — the deck is a page with xterm panes
+          and a launch textarea on it, and every key SPEC §5.4 asks for except Ctrl+K is a character
+          somebody is otherwise in the middle of typing. So bindings carry a `contexts` column and
+          resolve against a KeyContext (deck / text / terminal / palette) derived from four facts
+          about the focused element; `contracts/keymap.ts` decides, `app/deck/deck-keyboard.ts` reads
+          the browser, neither knows the other. Esc is never taken from a pane; Ctrl+K is the one key
+          that is, and the sheet says so. The listener captures on window because xterm handles keys
+          on its own hidden textarea and bubbling would be too late. j/k move real DOM focus onto the
+          row's toggle button rather than a selection index, which is why Enter is deliberately
+          unbound on the deck — binding it would mean preventDefault-ing it, breaking every other
+          control that can hold focus. The ? sheet LISTS the browser-owned keys from RESEARCH.md E.2
+          rather than re-deriving them, and remaps nothing: SPEC §5.3's keyboard helper writes under
+          ~/.claude* and is a different task. The palette carries only commands that exist — switch
+          project (P3), Ask (P4) and change layout are absent, and connect stays a CLI because its
+          dry-run/diff/--apply gate is the point (P1-T11). Verified in the running app, not only in
+          tests (§G): 30 checks driven through Playwright against a real core — j/k/Enter/arrows over
+          13 rows, / filtering, ? sheet, Ctrl+K from inside a live shell pane, `jjkk//??` reaching
+          the terminal intact, and the launch prompt keeping every character typed into it.
       - id: P2-T6
         title: flightdeck.cmd — start core if absent, Next dev, Edge --app window; fail loudly if ports are taken
         status: done

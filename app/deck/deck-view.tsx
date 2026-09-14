@@ -15,13 +15,17 @@ import type { PtyTarget } from '../../contracts/pty-protocol.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
 import { BrowserDeckApi } from './browser-deck-api.ts';
 import { BrowserStreamTransport } from './browser-stream-transport.ts';
+import { CommandPalette } from './command-palette.tsx';
 import { DeckBanners } from './deck-banners.tsx';
 import { DeckHeader } from './deck-header.tsx';
 import { DeckStore, type DeckState } from './deck-store.ts';
+import { deckCommands, type DeckActions } from './deck-commands.ts';
 import { PaneGrid } from './pane-grid.tsx';
 import { SessionList } from './session-list.tsx';
 import { SessionDetailViewModel } from './session-detail-view-model.ts';
 import { SessionRowViewModel } from './session-row-view-model.ts';
+import { ShortcutSheet } from './shortcut-sheet.tsx';
+import { useDeckKeys, type DeckKeys } from './use-deck-keys.ts';
 
 export interface OpenPane {
   readonly key: string;
@@ -40,11 +44,11 @@ export function DeckView(): JSX.Element {
   const { panes, openPane, closePane } = useOpenPanes();
   const { expanded, toggle } = useExpandedRows(store);
   const now = useTickingClock();
+  const actions = useDeckActions(store, openPane);
 
-  const { openShell, openRowPane, launch } = useDeckActions(store, openPane);
-
+  // Every session, unfiltered: the palette can reach one the `/` box is currently hiding.
   const rows = state.rows.map((row) => new SessionRowViewModel(row));
-  const details = detailViewModels(state.details);
+  const keys = useDeckKeys(deckCommands({ rows, ...actions }));
 
   return (
     <main className="deck">
@@ -54,26 +58,97 @@ export function DeckView(): JSX.Element {
         quota={state.quota}
         now={now}
         loading={state.loading}
-        onRefresh={() => void store.refresh()}
-        onOpenShell={openShell}
+        onRefresh={actions.onRefresh}
+        onOpenShell={actions.onOpenShell}
       />
       <DeckBanners error={state.error} unreadable={state.unreadable} />
-      <div className="deck-body">
-        <SessionList
-          rows={rows}
-          now={now}
-          loading={state.loading}
-          coreUp={state.coreUp}
-          expanded={expanded}
-          details={details}
-          onToggle={toggle}
-          onLaunch={launch}
-          onOpen={openRowPane}
-        />
-        <PaneGrid panes={panes} onClose={closePane} />
-      </div>
+      <DeckBody
+        rows={rows}
+        state={state}
+        now={now}
+        panes={panes}
+        expanded={expanded}
+        actions={actions}
+        onToggle={toggle}
+        onClosePane={closePane}
+      />
+      <DeckOverlays keys={keys} />
     </main>
   );
+}
+
+interface DeckBodyProps {
+  readonly rows: readonly SessionRowViewModel[];
+  readonly state: DeckState;
+  readonly now: number;
+  readonly panes: readonly OpenPane[];
+  readonly expanded: ReadonlySet<string>;
+  readonly actions: DeckActions;
+  readonly onToggle: (row: SessionRowViewModel) => void;
+  readonly onClosePane: (key: string) => void;
+}
+
+/**
+ * The two columns, and the one piece of state that belongs to them rather than to the deck.
+ *
+ * `/`'s filter lives here because it is a fact about the list — the header still counts every
+ * session and the palette still reaches every session, and neither has to know a box is filled in.
+ * The keyboard does not know either: `/` focuses this box by id (deck-keyboard.ts), which is why
+ * nothing above had to thread the query down or a setter back up.
+ */
+function DeckBody({
+  rows,
+  state,
+  now,
+  panes,
+  expanded,
+  actions,
+  onToggle,
+  onClosePane,
+}: DeckBodyProps): JSX.Element {
+  const [search, setSearch] = useState('');
+  return (
+    <div className="deck-body">
+      <SessionList
+        rows={rows.filter((row) => row.matches(search))}
+        now={now}
+        loading={state.loading}
+        coreUp={state.coreUp}
+        search={search}
+        expanded={expanded}
+        details={detailViewModels(state.details)}
+        onSearch={setSearch}
+        onToggle={onToggle}
+        onLaunch={actions.onLaunch}
+        onOpen={actions.onOpenPane}
+      />
+      <PaneGrid panes={panes} onClose={onClosePane} />
+    </div>
+  );
+}
+
+/**
+ * The palette and the shortcut sheet — the two things the keyboard puts on top of the deck.
+ *
+ * Both are absent rather than hidden when closed. The palette autofocuses its input, and an input
+ * that exists behind `display: none` is an input that can hold focus while looking closed.
+ */
+function DeckOverlays({ keys }: { readonly keys: DeckKeys }): JSX.Element | null {
+  const { palette } = keys;
+  if (palette !== undefined) {
+    return (
+      <CommandPalette
+        palette={palette}
+        query={keys.paletteQuery}
+        onQuery={keys.onPaletteQuery}
+        onSelect={keys.onPaletteSelect}
+        onRun={keys.onPaletteRun}
+        onClose={keys.onClosePalette}
+      />
+    );
+  }
+  if (keys.sheetOpen) return <ShortcutSheet keymap={keys.keymap} onClose={keys.onCloseSheet} />;
+  return null;
 }
 
 /**
@@ -120,33 +195,30 @@ function detailViewModels(
   );
 }
 
-interface DeckActions {
-  readonly openShell: () => void;
-  readonly openRowPane: (row: SessionRowViewModel) => void;
-  readonly launch: (subscription: SubscriptionId, prompt: string, name: string) => void;
-}
-
 /**
- * What the buttons do, as stable references.
+ * What the buttons do, as stable references — and since P2-T5, what the palette's entries do too.
  *
  * Together rather than inline for two reasons. Stable identities keep `SessionList` from
  * re-rendering every row on every tick of the clock. And this component's job is composition
- * (CODING-STANDARDS §3): three arrow functions in JSX are three pieces of behaviour hidden inside
+ * (CODING-STANDARDS §3): four arrow functions in JSX are four pieces of behaviour hidden inside
  * markup, and one of them — the empty-name rule below — is a decision rather than plumbing.
+ *
+ * `DeckActions` is declared in deck-commands.ts because the palette needs the same four: a command
+ * that opened a pane its own way would be a second implementation of the row's button.
  */
 function useDeckActions(store: DeckStore, openPane: (pane: OpenPane) => void): DeckActions {
-  const openShell = useCallback(() => {
+  const onOpenShell = useCallback(() => {
     openPane(SHELL_PANE);
   }, [openPane]);
 
-  const openRowPane = useCallback(
+  const onOpenPane = useCallback(
     (row: SessionRowViewModel) => {
       openPane({ key: row.key, title: row.title, target: row.target });
     },
     [openPane],
   );
 
-  const launch = useCallback(
+  const onLaunch = useCallback(
     (subscription: SubscriptionId, prompt: string, name: string) => {
       // An empty name is the form's "let Claude Code choose one", not a name of zero characters.
       void store.launch(subscription, prompt, name === '' ? undefined : name);
@@ -154,7 +226,11 @@ function useDeckActions(store: DeckStore, openPane: (pane: OpenPane) => void): D
     [store],
   );
 
-  return { openShell, openRowPane, launch };
+  const onRefresh = useCallback(() => {
+    void store.refresh();
+  }, [store]);
+
+  return { onOpenShell, onOpenPane, onLaunch, onRefresh };
 }
 
 interface ExpandedRows {

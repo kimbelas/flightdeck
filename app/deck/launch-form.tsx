@@ -7,6 +7,7 @@
 // most common way a constraint gets mistaken for a bug.
 import { useState, type JSX, type SyntheticEvent } from 'react';
 import { SUBSCRIPTION_IDS, type SubscriptionId } from '../../contracts/session.ts';
+import { LAUNCH_PROMPT_ID } from './deck-keyboard.ts';
 
 interface LaunchFormProps {
   readonly disabled: boolean;
@@ -72,7 +73,9 @@ export function LaunchForm({ disabled, onLaunch }: LaunchFormProps): JSX.Element
         }}
         onName={setName}
       />
+      {/* The id is the palette's handle: "Start a background session" focuses this (P2-T5). */}
       <textarea
+        id={LAUNCH_PROMPT_ID}
         value={prompt}
         rows={2}
         placeholder="first prompt — --bg will not start without one"

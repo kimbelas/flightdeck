@@ -170,6 +170,15 @@ button.ghost {
   color: var(--accent);
 }
 
+/* j/k move real DOM focus onto this button (P2-T5), so the ring is not decoration — it is the
+   only thing showing which row Enter will expand. `:focus-visible` rather than `:focus` keeps it
+   off the mouse's path, and a 2 px outline reads at arm's length on a 1080p wall. */
+.row-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 .row-open {
   background: color-mix(in srgb, var(--panel) 60%, transparent);
 }
@@ -529,8 +538,187 @@ button.ghost {
   border-top: 1px solid var(--line);
 }
 
+/* ---- keyboard: search, palette, shortcut sheet (P2-T5) ---- */
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.search-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.search-key,
+kbd {
+  font: inherit;
+  font-size: 11px;
+  color: var(--dim);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+/* Both overlays share the backdrop. Flex-start rather than centred: a palette that grows downward
+   from a fixed point does not move the first result out from under the cursor as it filters. */
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, #000 55%, transparent);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 10vh 16px 16px;
+  z-index: 10;
+}
+
+.palette {
+  width: min(560px, 100%);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.palette-input {
+  border: none;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.palette-input:focus {
+  outline: none;
+}
+
+.palette-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+}
+
+.palette-item {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 5px 12px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+}
+
+.palette-item-on {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-left-color: var(--accent);
+}
+
+.palette-hint {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.palette-empty,
+.palette-foot {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+.palette-foot {
+  border-top: 1px solid var(--line);
+}
+
+.sheet {
+  width: min(720px, 100%);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sheet-head h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* Two columns so the whole sheet fits without scrolling. The browser-owned table is the reason:
+   it is last, and it is what someone opens the sheet to find after a window has just closed on
+   them — a section you have to scroll to is a section that answers nobody. */
+.sheet-body {
+  overflow-y: auto;
+  padding: 4px 14px 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 28px;
+  align-items: start;
+}
+
+.sheet-body > :last-child {
+  grid-column: 1 / -1;
+}
+
+.sheet-group h3 {
+  margin: 14px 0 6px;
+  font-size: 12px;
+  color: var(--dim);
+  text-transform: lowercase;
+  font-weight: 600;
+}
+
+.sheet-note {
+  margin: 0 0 8px;
+  font-size: 12px;
+  max-width: 62ch;
+}
+
+.sheet-keys {
+  margin: 0;
+}
+
+.sheet-key {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 10px;
+  padding: 2px 0;
+}
+
+.sheet-key dt {
+  text-align: right;
+}
+
+.sheet-key dd {
+  margin: 0;
+  color: var(--dim);
+}
+
 @media (max-width: 900px) {
   .deck-body {
+    grid-template-columns: 1fr;
+  }
+
+  .sheet-body {
     grid-template-columns: 1fr;
   }
 

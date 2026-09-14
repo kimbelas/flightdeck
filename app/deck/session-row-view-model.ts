@@ -89,6 +89,36 @@ export class SessionRowViewModel {
     };
   }
 
+  /**
+   * Whether `/`'s filter keeps this row — P2-T5.
+   *
+   * Matched against what the row actually shows plus the short id, so what someone reads off the
+   * screen is what they can type back in. Every term has to land, which is what makes `365 deck`
+   * narrow rather than widen; an empty query keeps everything.
+   *
+   * The short id is in the haystack and the full session id is not. The full one is a UUID nobody
+   * types, and including it would let a three-character query match rows whose visible text has
+   * nothing to do with it — a filter appearing to keep the wrong sessions.
+   */
+  public matches(query: string): boolean {
+    const terms = query
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((term) => term !== '');
+    if (terms.length === 0) return true;
+    const haystack = [
+      this.title,
+      this.row.shortId,
+      this.subscriptionLabel,
+      this.project,
+      this.kindLabel,
+      this.stateLabel,
+    ]
+      .join(' ')
+      .toLowerCase();
+    return terms.every((term) => haystack.includes(term));
+  }
+
   public startedAgo(now: number): string {
     const seconds = Math.max(0, Math.round((now - this.row.startedAt) / 1000));
     if (seconds < 60) return `${String(seconds)}s`;

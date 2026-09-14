@@ -63,7 +63,9 @@ export function PaneView({ target, title, onClose }: PaneViewProps): JSX.Element
   }, [target]);
 
   return (
-    <section className="pane-card" aria-label={`terminal for ${title}`}>
+    // `data-deck-pane` is what `1`-`9` counts (P2-T5). On the card rather than on the host so
+    // the digit finds the pane even before xterm has attached its input to it.
+    <section className="pane-card" data-deck-pane="" aria-label={`terminal for ${title}`}>
       <header className="pane-head">
         <span className="pane-title">{title}</span>
         <span className={`chip chip-${status}`}>{status}</span>
