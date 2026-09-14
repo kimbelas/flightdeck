@@ -679,7 +679,68 @@ phases:
         security: [SEC-FS-2]
       - id: P1-T8
         title: SQLite store (node:sqlite) — schema, migrations, events, snapshots, audit table
-        status: todo
+        status: done
+        done_on: 2026-09-14
+        depends_on: [P1-T3, P1-T5, P1-T6]
+        notes: >-
+          The port and the fake landed in P1-T3 and went unused for eleven tasks, so this was
+          mostly the adapter — plus the two things that only became visible once something was
+          actually writing to it.
+
+          **Migrations are an array and `user_version` is the index into it.** No migration table,
+          no filenames: SQLite already carries an integer per database for this, and a list whose
+          length IS the target version cannot disagree with itself the way a table of "which ones
+          ran" can. Each step runs in one transaction WITH its version bump — a migration that
+          half-applied and recorded itself as done is the failure that costs a rebuild.
+
+          **The payload is capped at 256 KB and the overflow is a marker, not a truncation.** A
+          hook body may be 4 MB and one arrives per turn per session (`limits.ts`), so keeping
+          every one forever is unbounded growth in the one file that is never deleted. Half a
+          payload pretending to be whole would be worse than a row saying how big it was. The cap
+          is sixteen times the largest payload in `fixtures/hooks/`.
+
+          **One contract suite, two implementations.** `tests/core/ports/store-contract.ts` runs
+          the same 17 cases against `FakeStore` and `SqliteStore`. The fake's own header claimed
+          "nothing above the port can tell them apart"; this is that claim made executable, and it
+          is what stops every test above the port passing against behaviour that does not ship.
+
+          **A constructor that throws leaks the handle it opened** (RESEARCH.md G.17). `DatabaseSync`
+          opens before any pragma runs, and a throw from the pragma or a migration returns no object
+          for anyone to `close()`. On Windows that is not untidy, it is a file nobody can delete —
+          which is how the test for "refuse a file that is not a database" failed its own cleanup
+          rather than its assertion, and took fifteen other tests with it.
+
+          **The audit table would have shipped empty, because nothing wrote to it.** `POST /sessions`
+          is the only mutating route today and it wrote no row (SEC-PROC-3). `AuditLog` is the
+          collaborator that fixes that, with the same never-throw discipline as `StoringEventSink`
+          and for the same reason: refusing to launch the owner's session because a row could not
+          be written would be the audit trail causing the incident it exists to record. A launch
+          writes exactly one row on every path out, refusals included — those are the rows a
+          reviewer looks for. `args` carries the flags and never the prompt.
+
+          **Snapshots ride the change gate that already exists.** `VitalsRegistry` answers "did this
+          move in a way anyone would draw differently", and `StoringEventSink` writes the snapshot
+          row off the same `vitals` event rather than a second sink — one copy of the swallow
+          logic. Verified live: 32 snapshots against 60 events, with real context percentages, cost
+          and model id.
+
+          Known gap, and it belongs to P1-T12: the database file carries no ACL yet (SEC-FS-4 is
+          on that task with the token file and `doctor`).
+        deliverables:
+          [
+            contracts/store-file.ts,
+            contracts/vitals-snapshot.ts,
+            core/adapters/sqlite/schema.ts,
+            core/adapters/sqlite/sqlite-store.ts,
+            core/adapters/sqlite/rows.ts,
+            core/adapters/storing-event-sink.ts,
+            core/application/audit-log.ts,
+            core/shutdown.ts,
+            tests/core/adapters/sqlite-store.test.ts,
+            tests/core/adapters/storing-event-sink.test.ts,
+            tests/core/application/audit-log.test.ts,
+            tests/core/ports/store-contract.ts,
+          ]
         security: [SEC-DATA-1, SEC-DATA-3]
       - id: P1-T9
         title: SSE /stream with state replay on connect

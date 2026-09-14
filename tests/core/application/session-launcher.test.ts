@@ -4,15 +4,32 @@
 // it must arrive as its own array element, never woven into a command string.
 import { describe, expect, it } from 'vitest';
 import { ClaudeInstall } from '../../../core/adapters/claude-cli/claude-install.ts';
-import { ConsoleLogger } from '../../../core/adapters/console-logger.ts';
+import { AuditLog } from '../../../core/application/audit-log.ts';
 import { SessionLauncher } from '../../../core/application/session-launcher.ts';
+import { FakeClock } from '../../fakes/fake-clock.ts';
+import { FakeLogger } from '../../fakes/fake-logger.ts';
 import { FakeProcessRunner } from '../../fakes/fake-process-runner.ts';
+import { FakeStore } from '../../fakes/fake-store.ts';
 
 const NEW_ID = '11111111-2222-3333-4444-555555555555';
-const silent = new ConsoleLogger({ write: () => true } as unknown as NodeJS.WritableStream);
+/** The store comes back too, because SEC-PROC-3's row is part of what a launch is (P1-T8). */
+function build(
+  runner: FakeProcessRunner,
+  executable = 'C:\\claude.exe',
+): { launcher: SessionLauncher; store: FakeStore } {
+  const store = new FakeStore();
+  const audit = new AuditLog(store, new FakeClock(), new FakeLogger());
+  const launcher = new SessionLauncher({
+    install: new ClaudeInstall('C:\\home', executable),
+    runner,
+    audit,
+    logger: new FakeLogger(),
+  });
+  return { launcher, store };
+}
 
 function launcher(runner: FakeProcessRunner, executable = 'C:\\claude.exe'): SessionLauncher {
-  return new SessionLauncher(new ClaudeInstall('C:\\home', executable), runner, silent);
+  return build(runner, executable).launcher;
 }
 
 describe('SessionLauncher', () => {
@@ -139,5 +156,85 @@ describe('SessionLauncher', () => {
     });
 
     expect(launched).toEqual({ ok: true, value: 'a1b2c3d4' });
+  });
+});
+
+describe('SessionLauncher — the audit row (SEC-PROC-3)', () => {
+  it('writes one ok row naming the new session', async () => {
+    const runner = new FakeProcessRunner();
+    runner.willReturn({ stdout: `Started background session ${NEW_ID}\n` });
+    const { launcher: subject, store } = build(runner);
+
+    await subject.launch({ subscription: '365', prompt: 'do a thing', name: 'r', cwd: undefined });
+
+    const [row] = store.allAudit;
+    expect(store.allAudit).toHaveLength(1);
+    expect(row?.action).toBe('launch');
+    expect(row?.outcome).toBe('ok');
+    expect(row?.target).toBe(NEW_ID);
+  });
+
+  it('writes a refused row when there is no claude, before running anything', async () => {
+    const runner = new FakeProcessRunner();
+    // `''` rather than `undefined`, which would take the default parameter — the file's existing
+    // convention for "claude.exe was not found".
+    const { launcher: subject, store } = build(runner, '');
+
+    await subject.launch({
+      subscription: 'isg',
+      prompt: 'do a thing',
+      name: undefined,
+      cwd: undefined,
+    });
+
+    // The refusals are the rows a reviewer actually looks for, so they cannot be the ones that
+    // return early without writing.
+    expect(store.auditFailures()).toHaveLength(1);
+    expect(store.allAudit[0]?.outcome).toBe('refused');
+    expect(store.allAudit[0]?.target).toBe('isg');
+  });
+
+  it('writes a refused row for a prompt that is out of range', async () => {
+    const runner = new FakeProcessRunner();
+    const { launcher: subject, store } = build(runner);
+
+    await subject.launch({ subscription: '365', prompt: '   ', name: undefined, cwd: undefined });
+
+    expect(store.allAudit[0]?.outcome).toBe('refused');
+    expect(store.allAudit[0]?.reason).toBeTypeOf('string');
+  });
+
+  it('writes a failed row carrying why, when the CLI does not exit 0', async () => {
+    const runner = new FakeProcessRunner();
+    runner.willReturn({ stdout: '', code: 1 });
+    const { launcher: subject, store } = build(runner);
+
+    await subject.launch({
+      subscription: '365',
+      prompt: 'do a thing',
+      name: undefined,
+      cwd: undefined,
+    });
+
+    expect(store.allAudit[0]?.outcome).toBe('failed');
+    expect(store.allAudit[0]?.reason).toContain('exit 1');
+  });
+
+  it('never puts the prompt in the row, which is kept forever and shown in the UI', async () => {
+    const runner = new FakeProcessRunner();
+    runner.willReturn({ stdout: `Started background session ${NEW_ID}\n` });
+    const { launcher: subject, store } = build(runner);
+
+    await subject.launch({
+      subscription: '365',
+      prompt: 'something the owner typed',
+      name: undefined,
+      cwd: undefined,
+    });
+
+    // `args` is the argv as run everywhere else; the prompt is the one element that bends the rule,
+    // because this table is kept forever and rendered (SEC-DATA-2, SEC-UI-2).
+    expect(JSON.stringify(store.allAudit)).not.toContain('something the owner typed');
+    expect(store.allAudit[0]?.args).toEqual(['--bg']);
   });
 });

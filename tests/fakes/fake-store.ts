@@ -8,13 +8,16 @@
 // the test that the port is the right shape.
 import type { AuditOutcome, AuditRow, DraftAuditRow } from '../../contracts/audit-row.ts';
 import type { DraftEvent, FdEvent } from '../../contracts/fd-event.ts';
+import type { DraftVitalsSnapshot, VitalsSnapshot } from '../../contracts/vitals-snapshot.ts';
 import type { Store } from '../../core/ports/store.ts';
 
 export class FakeStore implements Store {
   private readonly events: FdEvent[] = [];
   private readonly audit: AuditRow[] = [];
+  private readonly snapshots: VitalsSnapshot[] = [];
   private nextEventId = 1;
   private nextAuditId = 1;
+  private nextSnapshotId = 1;
   private writable = true;
 
   /** Everything appended, for a test that wants to read the whole log rather than page it. */
@@ -24,6 +27,10 @@ export class FakeStore implements Store {
 
   public get allAudit(): readonly AuditRow[] {
     return this.audit;
+  }
+
+  public get allSnapshots(): readonly VitalsSnapshot[] {
+    return this.snapshots;
   }
 
   /** Makes every subsequent append throw, as a full disk or a revoked ACL would. */
@@ -65,5 +72,19 @@ export class FakeStore implements Store {
 
   public auditSince(since: number, limit: number): readonly AuditRow[] {
     return this.audit.filter((row) => row.id > since).slice(0, Math.max(limit, 0));
+  }
+
+  public appendSnapshot(snapshot: DraftVitalsSnapshot): VitalsSnapshot {
+    if (!this.writable) throw new Error('store is not writable');
+    const stored: VitalsSnapshot = { ...snapshot, id: this.nextSnapshotId };
+    this.nextSnapshotId += 1;
+    this.snapshots.push(stored);
+    return stored;
+  }
+
+  /** The most recent `limit`, handed back oldest first — the port's ordering, honoured here too. */
+  public snapshotsForSession(sessionId: string, limit: number): readonly VitalsSnapshot[] {
+    const mine = this.snapshots.filter((row) => row.sessionId === sessionId);
+    return mine.slice(Math.max(mine.length - Math.max(limit, 0), 0));
   }
 }

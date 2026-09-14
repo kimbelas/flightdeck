@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ingestKeyFile } from '../contracts/ingest-key.ts';
+import { storeFile } from '../contracts/store-file.ts';
 import { CORE_PORT, UI_ORIGIN } from '../contracts/origins.ts';
 import { DeckQuery } from './application/deck-query.ts';
 import { EventHub } from './application/event-hub.ts';
@@ -15,6 +16,7 @@ import { StatuslineQueue } from './application/statusline-queue.ts';
 import { PaneRegistry } from './application/pane-registry.ts';
 import { Reconciler } from './application/reconciler.ts';
 import { SessionLauncher } from './application/session-launcher.ts';
+import { AuditLog } from './application/audit-log.ts';
 import { SubscriptionPaths } from './application/subscription-paths.ts';
 import { TranscriptReader } from './application/transcript-reader.ts';
 import { VitalsRegistry } from './application/vitals-registry.ts';
@@ -28,6 +30,8 @@ import { FanOutEventSink } from './adapters/fan-out-event-sink.ts';
 import { LoggingEventSink } from './adapters/logging-event-sink.ts';
 import { FsDirectoryWatcher } from './adapters/node/fs-directory-watcher.ts';
 import { FsTranscriptFile } from './adapters/node/fs-transcript-file.ts';
+import { SqliteStore } from './adapters/sqlite/sqlite-store.ts';
+import { StoringEventSink } from './adapters/storing-event-sink.ts';
 import { NodeScheduler } from './adapters/node/node-scheduler.ts';
 import { NodePtyHost } from './adapters/node-pty/node-pty-host.ts';
 import { WindowsPtyCommands } from './adapters/windows/windows-pty-commands.ts';
@@ -47,8 +51,10 @@ import { SessionsRoute } from './http/sessions-route.ts';
 import { StatuslineRoute } from './http/statusline-route.ts';
 import { TicketRoute } from './http/ticket-route.ts';
 import { warmUp } from './http/warm-up.ts';
+import { stopCore, type Running } from './shutdown.ts';
 import { SystemClock } from './ports/clock.ts';
 import type { Logger } from './ports/logger.ts';
+import type { Store } from './ports/store.ts';
 
 export interface Core {
   readonly server: CoreServer;
@@ -74,6 +80,14 @@ export interface Core {
    * bind must not leave a timer opening files every second for a service nobody can reach.
    */
   readonly transcripts: TranscriptReader;
+  /**
+   * The durable log (P1-T8). Closed by `shutdown`.
+   *
+   * The only thing here that outlives both the process and the transcripts it describes:
+   * `cleanupPeriodDays` deletes those after thirty days, so for anything older this file is the
+   * whole history (D9).
+   */
+  readonly store: SqliteStore;
   readonly logger: Logger;
   readonly tokenPath: string;
   /** Where the stable ingest key lives, for `flightdeck-core status` and Connect (SEC-HTTP-7). */
@@ -118,23 +132,29 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
   // One source for both readers: the deck's on-demand snapshot and the reconciler's timer must
   // not be able to disagree about what `--all` means or which config dir they read.
   const sessions = new ClaudeCliSessionSource(install, runner, logger);
-  const feeds = buildFeeds(install, sessions, clock, logger);
+  // Opened before the feeds, because they are constructed around it — and before `listen`, so a
+  // store that cannot be opened stops core at boot rather than on the first hook.
+  const store = new SqliteStore(storeFile());
+  const feeds = buildFeeds({ install, sessions, store, clock, logger });
   const http = buildHttp({
     guard: buildGuard(token, ingestKey),
     feeds,
+    // SEC-PROC-3: every mutating action writes a row, and `POST /launch` is the only one today.
+    audit: new AuditLog(store, clock, logger),
     sessions,
     runner,
     clock,
     install,
     logger,
   });
-  const running: Running = { ...http, ...feeds, issuer, logger };
+  const running: Running = { ...http, ...feeds, store, issuer, logger };
 
   return {
     server: http.server,
     reconciler: feeds.reconciler,
     vitals: feeds.vitals,
     transcripts: feeds.transcripts,
+    store,
     logger,
     tokenPath: tokenFile.location(),
     ingestKeyPath: ingestKeyFile(),
@@ -155,6 +175,7 @@ interface HttpSide {
 interface HttpParts {
   readonly guard: LoopbackGuard;
   readonly feeds: Feeds;
+  readonly audit: AuditLog;
   readonly sessions: ClaudeCliSessionSource;
   readonly runner: ExecFileProcessRunner;
   readonly clock: SystemClock;
@@ -180,7 +201,12 @@ function buildHttp(parts: HttpParts): HttpSide {
     router: buildRouter({
       feeds,
       deck: new DeckQuery(parts.sessions, clock),
-      launcher: new SessionLauncher(install, parts.runner, logger),
+      launcher: new SessionLauncher({
+        install,
+        runner: parts.runner,
+        audit: parts.audit,
+        logger,
+      }),
       tickets,
       limiter,
       install,
@@ -194,44 +220,6 @@ function buildHttp(parts: HttpParts): HttpSide {
   const sockets = new PtySocketServer({ guard, panes, tickets, logger });
   sockets.attachTo(server.raw);
   return { server, sockets, panes, tickets };
-}
-
-/** Everything that has to be let go of on the way out. The ORDER is the documentation. */
-interface Running {
-  readonly reconciler: Reconciler;
-  readonly transcripts: TranscriptReader;
-  readonly stream: SessionStreamRoute;
-  readonly issuer: TokenIssuer;
-  readonly tickets: TicketOffice;
-  readonly sockets: PtySocketServer;
-  readonly panes: PaneRegistry;
-  readonly server: CoreServer;
-  readonly logger: Logger;
-}
-
-/** Stops core. Idempotent, because every step below is. */
-async function stopCore(running: Running): Promise<void> {
-  // First, because NodeScheduler does not unref: a live sweep timer keeps the loop alive and the
-  // process would never exit.
-  running.reconciler.stop();
-  // Same reason, same sentence: another timer NodeScheduler does not unref.
-  running.transcripts.stop();
-  // Second, and BEFORE the server, which is not interchangeable: `server.close()` waits for open
-  // connections to end and an SSE response never does on its own, so a single deck tab would hold
-  // core open through Ctrl+C. Closing the streams afterwards would not rescue it either —
-  // `close()` reaps idle connections once, on the way in, and stops the interval that would reap
-  // them later, so a stream that ends after that leaves a keep-alive socket nothing collects.
-  // Measured, and pinned by two tests in core-server.test.ts.
-  running.stream.closeAll();
-  running.issuer.revoke();
-  // An outstanding ticket must not outlive the token that authorised minting it.
-  running.tickets.revokeAll();
-  running.sockets.close();
-  // Panes before the socket server would leave clients holding a dead attach; this order closes
-  // the sockets first, then kills what they were attached to.
-  running.panes.closeAll();
-  await running.server.close();
-  running.logger.info('core_stopped');
 }
 
 /**
@@ -273,12 +261,16 @@ interface Feeds {
  * still one of the listeners — an operator reading `.flightdeck-core.log` an hour later needs
  * what the browser saw, and the browser is not there an hour later (P1-T9).
  */
-function buildFeeds(
-  install: ClaudeInstall,
-  sessions: ClaudeCliSessionSource,
-  clock: SystemClock,
-  logger: Logger,
-): Feeds {
+interface FeedParts {
+  readonly install: ClaudeInstall;
+  readonly sessions: ClaudeCliSessionSource;
+  readonly store: Store;
+  readonly clock: SystemClock;
+  readonly logger: Logger;
+}
+
+function buildFeeds(parts: FeedParts): Feeds {
+  const { install, sessions, store, clock, logger } = parts;
   const scheduler = new NodeScheduler();
   const hub = new EventHub(logger);
   // Feed 4 rides the fan-out as a SUBSCRIBER, not as a producer: it learns which transcripts are
@@ -289,7 +281,15 @@ function buildFeeds(
     scheduler,
     logger,
   });
-  const sink = new FanOutEventSink([new LoggingEventSink(logger), hub, transcripts]);
+  // Four listeners, and none of them is redundant: the log is what an operator reads an hour
+  // later, the hub is what a browser sees now, the store is what can still answer next month, and
+  // the transcript reader is only here to learn which files are live (P1-T7).
+  const sink = new FanOutEventSink([
+    new LoggingEventSink(logger),
+    hub,
+    new StoringEventSink(store, logger),
+    transcripts,
+  ]);
   const vitals = new VitalsRegistry();
   const reconciler = new Reconciler({
     source: sessions,

@@ -8,11 +8,13 @@
 // `--bg` **requires an initial prompt** (RESEARCH.md B.4). The prompt is passed as an argv element
 // and never interpolated into a command string — it is user text heading for a process, which is
 // exactly SEC-PROC-1's case.
+import type { AuditOutcome } from '../../contracts/audit-row.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
 import type { ClaudeInstall } from '../adapters/claude-cli/claude-install.ts';
 import type { Logger } from '../ports/logger.ts';
 import type { ProcessRunner } from '../ports/process-runner.ts';
 import { err, ok, type Result } from '../shared/result.ts';
+import type { AuditLog } from './audit-log.ts';
 
 export type LaunchFailure = 'no_claude' | 'bad_request' | 'launch_failed';
 
@@ -28,26 +30,40 @@ const LAUNCH_TIMEOUT_MS = 60_000;
 const MAX_PROMPT_CHARS = 8000;
 const MAX_NAME_CHARS = 80;
 
+export interface SessionLauncherParts {
+  readonly install: ClaudeInstall;
+  readonly runner: ProcessRunner;
+  readonly audit: AuditLog;
+  readonly logger: Logger;
+}
+
 export class SessionLauncher {
   private readonly install: ClaudeInstall;
   private readonly runner: ProcessRunner;
+  private readonly audit: AuditLog;
   private readonly logger: Logger;
 
-  constructor(install: ClaudeInstall, runner: ProcessRunner, logger: Logger) {
-    this.install = install;
-    this.runner = runner;
-    this.logger = logger;
+  constructor(parts: SessionLauncherParts) {
+    this.install = parts.install;
+    this.runner = parts.runner;
+    this.audit = parts.audit;
+    this.logger = parts.logger;
   }
 
   /**
    * Starts a background session and returns the id `claude` printed.
    *
+   * Writes exactly one audit row, on every path out — including the two refusals, which are the
+   * rows a reviewer actually looks for (SEC-PROC-3). The row's `args` deliberately exclude the
+   * prompt: `contracts/audit-row.ts` says the argv as it was run, and the one place that rule
+   * bends is the field that carries the owner's own words into a table kept forever (SEC-DATA-2).
+   *
    * @returns the new session's id, which the deck uses to open a pane straight away.
    */
   public async launch(request: LaunchRequest): Promise<Result<string, LaunchFailure>> {
     const { executable } = this.install;
-    if (executable === undefined) return err('no_claude');
-    if (!isSane(request)) return err('bad_request');
+    if (executable === undefined) return this.refuse(request, 'no_claude', 'claude.exe not found');
+    if (!isSane(request)) return this.refuse(request, 'bad_request', 'prompt or name out of range');
 
     const args = ['--bg', ...nameArgs(request.name), request.prompt];
     const result = await this.runner.run({
@@ -64,16 +80,46 @@ export class SessionLauncher {
         code: result.code,
         timedOut: result.timedOut,
       });
+      const why = result.timedOut ? 'timed out' : `exit ${String(result.code)}`;
+      this.write(request, 'failed', why);
       return err('launch_failed');
     }
 
     const id = firstSessionId(result.stdout);
     if (id === undefined) {
       this.logger.warn('launch_id_not_found', { subscription: request.subscription });
+      this.write(request, 'failed', 'no session id in output');
       return err('launch_failed');
     }
     this.logger.info('session_launched', { subscription: request.subscription, session: id });
+    this.write(request, 'ok', undefined, id);
     return ok(id);
+  }
+
+  private refuse(
+    request: LaunchRequest,
+    failure: LaunchFailure,
+    reason: string,
+  ): Result<string, LaunchFailure> {
+    this.write(request, 'refused', reason);
+    return err(failure);
+  }
+
+  /** The target is the session once there is one, and the subscription until then. */
+  private write(
+    request: LaunchRequest,
+    outcome: AuditOutcome,
+    reason: string | undefined,
+    sessionId?: string,
+  ): void {
+    this.audit.record({
+      action: 'launch',
+      target: sessionId ?? request.subscription,
+      // The flags, never the prompt — see `launch`.
+      args: ['--bg', ...nameArgs(request.name)],
+      outcome,
+      ...(reason === undefined ? {} : { reason }),
+    });
   }
 }
 
