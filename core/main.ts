@@ -6,10 +6,12 @@
 import { readFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { join } from 'node:path';
+import { ingestKeyFile } from '../contracts/ingest-key.ts';
 import { CORE_PORT, LOOPBACK_ADDRESS, UI_ORIGIN } from '../contracts/origins.ts';
 import { DeckQuery } from './application/deck-query.ts';
 import { EventHub } from './application/event-hub.ts';
 import { HookQueue } from './application/hook-queue.ts';
+import { IngestKeyIssuer } from './application/ingest-key-issuer.ts';
 import { StatuslineQueue } from './application/statusline-queue.ts';
 import { PaneRegistry } from './application/pane-registry.ts';
 import { Reconciler } from './application/reconciler.ts';
@@ -65,6 +67,8 @@ export interface Core {
   readonly vitals: VitalsRegistry;
   readonly logger: Logger;
   readonly tokenPath: string;
+  /** Where the stable ingest key lives, for `flightdeck-core status` and Connect (SEC-HTTP-7). */
+  readonly ingestKeyPath: string;
   /** Where `claude.exe` was found, or `undefined` — panes on sessions need it, shells do not. */
   readonly claudePath: string | undefined;
   /**
@@ -93,8 +97,11 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
   const tokenFile = new WindowsTokenFile();
   const issuer = new TokenIssuer(tokenFile);
   const token = issuer.issue();
+  // Read-or-create, and NOT revoked on shutdown — the one secret that outlives the process, so a
+  // session that started three restarts ago still authenticates its hooks (SEC-HTTP-7, F.1.7).
+  const ingestKey = new IngestKeyIssuer(new WindowsTokenFile(ingestKeyFile())).ensure();
 
-  const guard = buildGuard(token);
+  const guard = buildGuard(token, ingestKey);
   // One install, shared: the panes attach with the same config dir the listing was read with, or
   // the deck shows a session a pane cannot find.
   const install = new ClaudeInstall();
@@ -134,6 +141,7 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
     vitals: feeds.vitals,
     logger,
     tokenPath: tokenFile.location(),
+    ingestKeyPath: ingestKeyFile(),
     claudePath: install.executable,
     warmUp: () => warmUp(token, logger),
     shutdown: () =>
@@ -220,11 +228,12 @@ async function stopCore(running: Running): Promise<void> {
  * that a hook may send 4 MB and a launch may not; this keeps the guard's own answer agreeing with
  * what the server does.
  */
-function buildGuard(token: string): LoopbackGuard {
+function buildGuard(token: string, ingestKey: string): LoopbackGuard {
   return new LoopbackGuard({
     port: CORE_PORT,
     uiOrigin: UI_ORIGIN,
     token,
+    ingestKey,
     bodyLimitBytes: BUDGETS.control.bodyBytes,
   });
 }

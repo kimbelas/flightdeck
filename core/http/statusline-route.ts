@@ -22,7 +22,7 @@ import type { StatuslineQueue } from '../application/statusline-queue.ts';
 import type { SubscriptionPaths } from '../application/subscription-paths.ts';
 import type { Logger } from '../ports/logger.ts';
 import { BUDGETS, type RouteLimit } from './limits.ts';
-import type { RequestFacts } from './loopback-guard.ts';
+import type { Credential, RequestFacts } from './loopback-guard.ts';
 import type { RateLimiter } from './rate-limiter.ts';
 import { json, type JsonResponse, type Route } from './route.ts';
 
@@ -41,6 +41,15 @@ export class StatuslineRoute implements Route {
   public readonly path = '/statusline';
   /** Ingestion: a render is machine traffic on somebody's keystroke, not a person clicking. */
   public readonly limit: RouteLimit = 'ingest';
+
+  /**
+   * Token only, even though it is an ingest route (SEC-HTTP-7).
+   *
+   * The statusLine block re-reads the token file on every render (SEC-ING-3), so a per-boot secret
+   * costs it nothing and the ingest key would buy it nothing. Only a client that captured its
+   * credential at spawn needs the stable one.
+   */
+  public readonly credential: Credential = 'token';
 
   private readonly queue: StatuslineQueue;
   private readonly paths: SubscriptionPaths;

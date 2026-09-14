@@ -7,6 +7,7 @@
 // (tests/scripts/statusline-patch.test.ts).
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import type { PatchOutcome, SourcePatcher } from '../core/ports/source-patcher.ts';
 
 const BLOCK_FILE = fileURLToPath(new URL('./statusline-block.py', import.meta.url));
 
@@ -33,8 +34,7 @@ const CALL_MARKERS: MarkerPair = {
   end: '# --- flightdeck call end ---',
 };
 
-export type PatchOutcome =
-  { readonly ok: true; readonly source: string } | { readonly ok: false; readonly reason: string };
+export type { PatchOutcome };
 
 type AnchorLookup =
   { readonly ok: true; readonly at: number } | { readonly ok: false; readonly reason: string };
@@ -46,7 +46,7 @@ type AnchorLookup =
  * Code ships a statusline.py whose anchors have moved, and Connect must be able to say so
  * without a stack trace and without half-writing the file.
  */
-export class StatuslinePatcher {
+export class StatuslinePatcher implements SourcePatcher {
   private readonly moduleRegion: readonly string[];
   private readonly callRegion: readonly string[];
 

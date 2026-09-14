@@ -9,7 +9,7 @@
 
 version: 1
 project: flightdeck
-updated: 2026-09-11
+updated: 2026-09-12
 
 docs:
   spec: SPEC.md
@@ -706,26 +706,87 @@ phases:
         security: [SEC-NET-1, SEC-HTTP-1, SEC-HTTP-2, SEC-HTTP-3, SEC-HTTP-4, SEC-HTTP-5, SEC-HTTP-6]
       - id: P1-T11
         title: Connect — compute, dry-run diff, back up and atomically merge the hooks + statusLine blocks into $CFG/settings.json; Disconnect reverses it
-        status: todo
+        status: done
+        done_on: 2026-09-12
+        depends_on: [P1-T5, P1-T6]
         notes: >-
-          Refuse to install unless core is installed and running — RESEARCH.md F.1.5, hooks against
-          a dead receiver put an error banner in every interactive session.
-          **This task carries the two installs and F.1.1's probe.** P1-T5's receiver and P1-T6's are
-          both built and neither is connected to anything: Connect is what writes the hooks block
-          into `$CFG/settings.json` and merges the statusLine block into `~/.claude/hooks/statusline.py`.
-          The statusLine patcher was dry-run against the real file on 2026-09-12 — both anchors
-          found, +74 lines, reversible byte for byte — so what is left is the write, its backup and
-          the refusal path when an anchor has moved (F.3.7).
-          **The probe**, moved here from P1-T5 by the owner on 2026-09-11: `SessionStart` is never delivered over `http` at all, and `SessionEnd`,
-          `UserPromptSubmit`, `Notification`, `PreCompact`, `SubagentStop` and the tool hooks are
-          unprobed. Assume nothing — install them one at a time against the real receiver and
-          capture what arrives, because a handler that never fires is indistinguishable from a
-          quiet machine. P1-T5's receiver is event-agnostic, so nothing is waiting on the answer;
-          what needs it is deciding which handlers Connect writes. The backup/temp/atomic-rename
-          procedure was exercised by hand in P0-T3 and works. Open question for this task: whether the
-          http handler's allowedEnvVars can supply the token, so a per-boot token (SEC-HTTP-3) does not
-          have to be written literally into settings.json.
-        security: [SEC-FS-3]
+          **The token question is answered, and not the way the question expected** (RESEARCH.md
+          F.1.7, DECISIONS.md D33). `allowedEnvVars` does supply the header — both `${VAR}` and
+          `$VAR` interpolate, and an *undeclared* name resolves to the empty string rather than
+          being left alone, so a typo is a 401 rather than anything readable. But the value comes
+          from the SESSION PROCESS'S OWN ENVIRONMENT, which Windows fixes at process creation, so a
+          per-boot token (SEC-HTTP-3) cannot reach a session that started before the current core.
+          A stale bearer is a 401, and a 401 on a hook is `Stop hook error occurred` for every turn
+          afterwards (F.1.5) — the banner this task exists to refuse, caused by us, while core is
+          running. **A secret a client cannot re-read must not rotate under it**, so hooks got
+          SEC-HTTP-7: a stable per-install ingest key, accepted on `POST /hooks` and nothing else.
+          Verified live — ingest key to /hooks 200, to /statusline 401, to /health 401; wrong key
+          401. `/statusline` stays token-only because the block re-reads the token file per render
+          (SEC-ING-3), so per-boot costs it nothing.
+          The global `httpHookAllowedEnvVars` is deliberately NOT written: when it is present Claude
+          Code intersects every hook's list with it, so Connect would silently narrow http hooks the
+          owner adds later.
+          **F.1.1's probe is done — all eleven events, one run, two transports** (F.1.6). Every
+          event got an `http` handler AND a `command` handler at once, because a handler that never
+          fires is indistinguishable from a quiet machine and only the other transport tells them
+          apart. `SessionStart` is still the only event `http` drops, unchanged on 2.1.269.
+          `Notification` works, which matters most — it is the "needs you" signal. `PostCompact` was
+          never reached (compaction was declined) and is the one honest gap.
+          **Connect installs five events and skips five on purpose.** `SessionStart` is not
+          installed even as a `command` handler: the reconciler already learns of a new session from
+          the sweep and `fs.watch` (D3 feeds 3 and 5), so it would be a second mechanism to keep in
+          agreement with the first, for news the first already has. `PreToolUse`/`PostToolUse` fire
+          per tool call and nothing reads them yet — adding them later is one line, taking a
+          per-tool-call POST back out of the owner's sessions is not.
+          **Two bugs found by running it, both in RESEARCH.md §G.** G.13 — `JSON.stringify` always
+          emits LF, and `.claude-isg`'s settings.json is CRLF while `.claude-365`'s is LF, so the
+          same code produced +85/-0 on one subscription and a whole-file rewrite (+173/-88 on 88
+          lines) on the other. Every unit test passed, because they compare parsed objects; only the
+          whole-file dry run showed it. `core/shared/json-format.ts` now re-prints in the file's own
+          convention. It is F.3.7's trap in a second file three days later, because the lesson had
+          been recorded as a fact about statusline.py rather than about writing to files somebody
+          else owns. G.14 — the first live Connect could not write at all (a hand-rolled basename
+          put a whole path inside the temp filename), and the backup-first order is why that cost
+          nothing: backup taken, original untouched, temp removed, operator told which file failed.
+          **Verified end to end on the live config of both subscriptions**, not only in tests. After
+          Connect, a real `-p` session on 365 and a real `--bg` session on isg produced
+          `UserPromptSubmit`, `Stop` and `SessionEnd` in core's log from both; statusLine vitals
+          arrived from both, including from the owner's own already-running session, since
+          statusline.py is re-executed per render while hooks are read at session start; no request
+          was ever refused; and Disconnect restored all three files **byte for byte**, sha256
+          identical to copies taken before Connect, CRLF included.
+          **Left for P1-T12:** `doctor` should check that the ingest key file exists with the right
+          ACL and that `FLIGHTDECK_TOKEN` still matches it — a mismatch is a silent 401 per turn.
+        deliverables:
+          [
+            contracts/connect-plan.ts,
+            contracts/ingest-key.ts,
+            core/application/connector.ts,
+            core/application/connect-planner.ts,
+            core/application/hooks-block.ts,
+            core/application/ingest-key-issuer.ts,
+            core/ports/config-file.ts,
+            core/ports/core-health.ts,
+            core/ports/session-environment.ts,
+            core/ports/source-patcher.ts,
+            core/adapters/node/backing-up-config-file.ts,
+            core/adapters/node/http-core-health.ts,
+            core/adapters/windows/user-environment-variable.ts,
+            core/shared/json-format.ts,
+            core/shared/text-diff.ts,
+            scripts/connect-cli.ts,
+            tests/contracts/connect-plan.test.ts,
+            tests/core/application/connector.test.ts,
+            tests/core/application/connect-planner.test.ts,
+            tests/core/application/hooks-block.test.ts,
+            tests/core/application/ingest-key-issuer.test.ts,
+            tests/core/adapters/backing-up-config-file.test.ts,
+            tests/core/http/core-server-credentials.test.ts,
+            tests/core/http/loopback-guard-ingest.test.ts,
+            tests/core/shared/json-format.test.ts,
+            tests/core/shared/text-diff.test.ts,
+          ]
+        security: [SEC-FS-3, SEC-HTTP-7, SEC-ING-3, SEC-OPS-2]
       - id: P1-T12
         title: Operations — `flightdeck-core status`, scripts/doctor, logon-task installer with token file ACL
         status: todo

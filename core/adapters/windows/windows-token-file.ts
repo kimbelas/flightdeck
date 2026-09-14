@@ -8,7 +8,7 @@
 // The path itself comes from contracts/core-token.ts, which proxy.ts also reads — the deck and
 // core have to agree about it, and the only way to guarantee that is to have one definition.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { coreTokenFile } from '../../../contracts/core-token.ts';
 import type { TokenFile } from '../../ports/token-file.ts';
@@ -35,6 +35,16 @@ export class WindowsTokenFile implements TokenFile {
     mkdirSync(dirname(this.path), { recursive: true });
     writeFileSync(this.path, token, { encoding: 'utf8', mode: 0o600 });
     if (this.restrictAcl) this.applyAcl();
+  }
+
+  /** Absent, empty and unreadable are all one answer: there is no secret here (SEC-HTTP-7). */
+  public read(): string | undefined {
+    try {
+      const secret = readFileSync(this.path, 'utf8').trim();
+      return secret === '' ? undefined : secret;
+    } catch {
+      return undefined;
+    }
   }
 
   public remove(): void {

@@ -18,7 +18,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { LOOPBACK_ADDRESS } from '../../contracts/origins.ts';
 import type { Logger } from '../ports/logger.ts';
 import { budgetFor } from './limits.ts';
-import type { LoopbackGuard, RequestFacts, Rejection } from './loopback-guard.ts';
+import type { Credential, LoopbackGuard, RequestFacts, Rejection } from './loopback-guard.ts';
 import type { RateLimiter } from './rate-limiter.ts';
 import type { RequestRouter } from './request-router.ts';
 import { json, type JsonResponse, type Route, type StreamRoute } from './route.ts';
@@ -108,25 +108,32 @@ export class CoreServer {
       url: request.url,
       headers: request.headers,
     };
-    const rejection = this.screen(facts);
-    if (rejection !== undefined) {
-      this.logger.warn('request_denied', { control: rejection.control, reason: rejection.reason });
-      respond(response, json(rejection.status, { error: 'refused' }));
-      return;
-    }
-
     const method = request.method ?? 'GET';
     const path = pathOf(request.url);
 
     // Before the JSON router, because a stream answers with the socket rather than with a value:
     // there is no `JsonResponse` for it to return and nothing for `respond` to serialise.
     const streamRoute = this.streams.find(method, path);
+    const route = streamRoute === undefined ? this.router.find(method, path) : undefined;
+
+    // The route is found BEFORE the screen, which reads backwards and is not: `find` is a lookup
+    // in a Map keyed by an exact method and path (RequestRouter), with no handler, no body and no
+    // side effect. Nothing about the request has been acted on. What it buys is the one thing the
+    // screen cannot work out for itself — which credentials this path accepts (SEC-HTTP-7) — and
+    // an unknown path answers `token`, so a 404 is screened as strictly as anything else.
+    const rejection = this.screen(facts, route?.credential ?? 'token');
+    if (rejection !== undefined) {
+      this.logger.warn('request_denied', { control: rejection.control, reason: rejection.reason });
+      respond(response, json(rejection.status, { error: 'refused' }));
+      return;
+    }
+
     if (streamRoute !== undefined) {
       this.openStream(streamRoute, request, response, facts);
       return;
     }
 
-    await this.serve(this.router.find(method, path), request, response, facts);
+    await this.serve(route, request, response, facts);
   }
 
   /** Reads the body, runs the handler, and turns anything either of them throws into a status. */
@@ -217,12 +224,15 @@ export class CoreServer {
     route.open(stream, facts);
   }
 
-  private screen(facts: RequestFacts): Rejection | undefined {
+  private screen(facts: RequestFacts, credential: Credential): Rejection | undefined {
     const method = (facts.method ?? 'GET').toUpperCase();
     // A GET has no Content-Type to demand; screenStream is screenRequest without that one check.
+    // It takes no credential argument because no bodyless route accepts the ingest key — a hook is
+    // always a POST, and widening the GET path would hand the stable key the one route where the
+    // token is load-bearing alone (RESEARCH.md F.6.5).
     return BODYLESS.includes(method)
       ? this.guard.screenStream(facts)
-      : this.guard.screenRequest(facts);
+      : this.guard.screenRequest(facts, credential);
   }
 }
 

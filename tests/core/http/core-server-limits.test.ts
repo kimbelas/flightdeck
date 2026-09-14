@@ -12,6 +12,7 @@ import { request as httpRequest } from 'node:http';
 import { describe, expect, it } from 'vitest';
 import { UI_ORIGIN } from '../../../contracts/origins.ts';
 import { ConsoleLogger } from '../../../core/adapters/console-logger.ts';
+import type { Credential } from '../../../core/http/loopback-guard.ts';
 import { CoreServer } from '../../../core/http/core-server.ts';
 import { BUDGETS, type RouteLimit } from '../../../core/http/limits.ts';
 import { LoopbackGuard } from '../../../core/http/loopback-guard.ts';
@@ -34,10 +35,12 @@ class EchoRoute implements Route {
   public readonly method = 'POST';
   public readonly limit: RouteLimit;
   public readonly path: string;
+  public readonly credential: Credential;
 
-  constructor(path: string, limit: RouteLimit) {
+  constructor(path: string, limit: RouteLimit, credential: Credential = 'token') {
     this.path = path;
     this.limit = limit;
+    this.credential = credential;
   }
 
   public handle(request: unknown, body: string): JsonResponse {
