@@ -1015,7 +1015,8 @@ phases:
         security: [SEC-OPS-1, SEC-OPS-2, SEC-OPS-3, SEC-FS-2, SEC-FS-4]
       - id: P1-T13
         title: Coverage thresholds on — core/domain 95 %, core overall 80 %
-        status: todo
+        status: done
+        done_on: 2026-09-14
         notes: >-
           Read the thresholds off the coverage MAP, not the text table. Found in P1-T1: on a full
           run the text reporter silently omits rows it lists on a smaller one — core/domain and
@@ -1025,6 +1026,41 @@ phases:
           vacuously — the same shape as the scrubber's silent skip in P0-T9. Vitest's own
           thresholds read the map, so they are correct; the check to add here is that a
           deliberately uncovered file actually FAILS the run.
+
+          **Measured first, then set** (RESEARCH.md G.19): core/domain 99.35 % lines / 99.17 %
+          branches, core 88.22 / 85.32, contracts 96.67 / 85.42. So 95, 80 and 90, on all four
+          metrics — except branches in contracts, held at 80 because the hand-written parsers there
+          are mostly defensive guards on shapes nothing has ever sent. No global threshold:
+          `coverage.include` covers `scripts/**` at ~20 %, and one number across that and the
+          domain would mean nothing.
+
+          **How Vitest resolves a glob threshold, read out of its source rather than assumed**:
+          one coverage map per glob, `picomatch(glob)(relative(root, file))`, groups independent —
+          so a domain file counts against both 95 and 80. The `relative()` is why this needed
+          checking on Windows, where it returns backslashes; the separator is normalised before the
+          match, confirmed by setting the domain to 100 and watching it report 96.07 % and exit 1.
+
+          **The probe for the gate was broken in exactly the way it exists to detect.** The first
+          `tests/coverage-gate.test.ts` wrote a config into a temp directory outside the repo and
+          asserted a non-zero exit; the run did exit 1 — with `Cannot find module 'vitest/config'`.
+          An exit-code-only assertion passed while proving nothing about coverage. It now passes
+          the configuration as CLI flags, needs no config file, and asserts the threshold's own
+          error text plus that the child actually ran a test. The real config was then proven
+          separately with a throwaway twenty-branch file in core/domain: lines 87.35 %, statements
+          80.93 %, branches 75.47 %, run failed, every metric named.
+
+          **CI measures less than this machine does, and CI is the gate.** `npm test` runs on
+          ubuntu-latest where every `tests/win/**` body skips, so the Windows adapters contribute
+          nothing: core is 86.39 / 83.87 there against 88.22 / 85.32 locally. Both clear 80, but
+          the smaller margin is the one that matters — written into CODING-STANDARDS §10.1 so the
+          next person does not learn it from a red PR.
+        deliverables:
+          [
+            vitest.config.ts,
+            tests/coverage-gate.test.ts,
+            CODING-STANDARDS.md §10.1,
+            RESEARCH.md G.19,
+          ]
       - id: P1-T14
         title: Narrow the roster read — named fields only; rvAuth, ptyAuth and dispatch on the deny-list with a test
         status: todo

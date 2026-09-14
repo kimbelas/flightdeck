@@ -1762,3 +1762,36 @@ which is the whole reason the directory rather than the file carries the ACL: `f
 holds the most recently committed rows and is created after anything could have restricted the
 database itself. Before the change, on the same machine, the same check read
 `also granted to NT AUTHORITY\SYSTEM, BUILTIN\Administrators`.
+
+
+### G.19 The coverage gate, and the two ways it could have passed vacuously (P1-T13)
+
+Measured 2026-09-14, Vitest 5.0.0, v8 provider. `core/domain/**` 99.35 % lines / 99.17 % branches,
+`core/**` 88.22 / 85.32, `contracts/**` 96.67 / 85.42. The thresholds are therefore 95, 80 and 90,
+with `contracts/**` branches held at 80 — see `COVERAGE_THRESHOLDS`.
+
+**How Vitest resolves a glob threshold, from its source** (`resolveThresholds`): one coverage map
+per glob, built from `files.filter(file => picomatch(glob)(relative(root, file)))`, and the groups
+are **independent** — a `core/domain` file is counted against both `core/domain/**` and `core/**`.
+A global threshold, if set, applies to every file "even if they are included by glob patterns".
+The `relative()` there is why this was worth checking on Windows: it returns backslashes, and a
+pattern written with forward slashes could have matched nothing. It matches; the separator is
+normalised before the comparison. Confirmed by setting `core/domain/**` to 100 and watching the
+run report `96.07 %` against it and exit 1.
+
+**The gate bites on the real config.** A throwaway `core/domain/gate-probe.ts` of twenty uncovered
+branches took the group to `lines 87.35 %, statements 80.93 %, branches 75.47 %` and failed the
+run with every metric named. That is the check this task's notes asked for.
+
+**The probe for it was broken in the way it was meant to detect.** The first version of
+`tests/coverage-gate.test.ts` wrote a `vitest.config.ts` into a temp directory outside the repo and
+asserted the child run exited non-zero. It did exit 1 — with `Cannot find module 'vitest/config'`,
+because nothing outside the repo can resolve it. An exit-code-only assertion therefore passed while
+proving nothing about coverage at all. The test now passes the whole configuration as CLI flags,
+needs no config file, and asserts the threshold's own error text and that the child actually ran a
+test. **An assertion that cannot tell the two failures apart is not an assertion.**
+
+**CI measures less than this machine does.** `npm test` gates on `ubuntu-latest`, where every
+`tests/win/**` body skips (`it.skipIf(!onWindows)`), so the Windows adapters contribute nothing:
+`core/**` is 86.39 % lines / 83.87 % branches there against 88.22 / 85.32 locally. Both clear 80,
+but the margin that matters is the CI one, and it is the smaller.
