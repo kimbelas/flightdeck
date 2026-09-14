@@ -19,9 +19,12 @@
 // about events this screen does not have.
 import type { CoreStatus, SessionVitalsLine } from '../contracts/core-status.ts';
 import { parseCoreStatus } from '../contracts/core-status.ts';
-import { CORE_PORT, LOOPBACK_ADDRESS } from '../contracts/origins.ts';
-import { readCoreToken } from '../contracts/core-token.ts';
 import { parseDeckSnapshot, type DeckSnapshot, type SessionRow } from '../contracts/session-row.ts';
+import {
+  HttpCoreClient,
+  type CoreGetPath,
+  type CoreResponse,
+} from '../core/adapters/node/http-core-client.ts';
 import { CONTEXT_PRESSURE_PERCENT } from '../core/domain/session-vitals.ts';
 import { err, ok, type Result } from '../core/shared/result.ts';
 
@@ -57,13 +60,12 @@ interface Merged {
  * here (RESEARCH.md F.3.3), not an exception.
  */
 export async function readStatus(): Promise<Result<StatusReading, string>> {
-  const token = readCoreToken();
-  if (token === undefined) return err('no token file — core is not running');
-  const status = await get('/status', token);
+  const client = new HttpCoreClient(TIMEOUT_MS);
+  const status = await json(client, '/status');
   if (!status.ok) return err(status.error);
   const parsed = parseCoreStatus(status.value);
   if (parsed === undefined) return err('core answered /status with a body this build cannot read');
-  const sessions = await get('/sessions', token);
+  const sessions = await json(client, '/sessions');
   return ok({
     status: parsed,
     sessions: sessions.ok ? parseDeckSnapshot(sessions.value) : undefined,
@@ -255,27 +257,28 @@ function duration(ms: number): string {
 }
 
 /**
- * One authenticated GET against core, as JSON.
+ * One route, parsed as JSON.
  *
- * `fetch` sets `Host` from the URL and sends no `Origin`, which is exactly the shape the guard
- * accepts from a local process (SEC-HTTP-1, -2): a present-but-wrong Origin is what it refuses,
- * and an absent one falls through to the token — the same path a hook POST takes.
+ * The request itself belongs to `HttpCoreClient`, which builds it from constants and a closed set
+ * of paths — this is only the JSON step and the two failures worth naming separately: a status
+ * core did not like, and a body that is not JSON at all.
  */
-async function get(path: string, token: string): Promise<Result<unknown, string>> {
+async function json(client: HttpCoreClient, path: CoreGetPath): Promise<Result<unknown, string>> {
+  const answer = await client.get(path);
+  if (!answer.ok) return err(answer.error);
+  return parseBody(answer.value, path);
+}
+
+function parseBody(response: CoreResponse, path: CoreGetPath): Result<unknown, string> {
+  if (response.status !== 200) {
+    // A 401 here means the token file is newer or older than the core holding the port — the
+    // failure the `run` skill documents, and worth naming rather than reporting as "down".
+    return err(`core answered ${String(response.status)} on ${path}`);
+  }
   try {
-    const response = await fetch(`http://${LOOPBACK_ADDRESS}:${String(CORE_PORT)}${path}`, {
-      headers: { authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    if (!response.ok) {
-      // A 401 here means the token file is newer or older than the core holding the port — the
-      // failure the `run` skill documents, and worth naming rather than reporting as "down".
-      return err(`core answered ${String(response.status)} on ${path}`);
-    }
-    const body: unknown = await response.json();
+    const body: unknown = JSON.parse(response.body);
     return ok(body);
-  } catch (cause) {
-    const reason = cause instanceof Error ? cause.message : 'unknown';
-    return err(`could not reach core on ${path} — ${reason}`);
+  } catch {
+    return err(`core answered ${path} with something that is not JSON`);
   }
 }
