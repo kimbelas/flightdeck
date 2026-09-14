@@ -15,6 +15,19 @@ import type { ModelSpend, TranscriptRecord } from '../../contracts/transcript-re
 /** How many touched files to remember, newest first. The deck shows a handful; the store owns history. */
 const MAX_FILES = 40;
 
+/**
+ * How many points the tokens sparkline keeps, oldest first.
+ *
+ * `tokenTrail` is the ONE field here that is a history rather than a replacement, and it is worth
+ * being explicit about why that does not break the fold (P2-T4). The digest's contract is that
+ * every record touches only the field it speaks for and nothing has to be rebuilt from the start of
+ * a 50 MB file; appending a bounded point per `cost` record keeps both halves — it is still a
+ * function of (digest, record), and it is still O(1). What it is NOT is a complete history: a
+ * digest built from a byte offset starts its trail where the reading started, which is why the
+ * sparkline is drawn without a y-axis and labelled by its endpoints.
+ */
+const MAX_TRAIL_POINTS = 60;
+
 export interface Compaction {
   readonly trigger: string;
   readonly preTokens: number;
@@ -33,6 +46,22 @@ export interface Spend {
   readonly linesAdded: number;
   readonly linesRemoved: number;
   readonly byModel: readonly ModelSpend[];
+}
+
+/**
+ * One point on the tokens sparkline.
+ *
+ * `tokens` is **cumulative tokens consumed** — input + output + both cache counters, summed across
+ * every model in one `cost` record. Claude Code's own arithmetic, never recomputed from rates (D5).
+ *
+ * It is deliberately NOT context occupancy: that is `usedPercentage` and it comes from the
+ * statusLine, it falls when a session compacts, and conflating the two would draw a line that goes
+ * down when the session got more expensive. This one only ever climbs, and its slope is the thing
+ * worth seeing — how fast this session is burning.
+ */
+export interface TokenPoint {
+  readonly at: number;
+  readonly tokens: number;
 }
 
 export class TranscriptDigest {
@@ -100,6 +129,17 @@ export class TranscriptDigest {
     return this.fields.toolAt;
   }
 
+  /**
+   * Cumulative tokens over time, oldest first — the sparkline (P2-T4).
+   *
+   * Empty until two `cost` records have been seen: one point is not a line, and a one-point
+   * sparkline is a dot that reads as data.
+   */
+  public get tokenTrail(): readonly TokenPoint[] {
+    const trail = this.fields.tokenTrail ?? [];
+    return trail.length < 2 ? [] : trail;
+  }
+
   /** True when nothing has been read yet. The deck draws no extras rather than empty ones. */
   public get isEmpty(): boolean {
     return Object.keys(this.fields).length === 0;
@@ -112,7 +152,7 @@ export class TranscriptDigest {
    * between a custom title and an AI one lives here — in one place — instead of at every read.
    */
   public with(record: TranscriptRecord): TranscriptDigest {
-    return new TranscriptDigest({ ...this.fields, ...fieldsFor(record, this.files) });
+    return new TranscriptDigest({ ...this.fields, ...fieldsFor(record, this.fields) });
   }
 
   /** This digest plus a whole batch, in file order. */
@@ -134,6 +174,7 @@ interface Fields {
   files?: readonly string[];
   tool?: string;
   toolAt?: number;
+  tokenTrail?: readonly TokenPoint[];
 }
 
 /**
@@ -144,7 +185,7 @@ interface Fields {
  * rather than defaulted, so adding a record kind is a type error here and not a silent no-op —
  * which is the whole value of the union (R12).
  */
-function fieldsFor(record: TranscriptRecord, files: readonly string[]): Fields {
+function fieldsFor(record: TranscriptRecord, current: Readonly<Fields>): Fields {
   switch (record.kind) {
     case 'title':
     case 'agent':
@@ -153,11 +194,11 @@ function fieldsFor(record: TranscriptRecord, files: readonly string[]): Fields {
     case 'away':
     case 'file':
     case 'tool':
-      return activityFor(record, files);
+      return activityFor(record, current);
     case 'cost':
     case 'compaction':
     case 'turn':
-      return measurementsFor(record);
+      return measurementsFor(record, current);
   }
 }
 
@@ -178,8 +219,9 @@ function namesFor(
 /** What just happened — the three records that carry a timestamp worth keeping. */
 function activityFor(
   record: Extract<TranscriptRecord, { kind: 'away' | 'file' | 'tool' }>,
-  files: readonly string[],
+  current: Readonly<Fields>,
 ): Fields {
+  const files = current.files ?? [];
   switch (record.kind) {
     case 'away':
       return withAt({ awaySummary: record.summary }, 'awaySummaryAt', record.at);
@@ -193,7 +235,9 @@ function activityFor(
 /** What it has cost. */
 function measurementsFor(
   record: Extract<TranscriptRecord, { kind: 'cost' | 'compaction' | 'turn' }>,
+  current: Readonly<Fields>,
 ): Fields {
+  const trail = current.tokenTrail ?? [];
   switch (record.kind) {
     case 'cost':
       return {
@@ -203,6 +247,7 @@ function measurementsFor(
           linesRemoved: record.linesRemoved,
           byModel: record.spend,
         },
+        tokenTrail: plot(trail, record.at, totalTokens(record.spend)),
       };
     case 'compaction':
       return {
@@ -226,6 +271,38 @@ function measurementsFor(
  * A file edited eleven times is one entry that keeps moving, not eleven — the row says what this
  * session has been working on, and a list that is eleven copies of one filename says nothing.
  */
+/**
+ * The trail plus one point, bounded.
+ *
+ * A record with no timestamp is skipped rather than placed at `Date.now()`: a point in the wrong
+ * place on a time axis is worse than a missing one, and a digest is built by replaying a file that
+ * may be hours old. A reading that did not move the total is skipped too — a `cost` record arrives
+ * per turn and a turn that consumed nothing would draw a flat step that suggests idling rather than
+ * nothing to plot.
+ */
+function plot(
+  trail: readonly TokenPoint[],
+  at: number | undefined,
+  tokens: number,
+): readonly TokenPoint[] {
+  if (at === undefined || tokens === 0) return trail;
+  if (trail.at(-1)?.tokens === tokens) return trail;
+  return [...trail, { at, tokens }].slice(-MAX_TRAIL_POINTS);
+}
+
+/** Every token Claude Code counted for this reading, across every model. See `TokenPoint`. */
+function totalTokens(spend: readonly ModelSpend[]): number {
+  return spend.reduce(
+    (sum, model) =>
+      sum +
+      model.inputTokens +
+      model.outputTokens +
+      model.cacheReadTokens +
+      model.cacheCreationTokens,
+    0,
+  );
+}
+
 function touch(files: readonly string[], path: string): readonly string[] {
   return [path, ...files.filter((seen) => seen !== path)].slice(0, MAX_FILES);
 }

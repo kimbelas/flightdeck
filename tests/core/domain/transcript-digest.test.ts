@@ -96,9 +96,105 @@ describe('TranscriptDigest', () => {
           cacheCreationTokens: 97,
         },
       ],
+      at: 900,
     });
 
     expect(digest.spend?.costUsd).toBe(31.16);
     expect(digest.spend?.byModel[0]?.model).toBe('claude-opus-5');
+  });
+});
+
+describe('TranscriptDigest — the tokens sparkline (P2-T4)', () => {
+  function cost(tokens: number, at: number | undefined): TranscriptRecord {
+    return {
+      kind: 'cost',
+      costUsd: 1,
+      linesAdded: 0,
+      linesRemoved: 0,
+      // Split across two models, because the point is a SUM: a trail that read one model's numbers
+      // would flatten the moment a session used a sub-agent on a different one.
+      spend: [
+        {
+          model: 'claude-opus-5',
+          costUsd: 1,
+          inputTokens: Math.floor(tokens / 2),
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        },
+        {
+          model: 'claude-haiku-4-5',
+          costUsd: 0,
+          inputTokens: 0,
+          outputTokens: tokens - Math.floor(tokens / 2),
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        },
+      ],
+      at,
+    };
+  }
+
+  it('is empty for a single reading, because one point is not a line', () => {
+    expect(TranscriptDigest.EMPTY.with(cost(100, 1000)).tokenTrail).toEqual([]);
+  });
+
+  it('plots cumulative tokens, oldest first', () => {
+    const digest = TranscriptDigest.EMPTY.withAll([
+      cost(100, 1000),
+      cost(250, 2000),
+      cost(900, 3000),
+    ]);
+
+    expect(digest.tokenTrail).toEqual([
+      { at: 1000, tokens: 100 },
+      { at: 2000, tokens: 250 },
+      { at: 3000, tokens: 900 },
+    ]);
+  });
+
+  it('skips a reading with no timestamp rather than placing it at now', () => {
+    // A digest is built by replaying a file that may be hours old, so `Date.now()` would put the
+    // point in the wrong place on the axis — worse than not drawing it.
+    const digest = TranscriptDigest.EMPTY.withAll([
+      cost(100, 1000),
+      cost(250, undefined),
+      cost(900, 3000),
+    ]);
+
+    expect(digest.tokenTrail.map((point) => point.at)).toEqual([1000, 3000]);
+  });
+
+  it('skips a reading that did not move the total', () => {
+    // A `cost` record arrives per turn; a turn that consumed nothing would draw a flat step that
+    // reads as idling rather than as nothing to plot.
+    const digest = TranscriptDigest.EMPTY.withAll([
+      cost(100, 1000),
+      cost(100, 2000),
+      cost(250, 3000),
+    ]);
+
+    expect(digest.tokenTrail.map((point) => point.tokens)).toEqual([100, 250]);
+  });
+
+  it('keeps the newest points once the cap is reached', () => {
+    const digest = TranscriptDigest.EMPTY.withAll(
+      Array.from({ length: 80 }, (unused, index) => cost((index + 1) * 10, (index + 1) * 1000)),
+    );
+
+    expect(digest.tokenTrail).toHaveLength(60);
+    expect(digest.tokenTrail[0]?.tokens).toBe(210);
+    expect(digest.tokenTrail.at(-1)?.tokens).toBe(800);
+  });
+
+  it('leaves every other field alone, so the fold still holds', () => {
+    const digest = TranscriptDigest.EMPTY.with({
+      kind: 'title',
+      title: 'the-one',
+      custom: true,
+    }).withAll([cost(100, 1000), cost(250, 2000)]);
+
+    expect(digest.title).toBe('the-one');
+    expect(digest.tokenTrail).toHaveLength(2);
   });
 });

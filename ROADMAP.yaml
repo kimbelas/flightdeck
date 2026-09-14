@@ -1304,13 +1304,102 @@ phases:
         security: [SEC-DATA-2, SEC-UI-2]
       - id: P2-T4
         title: Dense attention-sorted rows with inline expansion (vitals, doing-now, away recap, files, tokens sparkline)
-        status: todo
+        status: done
+        done_on: 2026-09-14
         notes: >-
-          RESEARCH.md F.2.4 and F.2.14 — doing-now, the away recap and the state history are already
-          written for us: jobs/<id>/state.json carries detail/needs/output.result, and
-          jobs/<id>/timeline.jsonl is an append-only state history with the assistant message that
-          caused each transition. Attention sort keys off state === 'blocked'; waitingFor does not
-          exist. All of it is model-generated text — display only (SEC-UI-2), and cap the size.
+          **Feed 4 was never running, and that is the headline.** `scripts/flightdeck-core.ts`
+          called `reconciler.start()` and never `transcripts.start()`, so from P1-T7 until this task
+          the transcript reader tracked every transcript it was told about and read none of them.
+          Nothing looked wrong: `/status` printed `4 transcripts · 0 ignored · 0 unknown`, which is
+          exactly what a healthy idle feed prints, and every `TranscriptDigest` stayed EMPTY — which
+          is most of what this task renders. 1 155 unit tests did not notice, because every one of
+          them calls the class under test directly. Found by expanding a row and seeing nothing.
+          The fix is `startCore`, a mirror of `stopCore`, with `tests/core/lifecycle.test.ts`
+          asserting the list; the assertion is "is anything startable left unstarted", which is the
+          shape the bug had. After the fix the same counter read `3 135 ignored · 17 oversize`.
+
+          **Nothing in the task's data was new — only the readers were missing**, which is P2-T3's
+          lesson again. `TranscriptDigest` has held the files, the away summary, the spend and the
+          last tool since P1-T7; `VitalsRegistry` has held the context percentage since P1-T6; and
+          `jobs/<shortId>/state.json` has held the attention text since before Flightdeck existed.
+          `SessionDetailReader` is the join, `GET /session` carries it, and the row expands in place.
+
+          **SEC-FS-2 refused the file this task is built on, and the fix is one pattern.**
+          `jobs/<shortId>/state.json` is a `.json` under a config dir, so the deny-list refused it —
+          correctly, since that rule is what makes the NEXT Claude Code release's settings file
+          unreadable by default. `ALLOWED_JSON_PATTERNS` adds `jobs\*\state.json`, where `*` is
+          exactly one segment; widening it to the `jobs\` directory would have traded the rule away
+          for one filename. Six tests pin the refusals, including deeper, shallower and sibling.
+          `timeline.jsonl` never met the rule — `.jsonl` is not `.json`.
+
+          **The tokens sparkline needed a measurement, and the obvious guess was wrong.** A
+          `cost-state` line has NO `timestamp`, unlike `turn_duration` beside it — it has `startTime`
+          (epoch ms, the session's start, identical on every record) and `totalDuration` (ms since,
+          climbing). Their sum is the instant. Measured on a real session: one `startTime` of
+          1789392887439 with `totalDuration` 315773 → 11624456 → 11624509. Assuming `timestamp`
+          would have shipped a chart that was permanently empty and silent about why. `tokenTrail`
+          is the one field in `TranscriptDigest` that is a history rather than a replacement; it is
+          bounded at 60 points, still O(1) per record, and drawn without a y-axis because its floor
+          is an artefact of when core started reading.
+
+          **Two more silent bugs, both found by a round-trip test rather than by the screen.**
+          `parseJobState` and `parseTimeline` run on TWO encodings of the same thing: the daemon's
+          file, and their own output after `JSON.stringify`, because the deck re-parses a detail
+          rather than trusting core's caps. The file nests (`inFlight.tasks`, `output.result`) and
+          writes ISO instants; the wire is flat and writes epoch ms. A reader that knew only the
+          file shape dropped all three fields on the second pass — the visible symptom would have
+          been a recap where every line had no time, and nothing else.
+
+          **Doing-now has three sources and the precedence is the product**: `needs` (the session
+          asking for something), then `detail` (it narrating), then the last `tool_use` (SPEC §5.5's
+          ◇ fallback, and the only one an interactive session ever has). That lives in a view model
+          with tests, not in JSX. Every string on the expanded row is model-written and display-only
+          (SEC-UI-2): capped in contracts/job-state.ts, escaped by React, and deliberately NOT
+          actionable — the files list is text rather than links, because those paths came out of a
+          transcript and a link would let model output choose what the owner's machine opens.
+
+          `GET /session` takes its three parameters in the QUERY, not the path: `RequestRouter`
+          matches literally so that no handler is reachable by a path that merely starts like an
+          allowed one, and BUILD-PLAN §4's `/sessions/:id` is a REST sketch rather than a promise
+          about punctuation. `shortId` is screened as a shape — eight hex characters — before
+          anything interpolates it into a directory name, and the route refuses without calling the
+          reader at all. `main.ts` hit its line limit again, so the read side moved to `core/reads.ts`,
+          the same split `feeds.ts` was.
+        deliverables:
+          [
+            contracts/job-state.ts,
+            contracts/session-detail.ts,
+            contracts/session-ref.ts,
+            contracts/transcript-record.ts,
+            contracts/deck-routes.ts,
+            core/domain/read-policy.ts,
+            core/domain/transcript-digest.ts,
+            core/ports/job-files.ts,
+            core/adapters/node/fs-job-files.ts,
+            core/application/session-detail-reader.ts,
+            core/http/session-detail-route.ts,
+            core/reads.ts,
+            core/shutdown.ts,
+            scripts/flightdeck-core.ts,
+            app/deck/session-detail-view-model.ts,
+            app/deck/session-detail-view.tsx,
+            app/deck/session-row-card.tsx,
+            app/deck/session-list.tsx,
+            app/deck/deck-store.ts,
+            app/deck/deck-view.tsx,
+            app/globals.css,
+            tests/core/lifecycle.test.ts,
+            tests/contracts/job-state.test.ts,
+            tests/contracts/session-detail.test.ts,
+            tests/contracts/session-ref.test.ts,
+            tests/core/domain/read-policy.test.ts,
+            tests/core/domain/transcript-digest.test.ts,
+            tests/core/application/session-detail-reader.test.ts,
+            tests/core/http/session-detail-route.test.ts,
+            tests/app/session-detail-view-model.test.ts,
+            tests/app/deck-store-detail.test.ts,
+          ]
+        security: [SEC-FS-1, SEC-FS-2, SEC-UI-2, SEC-DATA-2, SEC-ING-1]
       - id: P2-T5
         title: Keyboard — Ctrl+K palette skeleton, j/k/Enter/Esc, ? shortcut sheet listing browser-owned keys
         status: todo

@@ -12,13 +12,15 @@
 // fetches, polls or re-renders on a timer to stay current.
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type JSX } from 'react';
 import type { PtyTarget } from '../../contracts/pty-protocol.ts';
+import type { SubscriptionId } from '../../contracts/session.ts';
 import { BrowserDeckApi } from './browser-deck-api.ts';
 import { BrowserStreamTransport } from './browser-stream-transport.ts';
 import { DeckBanners } from './deck-banners.tsx';
 import { DeckHeader } from './deck-header.tsx';
-import { DeckStore } from './deck-store.ts';
+import { DeckStore, type DeckState } from './deck-store.ts';
 import { PaneGrid } from './pane-grid.tsx';
 import { SessionList } from './session-list.tsx';
+import { SessionDetailViewModel } from './session-detail-view-model.ts';
 import { SessionRowViewModel } from './session-row-view-model.ts';
 
 export interface OpenPane {
@@ -36,9 +38,13 @@ export function DeckView(): JSX.Element {
   const state = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot);
   useLiveStream(store);
   const { panes, openPane, closePane } = useOpenPanes();
+  const { expanded, toggle } = useExpandedRows(store);
   const now = useTickingClock();
 
+  const { openShell, openRowPane, launch } = useDeckActions(store, openPane);
+
   const rows = state.rows.map((row) => new SessionRowViewModel(row));
+  const details = detailViewModels(state.details);
 
   return (
     <main className="deck">
@@ -49,9 +55,7 @@ export function DeckView(): JSX.Element {
         now={now}
         loading={state.loading}
         onRefresh={() => void store.refresh()}
-        onOpenShell={() => {
-          openPane(SHELL_PANE);
-        }}
+        onOpenShell={openShell}
       />
       <DeckBanners error={state.error} unreadable={state.unreadable} />
       <div className="deck-body">
@@ -60,12 +64,11 @@ export function DeckView(): JSX.Element {
           now={now}
           loading={state.loading}
           coreUp={state.coreUp}
-          onLaunch={(subscription, prompt, name) => {
-            void store.launch(subscription, prompt, name === '' ? undefined : name);
-          }}
-          onOpen={(row) => {
-            openPane({ key: row.key, title: row.title, target: row.target });
-          }}
+          expanded={expanded}
+          details={details}
+          onToggle={toggle}
+          onLaunch={launch}
+          onOpen={openRowPane}
         />
         <PaneGrid panes={panes} onClose={closePane} />
       </div>
@@ -97,6 +100,99 @@ function useLiveStream(store: DeckStore): void {
       store.disconnect();
     };
   }, [store]);
+}
+
+/**
+ * The open rows' details, as view models.
+ *
+ * Wrapped here rather than in the store, which holds wire values: a view model is presentation and
+ * the store is state (CODING-STANDARDS §3). `undefined` survives the mapping and is what draws the
+ * spinner — a key present with no value means "asked, still waiting".
+ */
+function detailViewModels(
+  details: DeckState['details'],
+): Readonly<Record<string, SessionDetailViewModel | undefined>> {
+  return Object.fromEntries(
+    Object.entries(details).map(([key, detail]) => [
+      key,
+      detail === undefined ? undefined : new SessionDetailViewModel(detail),
+    ]),
+  );
+}
+
+interface DeckActions {
+  readonly openShell: () => void;
+  readonly openRowPane: (row: SessionRowViewModel) => void;
+  readonly launch: (subscription: SubscriptionId, prompt: string, name: string) => void;
+}
+
+/**
+ * What the buttons do, as stable references.
+ *
+ * Together rather than inline for two reasons. Stable identities keep `SessionList` from
+ * re-rendering every row on every tick of the clock. And this component's job is composition
+ * (CODING-STANDARDS §3): three arrow functions in JSX are three pieces of behaviour hidden inside
+ * markup, and one of them — the empty-name rule below — is a decision rather than plumbing.
+ */
+function useDeckActions(store: DeckStore, openPane: (pane: OpenPane) => void): DeckActions {
+  const openShell = useCallback(() => {
+    openPane(SHELL_PANE);
+  }, [openPane]);
+
+  const openRowPane = useCallback(
+    (row: SessionRowViewModel) => {
+      openPane({ key: row.key, title: row.title, target: row.target });
+    },
+    [openPane],
+  );
+
+  const launch = useCallback(
+    (subscription: SubscriptionId, prompt: string, name: string) => {
+      // An empty name is the form's "let Claude Code choose one", not a name of zero characters.
+      void store.launch(subscription, prompt, name === '' ? undefined : name);
+    },
+    [store],
+  );
+
+  return { openShell, openRowPane, launch };
+}
+
+interface ExpandedRows {
+  readonly expanded: ReadonlySet<string>;
+  readonly toggle: (row: SessionRowViewModel) => void;
+}
+
+/**
+ * Which rows are open, and the fetch that opening one starts — P2-T4.
+ *
+ * The set lives here and the details live in the store, which sounds split but is not: "is this row
+ * open" is a fact about this browser tab, and the detail is data off the wire. Keeping the set in
+ * the store would make a second tab's expansion arrive as a re-render here.
+ *
+ * Collapsing calls `forget`, so re-expanding re-reads. See `DeckStore.expand` — `state.json` and
+ * `timeline.jsonl` move while a row is open, and a detail from four minutes ago that looks current
+ * is worse than a spinner.
+ */
+function useExpandedRows(store: DeckStore): ExpandedRows {
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+
+  const toggle = useCallback(
+    (row: SessionRowViewModel) => {
+      setExpanded((current) => {
+        const next = new Set(current);
+        if (next.delete(row.key)) {
+          store.forget(row.key);
+          return next;
+        }
+        next.add(row.key);
+        void store.expand(row.ref);
+        return next;
+      });
+    },
+    [store],
+  );
+
+  return { expanded, toggle };
 }
 
 interface OpenPanes {
