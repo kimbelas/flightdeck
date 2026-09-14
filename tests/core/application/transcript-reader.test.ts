@@ -2,10 +2,12 @@
 import { describe, expect, it } from 'vitest';
 import type { DraftEvent } from '../../../contracts/fd-event.ts';
 import { TranscriptReader } from '../../../core/application/transcript-reader.ts';
+import { ReadPolicy } from '../../../core/domain/read-policy.ts';
 import { FakeLogger } from '../../fakes/fake-logger.ts';
 import { FakeScheduler } from '../../fakes/fake-scheduler.ts';
 import { FakeTranscriptFile } from '../../fakes/fake-transcript-file.ts';
 
+const CONFIG_DIRS = ['C:\\Users\\x\\.claude-365', 'C:\\Users\\x\\.claude-isg'];
 const PATH = 'C:\\Users\\x\\.claude-365\\projects\\slug\\session.jsonl';
 const SESSION = '11111111-2222-4333-a444-555555555555';
 
@@ -18,7 +20,13 @@ function build(): {
   const file = new FakeTranscriptFile();
   const scheduler = new FakeScheduler();
   const logger = new FakeLogger();
-  return { reader: new TranscriptReader({ file, scheduler, logger }), file, scheduler, logger };
+  const policy = new ReadPolicy(CONFIG_DIRS);
+  return {
+    reader: new TranscriptReader({ file, policy, scheduler, logger }),
+    file,
+    scheduler,
+    logger,
+  };
 }
 
 function hook(payload: unknown, sessionId = SESSION): DraftEvent {
@@ -197,5 +205,44 @@ describe('TranscriptReader — the poll', () => {
     // Once, on the poll that saw it — not on every poll thereafter, which a 1 Hz timer would
     // turn into a log nobody reads.
     expect(logger.at('warn')).toHaveLength(1);
+  });
+});
+
+describe('TranscriptReader — the deny-list runs before the open (SEC-FS-2, P1-T12)', () => {
+  const SECRET = 'C:\\Users\\x\\.claude-365\\daemon\\control.key';
+
+  it('refuses a path the policy denies, and never opens it', async () => {
+    const { reader, file } = build();
+    // A hook payload is attacker-controlled text. `SubscriptionPaths` proves this one is under the
+    // 365 config dir and would have attributed it happily — this is the half that says what it is.
+    file.append(SECRET, '{"type":"ai-title","aiTitle":"secret","sessionId":"s"}\n');
+
+    reader.publish(hook({ transcript_path: SECRET }));
+    await reader.poll();
+
+    expect(reader.size).toBe(0);
+    expect(file.reads).toBe(0);
+  });
+
+  it('says so once per path, with the rule and not the path', () => {
+    const { reader, logger } = build();
+
+    reader.publish(hook({ transcript_path: SECRET }));
+    reader.publish(hook({ transcript_path: SECRET }));
+
+    const warnings = logger.at('warn');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.event).toBe('transcript_path_refused');
+    // The path carries the account name and the project folder; the reason carries the control.
+    expect(JSON.stringify(warnings[0]?.details)).not.toContain('control.key');
+    expect(JSON.stringify(warnings[0]?.details)).toContain('SEC-FS-2');
+  });
+
+  it('still accepts an ordinary transcript from the other subscription', () => {
+    const { reader } = build();
+
+    reader.publish(hook({ transcript_path: 'C:/Users/x/.claude-isg/projects/s/a.jsonl' }));
+
+    expect(reader.size).toBe(1);
   });
 });

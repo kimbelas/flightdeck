@@ -918,11 +918,101 @@ phases:
         security: [SEC-FS-3, SEC-HTTP-7, SEC-ING-3, SEC-OPS-2]
       - id: P1-T12
         title: Operations — `flightdeck-core status`, scripts/doctor, logon-task installer with token file ACL
-        status: todo
+        status: done
+        done_on: 2026-09-14
         notes: >-
           DP2 answered yes (DECISIONS.md D21) — logon task, run only when logged on, never elevated
           (SEC-OPS-3). doctor checks the task exists and the token ACL is right.
-        security: [SEC-OPS-1, SEC-OPS-2, SEC-OPS-3]
+
+          **`status` mostly existed already, in five comments.** Every task since P1-T6 left a
+          counter behind and a note saying this one would print it — `VitalsRegistry.all`,
+          `TranscriptReader.all` with ignored/unknown/oversize, `SqliteStore.version`,
+          `StoringEventSink`'s stored/snapshots/dropped, `AuditLog`'s written/dropped — and none of
+          them was reachable from outside the process. So the work was a route (`GET /status`), an
+          assembler (`StatusReport`) and a join. **Two requests, not one**: `/sessions` already owns
+          the session table and the deck reads the same one, so `status` asks both and joins by
+          session id rather than giving a second route a second opinion about what is running. The
+          join is outer both ways — a session with vitals and no listing row prints as `not
+          listed`, which is the direction worth seeing.
+
+          **P1's gate sentence is now true** and was checked by running it: every session on the
+          machine prints with subscription, name, state, flags, model, context %, cost and both
+          quota windows. Two things the print revealed — an interactive record carries no `state`
+          at all, so the first table read `—/busy` (a dash standing in for a field that does not
+          exist, now omitted); and `SessionRow` carries no flags, because the real derivation needs
+          the entity plus the event history (`deriveFlags`), so the CLI prints the three it can
+          prove from a row plus a reading and does not invent `wedged`. P2-T3 is the vitals join.
+
+          **SEC-FS-4 grew from the token file to the directory, which is the half P1-T8 flagged.**
+          `icacls` moved out of `WindowsTokenFile` into `WindowsFileAcl` behind a port, because
+          `doctor` needs to READ an ACL and the store needs to be given one. The grant is on
+          `%LOCALAPPDATA%\flightdeck\` and inheritable: SQLite creates `flightdeck.db-wal` after
+          anything could have restricted the database, and the WAL holds the newest committed rows.
+          Core applies it at boot rather than an installer doing it — SEC-FS-4's text said
+          "installer" and now says what actually happens. `doctor` read `also granted to NT
+          AUTHORITY\SYSTEM, BUILTIN\Administrators` before the change and `kimpoy\kimpoy only
+          ((i)(f))` after, on the same machine; the `(i)` is the proof the directory is what covers
+          the sidecars.
+
+          **SEC-FS-2 had no implementation and now has one.** Its last sentence — "a deny-list
+          check runs before every open, and a test asserts it" — was false since P0. `ReadPolicy`
+          (domain, pure strings) holds SEC-FS-1's allowlist and SEC-FS-2's deny-list, and
+          `TranscriptReader` asks it before tracking a reported path. The hole was real:
+          `SubscriptionPaths` proves only *whose* config dir a `transcript_path` is under, so a
+          hook payload naming `daemon\control.key` passed attribution and the file would have been
+          opened, parsed and folded into a digest the deck shows.
+
+          **Three things only running it could find (RESEARCH.md G.18).** (1) `process.execPath` is
+          `…\fnm_multishells\<shell pid>\node.exe` on this machine — a directory deleted with the
+          shell, so a logon task built the obvious way would have failed at every logon with no
+          symptom but a dead hook receiver. The installer resolves it with `realpathSync` and
+          refuses anything still under a shim. (2) Task Scheduler omits `<RunLevel>` on export when
+          it is the default, so `doctor`'s SEC-OPS-3 check — asserting `LeastPrivilege` is present —
+          failed against the task the installer had just written correctly; it now asserts
+          `HighestAvailable` is absent. The same readback turns the principal's `UserId` into a SID.
+          (3) A non-elevated shell cannot register an elevated task at all.
+
+          Two more, caught by tests rather than by running: the icacls grant regex matched `(F)`
+          but not `(I)(F)`, so every multi-ACE file would have parsed as having no grants — a
+          `doctor` that reported "restricted" on an unrestricted file; and `parseDeckSnapshot`
+          moved from `stream-event.ts` to `session-row.ts` when `status` became its second reader,
+          rather than being written twice.
+
+          `main.ts` hit its 250-line limit, so the event side moved to `core/feeds.ts` — the same
+          kind of split `shutdown.ts` was.
+
+          Known gap, deliberate: the logon task is NOT registered on this machine. The installer is
+          dry-run by default and registering a task that starts a service at every logon is the
+          owner's call; `doctor` reports it as a `warn` with the command. The definition itself was
+          proven by registering it under a probe name and reading it back.
+        deliverables:
+          [
+            contracts/core-status.ts,
+            core/application/status-report.ts,
+            core/http/status-route.ts,
+            core/domain/read-policy.ts,
+            core/ports/file-acl.ts,
+            core/ports/logon-task.ts,
+            core/adapters/windows/windows-file-acl.ts,
+            core/adapters/windows/logon-task-definition.ts,
+            core/adapters/windows/schtasks-logon-task.ts,
+            core/feeds.ts,
+            scripts/core-status.ts,
+            scripts/doctor.ts,
+            scripts/doctor-cli.ts,
+            scripts/install-task-cli.ts,
+            RESEARCH.md G.18,
+            tests/contracts/core-status.test.ts,
+            tests/core/adapters/logon-task-definition.test.ts,
+            tests/core/adapters/windows-file-acl.test.ts,
+            tests/core/application/status-report.test.ts,
+            tests/core/domain/read-policy.test.ts,
+            tests/core/http/status-route.test.ts,
+            tests/scripts/core-status.test.ts,
+            tests/scripts/doctor.test.ts,
+            tests/win/data-directory-acl.test.ts,
+          ]
+        security: [SEC-OPS-1, SEC-OPS-2, SEC-OPS-3, SEC-FS-2, SEC-FS-4]
       - id: P1-T13
         title: Coverage thresholds on — core/domain 95 %, core overall 80 %
         status: todo

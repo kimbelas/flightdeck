@@ -114,6 +114,39 @@ export function parseSessionRow(value: unknown): SessionRow | undefined {
   };
 }
 
+/**
+ * A whole snapshot, with rows that did not parse dropped.
+ *
+ * Dropped, not rejected: one unreadable row must not cost the deck the other nine and the
+ * `unreadable` list with them. The rows are re-sorted here because the wire does not promise an
+ * order — the same comparator the sender used, so nothing moves on arrival.
+ *
+ * It lives here rather than in `stream-event.ts`, where it was written, because P1-T12 gave it a
+ * second reader: `flightdeck-core status` reads `GET /sessions`, which answers this exact shape.
+ * Two parsers for one wire format is the `toSessionRow` lesson again.
+ */
+export function parseDeckSnapshot(value: unknown): DeckSnapshot | undefined {
+  const fields = asRecord(value);
+  if (fields === undefined) return undefined;
+  const rows = fields['rows'];
+  const unreadable = fields['unreadable'];
+  const takenAt = fields['takenAt'];
+  if (!Array.isArray(rows) || !Array.isArray(unreadable)) return undefined;
+  if (typeof takenAt !== 'number') return undefined;
+  const parsed: SessionRow[] = [];
+  for (const row of rows) {
+    const session = parseSessionRow(row);
+    if (session !== undefined) parsed.push(session);
+  }
+  return {
+    rows: parsed.sort(byAttentionThenAge),
+    unreadable: unreadable
+      .map((entry: unknown) => oneOf(SUBSCRIPTION_IDS, entry))
+      .filter((id): id is SubscriptionId => id !== undefined),
+    takenAt,
+  };
+}
+
 function asRecord(value: unknown): Readonly<Record<string, unknown>> | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
   return Object.fromEntries(Object.entries(value));

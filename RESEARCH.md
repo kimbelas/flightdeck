@@ -1716,3 +1716,49 @@ then does fallible work has this hole, and TypeScript cannot see it: the type sa
 returns a `SqliteStore`, and the case where it does not is exactly the case where cleanup matters.
 `WindowsTokenFile` and `NodePtyHost` were both checked after this; neither acquires anything before
 its fallible step, so neither has it.
+
+### G.18 The logon task would have pointed at a node that does not survive a logon (P1-T12)
+
+Three findings, all from running the installer's own dry run and then registering a task under a
+throwaway name to read it back. Measured on this machine, 2026-09-14, Task Scheduler on Windows 11
+26200, Node 26.3.0 via fnm.
+
+**1. `process.execPath` is a per-shell shim, not an installation.** The obvious way to write the
+task's action is `process.execPath` — node by absolute path, as `claude-install.ts` names
+`claude.exe`. On this machine that value is:
+
+```
+C:\Users\<user>\AppData\Local\fnm_multishells\26232_1789387346814\node.exe
+```
+
+fnm gives **every shell its own directory, named after that shell's pid**, and deletes it with the
+shell. A logon task built from it would have failed at every logon, forever, and the only symptom
+would have been that hooks have no receiver — which is silent in a headless session (F.1.5) and an
+error banner every turn in an interactive one. `realpathSync` resolves the shim to
+`…\fnm\node-versions\v26.3.0\installation\node.exe`, which is what the installer registers, and
+`ephemeralDirectory` refuses anything still under a shim directory. The resolved path is
+version-pinned, which is the right answer for a service: a later `fnm use 27` leaves a
+long-running receiver on the runtime it was tested with rather than silently moving it.
+
+**2. Task Scheduler does not store `<RunLevel>` when it is the default — so `doctor`'s SEC-OPS-3
+check was inverted.** The definition written contains
+`<RunLevel>LeastPrivilege</RunLevel>`; the definition read back with
+`schtasks /query /tn … /xml ONE` contains **no `<RunLevel>` element at all**, because Task
+Scheduler omits default values on export. `doctor` asserted the positive form and therefore failed
+against the very task the installer had just written correctly. The check is now the absence of
+`HighestAvailable`, which is the value that *is* recorded when set. The same readback also turns
+the principal's `<UserId>` into a **SID** while the trigger's stays `DOMAIN\account`, so nothing
+may compare a principal against an account name.
+
+**3. A non-elevated shell cannot register an elevated task.** Handed the same definition with
+`HighestAvailable`, `schtasks /create` answers `ERROR: Access is denied.` and exits 1. That is
+reassuring rather than inconvenient: the installer cannot create the thing SEC-OPS-3 forbids, even
+by accident — though it is also why the positive half of finding 2 could not be proven here and is
+pinned by the absence assertion instead.
+
+**And the control it was all for works.** With `restrictDataDirectory` in `buildCore`, `doctor`
+reports `acl: store  kimpoy\kimpoy only ((i)(f))` — **inherited** full control, from the directory,
+which is the whole reason the directory rather than the file carries the ACL: `flightdeck.db-wal`
+holds the most recently committed rows and is created after anything could have restricted the
+database itself. Before the change, on the same machine, the same check read
+`also granted to NT AUTHORITY\SYSTEM, BUILTIN\Administrators`.
