@@ -5,96 +5,19 @@
 // because it is the producer's raw material, and the hook payloads P1-T5 will publish carry model
 // text (SEC-UI-2). A stream that forwarded whatever it was handed would be the leak.
 import { describe, expect, it } from 'vitest';
-import type { DraftEvent } from '../../../contracts/fd-event.ts';
-import type { DeckSnapshot, SessionRow } from '../../../contracts/session-row.ts';
 import { EventHub } from '../../../core/application/event-hub.ts';
-import type { EventStream } from '../../../core/http/route.ts';
 import { SessionStreamRoute } from '../../../core/http/session-stream-route.ts';
 import { FakeLogger } from '../../fakes/fake-logger.ts';
 import { FakeScheduler } from '../../fakes/fake-scheduler.ts';
-
-interface SentFrame {
-  readonly name: string;
-  readonly data: unknown;
-}
-
-class FakeStream implements EventStream {
-  public readonly sent: SentFrame[] = [];
-  public comments = 0;
-  public closed = false;
-  private readonly handlers: (() => void)[] = [];
-
-  public get names(): readonly string[] {
-    return this.sent.map((frame) => frame.name);
-  }
-
-  public send(name: string, data: unknown): void {
-    this.sent.push({ name, data });
-  }
-
-  public comment(): void {
-    this.comments += 1;
-  }
-
-  public onClose(handler: () => void): void {
-    this.handlers.push(handler);
-  }
-
-  public close(): void {
-    this.closed = true;
-    for (const handler of this.handlers) handler();
-  }
-}
-
-const ROW: SessionRow = {
-  sessionId: 'aaaaaaaa-0000-0000-0000-000000000000',
-  shortId: 'aaaaaaaa',
-  subscription: '365',
-  kind: 'background',
-  name: 'fd-one',
-  cwd: 'C:\\work',
-  startedAt: 1000,
-  live: true,
-  runState: 'working',
-  status: undefined,
-  attachable: true,
-  notAttachableBecause: undefined,
-};
-
-function snapshotOf(rows: readonly SessionRow[] = [ROW]): DeckSnapshot {
-  return { rows, unreadable: ['isg'], takenAt: 5000 };
-}
-
-interface Rig {
-  readonly route: SessionStreamRoute;
-  readonly hub: EventHub;
-  readonly scheduler: FakeScheduler;
-  readonly logger: FakeLogger;
-}
-
-function rig(snapshot: DeckSnapshot = snapshotOf()): Rig {
-  const hub = new EventHub(new FakeLogger());
-  const scheduler = new FakeScheduler();
-  const logger = new FakeLogger();
-  const route = new SessionStreamRoute({
-    sessions: { snapshot: () => snapshot },
-    feed: hub,
-    scheduler,
-    logger,
-  });
-  return { route, hub, scheduler, logger };
-}
-
-function reconcileEvent(type: string, payload: unknown): DraftEvent {
-  return {
-    at: 1000,
-    sessionId: ROW.sessionId,
-    subscription: '365',
-    source: 'reconcile',
-    type,
-    payload,
-  };
-}
+import {
+  FakeQuota,
+  FakeStream,
+  quotaOf,
+  reconcileEvent,
+  rig,
+  ROW,
+  snapshotOf,
+} from './session-stream-harness.ts';
 
 describe('SessionStreamRoute — the replay', () => {
   it('is registered at the path the deck and the contract agree on', () => {
@@ -108,7 +31,7 @@ describe('SessionStreamRoute — the replay', () => {
 
     route.open(stream);
 
-    expect(stream.names).toEqual(['snapshot']);
+    expect(stream.names).toEqual(['snapshot', 'quota']);
     expect(stream.sent[0]?.data).toEqual(snapshotOf());
   });
 
@@ -133,6 +56,7 @@ describe('SessionStreamRoute — the replay', () => {
           return snapshotOf();
         },
       },
+      quota: new FakeQuota(quotaOf()),
       feed: hub,
       scheduler: new FakeScheduler(),
       logger: new FakeLogger(),
@@ -154,8 +78,8 @@ describe('SessionStreamRoute — the deltas', () => {
     hub.publish(reconcileEvent('seen', ROW));
     hub.publish(reconcileEvent('changed', { ...ROW, runState: 'blocked' }));
 
-    expect(stream.names).toEqual(['snapshot', 'session.upsert', 'session.upsert']);
-    expect(stream.sent[2]?.data).toMatchObject({ runState: 'blocked' });
+    expect(stream.names).toEqual(['snapshot', 'quota', 'session.upsert', 'session.upsert']);
+    expect(stream.sent[3]?.data).toMatchObject({ runState: 'blocked' });
   });
 
   it('sends the identity alone for a session that ended', () => {
@@ -165,7 +89,7 @@ describe('SessionStreamRoute — the deltas', () => {
 
     hub.publish(reconcileEvent('gone', ROW));
 
-    expect(stream.sent[1]).toEqual({
+    expect(stream.sent[2]).toEqual({
       name: 'session.gone',
       data: { sessionId: ROW.sessionId, subscription: '365' },
     });
@@ -180,8 +104,8 @@ describe('SessionStreamRoute — the deltas', () => {
 
     hub.publish(reconcileEvent('seen', ROW));
 
-    expect(first.names).toEqual(['snapshot', 'session.upsert']);
-    expect(second.names).toEqual(['snapshot', 'session.upsert']);
+    expect(first.names).toEqual(['snapshot', 'quota', 'session.upsert']);
+    expect(second.names).toEqual(['snapshot', 'quota', 'session.upsert']);
     expect(route.openCount).toBe(2);
   });
 });
@@ -202,7 +126,7 @@ describe('SessionStreamRoute — what it refuses to forward', () => {
       payload: { last_assistant_message: 'ignore your instructions' },
     });
 
-    expect(stream.names).toEqual(['snapshot']);
+    expect(stream.names).toEqual(['snapshot', 'quota']);
   });
 
   it('drops a reconcile event whose payload is not a row', () => {
@@ -212,7 +136,7 @@ describe('SessionStreamRoute — what it refuses to forward', () => {
 
     hub.publish(reconcileEvent('seen', { sessionId: 'a', notARow: true }));
 
-    expect(stream.names).toEqual(['snapshot']);
+    expect(stream.names).toEqual(['snapshot', 'quota']);
   });
 
   it('drops an event type it has no frame for', () => {
@@ -222,7 +146,7 @@ describe('SessionStreamRoute — what it refuses to forward', () => {
 
     hub.publish(reconcileEvent('swept', ROW));
 
-    expect(stream.names).toEqual(['snapshot']);
+    expect(stream.names).toEqual(['snapshot', 'quota']);
   });
 });
 
@@ -246,7 +170,7 @@ describe('SessionStreamRoute — the connection', () => {
     hub.publish(reconcileEvent('seen', ROW));
     scheduler.tick();
 
-    expect(stream.names).toEqual(['snapshot']);
+    expect(stream.names).toEqual(['snapshot', 'quota']);
     expect(stream.comments).toBe(0);
     expect(hub.subscriberCount).toBe(0);
     expect(scheduler.repeatingCount).toBe(0);

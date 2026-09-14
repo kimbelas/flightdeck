@@ -1219,7 +1219,89 @@ phases:
         security: [SEC-UI-2]
       - id: P2-T3
         title: Header — both subscriptions' 5h/7d gauges with reset countdowns, live count, spend today, version chip, core health
-        status: todo
+        status: done
+        done_on: 2026-09-14
+        notes: >-
+          **The header is on the stream, not on a poll, and that was the task's real decision.**
+          BUILD-PLAN §4 listed `quota` as a frame to come and `GET /status` already carried
+          `vitals[]`, so polling `/status` was the shorter road. Three things ruled it out. A second
+          polling loop beside `DeckStore` is precisely what P1-T9 removed. `/status` carries
+          `tokenPath`, `ingestKeyPath` and `store.path` — filesystem paths with the Windows account
+          name in them — and putting those in the DOM is the same mistake `contracts/core-status.ts`
+          already refuses to make with `transcriptPath` (SEC-DATA-2). And only a replayed frame fills
+          the header on an idle machine: the statusLine posts per render, so nothing running means
+          nothing published, and a deck that waited for an event would show two empty gauges until
+          somebody started work. `quota` is therefore replayed beside `snapshot` on connect and
+          resent whenever the vitals move.
+
+          **Two of the deliverables were not in `/status` at all, and that was the core-side work.**
+          `SessionVitalsLine` had the two quota percentages and neither reset instant, and no Claude
+          version — so no countdowns and no version chip were possible from it. Both were already in
+          `StatuslineReport`, which `VitalsRegistry` stores whole; the projection was simply narrower
+          than its source. It now carries `claudeVersion`, `fiveHourResetsAt` and `sevenDayResetsAt`,
+          in milliseconds, as statusline-report.ts converted them from the payload's seconds.
+
+          **Quota is per SUBSCRIPTION and `vitals[]` is per session, so something had to choose a
+          representative reading.** That rule is `summariseQuota` in `contracts/quota-summary.ts`,
+          pure and tested, and the obvious version of it is wrong: newest-`at`-wins blanks a gauge
+          every time somebody opens a terminal, because a session posts renders with
+          `used_percentage: null` before its first turn (F.3.5) and is therefore routinely the
+          newest reading with nothing in it. The rule is newest-that-has-a-number, PER GAUGE, and
+          each gauge carries its own `at` so "42 % as of 20 minutes ago" is what the header can say.
+          `SubscriptionQuota.at` stays the newest reading of any kind, which answers the different
+          question of whether the account has said anything at all.
+
+          **One projection, two readers, and that is now literally true.** `vitals-lines.ts` was a
+          private method on `StatusReport`; `flightdeck-core status` and the `quota` frame both go
+          through it, and the CLI grew a quota block that calls `summariseQuota` rather than making
+          its own pass over `status.vitals` — two screens disagreeing about the number the owner acts
+          on is the failure that was available here. The projection is also the SEC-DATA-2 boundary,
+          asserted in three places: the line shape has no `transcriptPath`, the summary has none, and
+          the stream test publishes a real statusline event with one in it and asserts the frames do
+          not contain it.
+
+          **The stream now relays a second source, and does it by asking rather than forwarding.** A
+          `statusline` event is a trigger, not cargo: its payload is a whole `StatuslineReport`, and
+          `SessionStreamRoute` re-asks `QuotaReport` instead of sending what arrived. The header's
+          comment claiming the gauges "belong here and are not built" is gone, as is the class of bug
+          it stood for. `VitalsRegistry.differs` grew `claudeVersion` and both `resetsAt` — without
+          them a rolled-over window or a `claude update` would leave every open deck counting down to
+          an instant already past, at no volume cost since both move about once a day.
+
+          **The past-tense traps are in the view model with tests, not in JSX.** `resetsAt` can be
+          behind `now` on a stale reading; `resetsIn` answers `undefined` rather than a negative or a
+          `0m` pinned forever. A gauge with no reading keeps `undefined` all the way to the bar's
+          width, so the track renders empty instead of at 0 %. Readings older than
+          `QUOTA_STALE_AFTER_MS` (5 min) are dimmed and carry their age in the tooltip, because the
+          honest statement is "42 % as of 20 minutes ago". `spendUsd` is documented for what it is: a
+          sum of session LIFETIME costs for sessions that reported since local midnight, with
+          `spendingSessions` published beside it so the provenance is on screen.
+        deliverables:
+          [
+            contracts/quota-summary.ts,
+            contracts/core-status.ts,
+            contracts/stream-event.ts,
+            core/application/quota-report.ts,
+            core/application/vitals-lines.ts,
+            core/application/status-report.ts,
+            core/application/vitals-registry.ts,
+            core/http/session-stream-route.ts,
+            core/feeds.ts,
+            scripts/core-status.ts,
+            app/deck/deck-header.tsx,
+            app/deck/quota-view-model.ts,
+            app/deck/deck-store.ts,
+            app/deck/deck-view.tsx,
+            app/globals.css,
+            tests/contracts/quota-summary.test.ts,
+            tests/contracts/stream-event.test.ts,
+            tests/core/application/quota-report.test.ts,
+            tests/core/application/vitals-lines.test.ts,
+            tests/core/http/session-stream-route.test.ts,
+            tests/app/quota-view-model.test.ts,
+            tests/app/deck-store.test.ts,
+          ]
+        security: [SEC-DATA-2, SEC-UI-2]
       - id: P2-T4
         title: Dense attention-sorted rows with inline expansion (vitals, doing-now, away recap, files, tokens sparkline)
         status: todo

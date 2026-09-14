@@ -197,6 +197,103 @@ button.ghost {
   color: var(--dim);
 }
 
+/* ---- header quota gauges (P2-T3) ---- */
+
+/* margin-left:auto pushes the gauges and everything after them to the right of the count, so the
+   bar reads left-to-right as identity, then work, then quota, then actions. */
+.quotas {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  margin-left: auto;
+}
+
+/* The gaps are a hierarchy, not a taste: 5px inside a gauge, 16px between the two gauges, 24px
+   between the subscriptions. At 8px the 5h countdown sat closer to the NEXT gauge's `7d` label than
+   to its own percentage and read as belonging to the wrong window — visible only once it was on
+   screen with real numbers in it. */
+.quota {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+/* A subscription that has never reported. Dimmed, not hidden: the header must not change width the
+   first time a session starts, and "isg said nothing today" is itself the answer. */
+.quota-silent {
+  opacity: 0.5;
+}
+
+.quota-sub {
+  color: var(--dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.quota-spend {
+  font-variant-numeric: tabular-nums;
+}
+
+.chip-version {
+  color: var(--dim);
+}
+
+.gauge {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  font-size: 11px;
+}
+
+/* A reading old enough to doubt (QUOTA_STALE_AFTER_MS). Still shown — a 5 h window moves slowly and
+   a stale number beats no number — but it must not read as current. */
+.gauge-stale {
+  opacity: 0.55;
+}
+
+.gauge-label {
+  color: var(--dim);
+}
+
+.gauge-track {
+  position: relative;
+  width: 46px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+/* No fill element at all when there is no reading, so the track is visibly empty rather than a bar
+   at 0 % — the difference `undefined` carries all the way from statusline-report.ts. */
+.gauge-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent);
+}
+
+.gauge-percent {
+  font-variant-numeric: tabular-nums;
+  min-width: 30px;
+}
+
+.gauge-resets {
+  color: var(--dim);
+}
+
+.gauge-warn .gauge-fill {
+  background: var(--warn);
+}
+
+.gauge-high .gauge-fill {
+  background: var(--bad);
+}
+
+.gauge-high .gauge-percent {
+  color: var(--bad);
+}
+
 .launch {
   display: flex;
   flex-direction: column;

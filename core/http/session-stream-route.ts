@@ -7,13 +7,28 @@
 // sweep. Replay is therefore free: no `claude.exe`, no 1.5 s, no second opinion about what is true
 // (BUILD-PLAN §4, "Replays current state on connect").
 //
-// **Only `reconcile` events are forwarded, and that is a security boundary, not an omission.**
+// **No event's payload is forwarded, and that is a security boundary, not an omission.**
 // `DraftEvent.payload` is `unknown` because it is the producer's raw material, and the hook
 // payloads P1-T5 will publish carry model text — `Stop` carries `last_assistant_message`
-// (SEC-UI-2). Nothing reaches a browser here that core did not itself derive into a `SessionRow`,
-// and the row is re-parsed on the way out rather than trusted. When P1-T5 lands, it decides what of
-// a hook event is safe to show and adds the frame for it; silence until then is the fail-closed
+// (SEC-UI-2). Nothing reaches a browser here that core did not itself derive: a `reconcile` event
+// becomes a `SessionRow`, re-parsed on the way out rather than trusted, and a `statusline` event
+// becomes nothing at all — it is a *trigger*, not cargo. When P1-T5 lands, it decides what of a
+// hook event is safe to show and adds the frame for it; silence until then is the fail-closed
 // answer.
+//
+// **A vitals event makes this ask `QuotaReport` again rather than relaying what arrived** (P2-T3).
+// Two reasons, and the second is the one that matters. The payload of a `statusline` event is a
+// whole `StatuslineReport`, which carries `transcriptPath` — the account name and the project
+// folder, exactly what `contracts/core-status.ts` keeps off this screen (SEC-DATA-2). And quota is
+// a property of a subscription while the event is about one session, so relaying the event would
+// hand the deck one reading and leave it to work out which of ten sessions represents the account.
+// That rule is `summariseQuota`'s, it is tested, and it runs here so every subscriber gets the same
+// answer.
+//
+// **`quota` is replayed on connect, beside `snapshot`, and for a sharper version of the same
+// reason.** A deck that waited for the first vitals event would show empty gauges for as long as
+// nothing was running — the statusLine posts per render, so an idle machine posts nothing, forever.
+// Replay is free here too: the registry is in memory and nothing is swept to read it.
 //
 // **`unreadable` only moves on the snapshot.** A subscription that becomes unreadable mid-stream
 // does not publish an event at all — the reconciler counts it and touches nothing (trap 1) — and
@@ -21,9 +36,11 @@
 // banner about a subscription core cannot read is as old as the connection, and `refresh` is what
 // updates it. Widening the event shape is P1-T8's call, where the store decides what an event is.
 import type { DraftEvent } from '../../contracts/fd-event.ts';
+import type { QuotaSummary } from '../../contracts/quota-summary.ts';
 import { parseSessionRow, type DeckSnapshot } from '../../contracts/session-row.ts';
 import { CORE_STREAM_PATH, type StreamFrame } from '../../contracts/stream-event.ts';
 import type { EventFeed } from '../application/event-hub.ts';
+import { VITALS_EVENT } from '../application/statusline-queue.ts';
 import type { Logger } from '../ports/logger.ts';
 import type { Scheduler } from '../ports/scheduler.ts';
 import type { EventStream, StreamRoute } from './route.ts';
@@ -42,8 +59,14 @@ export interface LiveSessions {
   snapshot(): DeckSnapshot;
 }
 
+/** The other half of the replay. `QuotaReport` supplies it; a test supplies a summary directly. */
+export interface LiveQuota {
+  summary(): QuotaSummary;
+}
+
 export interface StreamRouteParts {
   readonly sessions: LiveSessions;
+  readonly quota: LiveQuota;
   readonly feed: EventFeed;
   readonly scheduler: Scheduler;
   readonly logger: Logger;
@@ -54,6 +77,7 @@ export class SessionStreamRoute implements StreamRoute {
   public readonly path = CORE_STREAM_PATH;
 
   private readonly sessions: LiveSessions;
+  private readonly quota: LiveQuota;
   private readonly feed: EventFeed;
   private readonly scheduler: Scheduler;
   private readonly logger: Logger;
@@ -61,6 +85,7 @@ export class SessionStreamRoute implements StreamRoute {
 
   constructor(parts: StreamRouteParts) {
     this.sessions = parts.sessions;
+    this.quota = parts.quota;
     this.feed = parts.feed;
     this.scheduler = parts.scheduler;
     this.logger = parts.logger;
@@ -80,8 +105,9 @@ export class SessionStreamRoute implements StreamRoute {
    */
   public open(stream: EventStream): void {
     stream.send('snapshot', this.sessions.snapshot());
+    stream.send('quota', this.quota.summary());
     const subscription = this.feed.subscribe((event) => {
-      relay(stream, event);
+      this.relay(stream, event);
     });
     const heartbeat = this.scheduler.every(HEARTBEAT_MS, () => {
       stream.comment('hb');
@@ -106,21 +132,32 @@ export class SessionStreamRoute implements StreamRoute {
   public closeAll(): void {
     for (const stream of [...this.streams]) stream.close();
   }
+
+  /**
+   * One event to one frame, or nothing.
+   *
+   * A method rather than a free function because the vitals branch needs a collaborator: the event
+   * says *that* the numbers moved, and `QuotaReport` is what says what they now are. See the header
+   * for why the event's own payload is never the thing sent.
+   */
+  private relay(stream: EventStream, event: DraftEvent): void {
+    if (event.source === 'statusline' && event.type === VITALS_EVENT) {
+      stream.send('quota', this.quota.summary());
+      return;
+    }
+    const frame = toFrame(event);
+    if (frame === undefined) return;
+    stream.send(frame.name, frame.data);
+  }
 }
 
 /**
- * One event to one frame, or nothing.
+ * One reconcile event to one frame, or nothing.
  *
  * `gone` carries the identity alone because by the time it is published the row has already been
  * removed from the reconciler's map — there is nothing left to send, and the deck only needs to
  * know which row to drop.
  */
-function relay(stream: EventStream, event: DraftEvent): void {
-  const frame = toFrame(event);
-  if (frame === undefined) return;
-  stream.send(frame.name, frame.data);
-}
-
 function toFrame(event: DraftEvent): StreamFrame | undefined {
   if (event.source !== 'reconcile') return undefined;
   if (event.type === 'gone') {

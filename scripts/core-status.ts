@@ -19,6 +19,7 @@
 // about events this screen does not have.
 import type { CoreStatus, SessionVitalsLine } from '../contracts/core-status.ts';
 import { parseCoreStatus } from '../contracts/core-status.ts';
+import { summariseQuota, type SubscriptionQuota } from '../contracts/quota-summary.ts';
 import { parseDeckSnapshot, type DeckSnapshot, type SessionRow } from '../contracts/session-row.ts';
 import {
   HttpCoreClient,
@@ -83,6 +84,8 @@ export function renderStatus(reading: StatusReading, now: number): readonly stri
     '',
     ...counters(status),
     '',
+    ...quota(status, now),
+    '',
     ...table(merge(status, sessions), now),
     '',
     ...footer(status, sessions, now),
@@ -115,6 +118,44 @@ function counters(status: CoreStatus): readonly string[] {
       `${String(transcripts.unknown)} unknown · ${String(transcripts.oversize)} oversize` +
       (transcripts.unknown > 0 ? '  <-- run npm run transcript:probe' : ''),
   ];
+}
+
+/**
+ * Both subscriptions' quota, from the same projection the deck's header reads (P2-T3).
+ *
+ * Deliberately `summariseQuota` rather than a second pass over `status.vitals` here: quota is per
+ * subscription and the table is per session, so somebody has to decide which of five readings
+ * represents an account — and a CLI that decided it differently from the header would be two
+ * screens disagreeing about the number the owner acts on. One rule, in contracts/, tested once.
+ */
+function quota(status: CoreStatus, now: number): readonly string[] {
+  const summary = summariseQuota(status.vitals, { at: now, spendSince: startOfLocalDay(now) });
+  return summary.subscriptions.map((entry) => quotaLine(entry, now));
+}
+
+function quotaLine(entry: SubscriptionQuota, now: number): string {
+  const spend = entry.spendUsd === undefined ? '—' : `$${entry.spendUsd.toFixed(2)}`;
+  return (
+    `  ${entry.subscription.padEnd(8)} 5h ${gaugeLabel(entry.fiveHour, now)} · ` +
+    `7d ${gaugeLabel(entry.sevenDay, now)} · ${spend} today ` +
+    `(${String(entry.spendingSessions)} session(s)) · ` +
+    `claude ${entry.claudeVersion ?? '—'}` +
+    (entry.at === undefined ? '  <-- nothing has reported on this subscription' : '')
+  );
+}
+
+/** `42% resets 2h 14m`, or `—` — and nothing at all for a reset instant already gone by. */
+function gaugeLabel(gauge: SubscriptionQuota['fiveHour'], now: number): string {
+  const used = percent(gauge.usedPercentage).padStart(4);
+  if (gauge.resetsAt === undefined || gauge.resetsAt <= now) return used;
+  return `${used} resets ${duration(gauge.resetsAt - now)}`;
+}
+
+/** Local midnight. `QuotaReport` does the same on core's side, and for the reason written there. */
+function startOfLocalDay(now: number): number {
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  return start.getTime();
 }
 
 /** The listing and the vitals, joined by session id, listing order first (attention, then age). */
