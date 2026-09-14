@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { coreTokenFile, readCoreToken } from '../../contracts/core-token.ts';
+import { attachCoreToken, coreTokenFile, readCoreToken } from '../../contracts/core-token.ts';
 
 const TOKEN = 'f'.repeat(64);
 
@@ -66,5 +66,42 @@ describe('readCoreToken', () => {
     expect(readCoreToken()).toBe(TOKEN);
     writeFileSync(join(directory, 'token'), 'a'.repeat(64), 'utf8');
     expect(readCoreToken()).toBe('a'.repeat(64));
+  });
+});
+
+describe('attachCoreToken', () => {
+  it('attaches the bearer, so the page never has to hold one (SEC-HTTP-5)', () => {
+    const headers = new Headers();
+
+    attachCoreToken(headers, TOKEN);
+
+    expect(headers.get('authorization')).toBe(`Bearer ${TOKEN}`);
+  });
+
+  it('replaces a header the page put there rather than passing it through', () => {
+    const headers = new Headers({ authorization: 'Bearer forged' });
+
+    attachCoreToken(headers, TOKEN);
+
+    expect(headers.get('authorization')).toBe(`Bearer ${TOKEN}`);
+  });
+
+  it('strips a forged header when core is down — the delete is the fail-closed half', () => {
+    // No token means core has never run, or has stopped. Without the delete, a script on the deck
+    // page could put its own `Authorization` on a fetch and have it forwarded to core untouched
+    // (SECURITY.md §3 rule 3). This is the one case the `set` above does not cover.
+    const headers = new Headers({ authorization: 'Bearer forged' });
+
+    attachCoreToken(headers, undefined);
+
+    expect(headers.has('authorization')).toBe(false);
+  });
+
+  it('leaves every other header alone', () => {
+    const headers = new Headers({ accept: 'text/event-stream' });
+
+    attachCoreToken(headers, TOKEN);
+
+    expect(headers.get('accept')).toBe('text/event-stream');
   });
 });

@@ -11,32 +11,34 @@
 // inline hydration scripts, the page renders and never hydrates, and the only evidence is a
 // minified React #412. A per-request nonce plus 'strict-dynamic' is the fix, and the two are a
 // package (RESEARCH.md F.5.1).
+//
+// **Everything this file decides lives in contracts/, and only the wiring is here** — the routes
+// in deck-routes.ts, the policy and its nonce in content-security-policy.ts, the bearer in
+// core-token.ts. Not tidiness: a test that imported this file would pull `next/server`, and with
+// it Next's global type augmentation, into the project core/ and scripts/ are checked by.
 import { NextResponse, type NextRequest } from 'next/server';
-import { contentSecurityPolicy } from './contracts/content-security-policy.ts';
-import { readCoreToken } from './contracts/core-token.ts';
-
-/** Everything under here is forwarded to core by the rewrite in next.config.ts. */
-const CORE_PREFIX = '/api/core/';
-
-/** Everything under here is answered by a route handler in the deck — today, `/api/stream`. */
-const API_PREFIX = '/api/';
+import { contentSecurityPolicy, newNonce } from './contracts/content-security-policy.ts';
+import { attachCoreToken, readCoreToken } from './contracts/core-token.ts';
+import { API_PREFIX, CORE_PREFIX } from './contracts/deck-routes.ts';
 
 export function proxy(request: NextRequest): NextResponse {
   const headers = new Headers(request.headers);
   const { pathname } = request.nextUrl;
 
   if (pathname.startsWith(CORE_PREFIX)) {
-    return forwardToCore(headers);
+    // No nonce and no CSP on this leg: a CSP on a JSON response protects nothing, and P0-T8
+    // measured that a response header set here is forwarded to core as a *request* header
+    // (RESEARCH.md F.6.6). Harmless for a CSP, not harmless as a habit.
+    attachCoreToken(headers, readCoreToken());
+    return NextResponse.next({ request: { headers } });
   }
-  // Not a document, so neither a nonce nor a CSP: a policy on an event stream protects nothing, and
-  // P0-T8 measured that a response header set here is forwarded to core as a REQUEST header
-  // (RESEARCH.md F.6.6). Harmless for a CSP, not harmless as a habit — so the habit is that only
-  // documents get one.
+  // Same argument for the deck's own routes — today `/api/stream`, which is an event stream. The
+  // habit is that only documents get a policy.
   if (pathname.startsWith(API_PREFIX)) {
     return NextResponse.next();
   }
 
-  const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
+  const nonce = newNonce();
   // Next reads the nonce back off the request header to stamp its own script tags.
   headers.set('x-nonce', nonce);
   const response = NextResponse.next({ request: { headers } });
@@ -48,27 +50,14 @@ export function proxy(request: NextRequest): NextResponse {
 }
 
 /**
- * Attaches the bearer token to a request on its way to core, and nothing else.
+ * Which paths this file runs on — and the one value in it that CANNOT come from contracts/.
  *
- * No nonce and no CSP: a CSP on an SSE or JSON response protects nothing, and P0-T8 measured that
- * a response header set here is forwarded to core as a *request* header, so setting one is not
- * free (RESEARCH.md F.6.6).
+ * Next parses `config` out of the source at build time rather than evaluating it, so an imported
+ * constant here is not a constant to it: `next build` fails with "Missing `source` in `matcher[0]`
+ * object" and "`source` in `matcher[0]` object must be a string". A literal it is, therefore —
+ * found by building, not by testing, which is the §G lesson again.
  *
- * The `delete` is the fail-closed half and is not redundant with the `set`. A script on the deck
- * page can put its own `Authorization` header on a `fetch`; without the delete, a core that is
- * down — no token file — would let that forged header through untouched (SECURITY.md §3 rule 3).
+ * It must equal `PROXIED_ROUTES`, and `tests/app/proxy-matcher.test.ts` reads this file as text to
+ * check that it does. Reading the source is the right level: the source is what Next reads too.
  */
-function forwardToCore(headers: Headers): NextResponse {
-  const token = readCoreToken();
-  if (token === undefined) headers.delete('authorization');
-  else headers.set('authorization', `Bearer ${token}`);
-  return NextResponse.next({ request: { headers } });
-}
-
-export const config = {
-  // Everything under `_next` is excluded, not just static and image. `_next/hmr` is a WebSocket
-  // upgrade, and running proxy on it returns a normal HTTP response to a handshake — the browser
-  // reports ERR_INVALID_HTTP_RESPONSE and dev reloads never arrive (RESEARCH.md G.3). None of
-  // these routes carry an inline script, so none of them needs a per-request nonce.
-  matcher: [{ source: '/((?!_next/|favicon.ico).*)' }],
-};
+export const config = { matcher: [{ source: '/((?!_next/|favicon.ico).*)' }] };

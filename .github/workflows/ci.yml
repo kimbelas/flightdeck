@@ -75,7 +75,7 @@ jobs:
         run: npm run test:win
 
   build:
-    name: Next.js build (once the UI exists)
+    name: Next.js production build
     runs-on: ubuntu-latest
     needs: quality
     timeout-minutes: 15
@@ -89,22 +89,16 @@ jobs:
           node-version-file: .node-version
           cache: npm
 
-      - name: Detect the Next.js app
-        id: next
-        run: |
-          if ls next.config.* >/dev/null 2>&1; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+      - run: npm ci
 
-      - if: steps.next.outputs.present == 'true'
-        run: npm ci
-
-      - if: steps.next.outputs.present == 'true'
-        name: Build
+      # Not `next dev`: the dev server renders the deck and never hydrates (RESEARCH.md G.3,
+      # P2-T6b), so the production build is the only one that proves anything. The telemetry
+      # opt-out is SEC-NET-2 and is set on every route that builds — here, release.yml and
+      # flightdeck.cmd.
+      - name: Build
         run: npm run build
         env:
           NEXT_TELEMETRY_DISABLED: '1'
-
-      - if: steps.next.outputs.present != 'true'
-        run: echo "No next.config.* yet (Phase 2) — build skipped."
 
   security:
     name: Audit · signatures · secrets · dependency review

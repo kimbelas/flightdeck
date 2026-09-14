@@ -9,18 +9,33 @@
 // than as the update mechanism: it forces a fresh sweep now, which is also how the `unreadable`
 // banner moves (SessionStreamRoute — a subscription core cannot read publishes no event).
 //
+// **Everything off the wire is parsed, including the two replies that are not frames.** P2-T2
+// found `refresh()` and `launch()` casting their JSON straight into state while the stream path
+// beside them parsed every frame and dropped what did not match. Same rows, same core, one of them
+// checking (CODING-STANDARDS §11 rule 1). They go through `parseDeckSnapshot` and
+// `parseLaunchAccepted` now, and through a `DeckApi` port rather than a bare `fetch`, which is
+// what makes the paths testable at all.
+//
 // **Reconnection is this class's job, not the browser's.** An `EventSource` retries a dropped
 // connection on its own but gives up permanently on an HTTP error, and "core is not running" is
 // exactly that: the route handler answers 503 (RESEARCH.md F.6.7). Since core restarting is an
 // ordinary event on this machine (F.3.3), a deck that stopped retrying would be a deck that needs
 // a page reload every time. One path for both cases: close, wait, reopen.
+import { CORE_SESSIONS_PATH } from '../../contracts/deck-routes.ts';
+import {
+  parseLaunchAccepted,
+  parseLaunchFailure,
+  type LaunchAccepted,
+} from '../../contracts/launch-reply.ts';
 import {
   byAttentionThenAge,
+  parseDeckSnapshot,
   sessionKey,
   type DeckSnapshot,
   type SessionRow,
 } from '../../contracts/session-row.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
+import type { DeckApi, JsonReply } from './deck-api.ts';
 import {
   DECK_STREAM_PATH,
   parseStreamFrame,
@@ -59,6 +74,11 @@ export interface StreamTransport {
 /** Matches core's own `retry:` hint (SseStream). Loopback; there is nothing to back off from. */
 const RECONNECT_MS = 2000;
 
+const UNREACHABLE = 'Could not reach flightdeck-core.';
+
+/** Said out loud rather than swallowed: a reply nobody can parse is not an empty session list. */
+const UNREADABLE = 'flightdeck-core answered something the deck could not read.';
+
 const EMPTY: DeckState = {
   rows: [],
   unreadable: [],
@@ -70,12 +90,14 @@ const EMPTY: DeckState = {
 export class DeckStore {
   private readonly subscribers = new Set<() => void>();
   private readonly transport: StreamTransport;
+  private readonly api: DeckApi;
   private state: DeckState = EMPTY;
   private source: EventStreamSource | undefined;
   private cancelRetry: (() => void) | undefined;
 
-  constructor(transport: StreamTransport) {
+  constructor(transport: StreamTransport, api: DeckApi) {
     this.transport = transport;
+    this.api = api;
   }
 
   public subscribe = (listener: () => void): (() => void) => {
@@ -124,20 +146,24 @@ export class DeckStore {
    */
   public async refresh(): Promise<void> {
     this.set({ loading: true, error: undefined });
-    try {
-      const response = await fetch('/api/core/sessions', {
-        headers: { accept: 'application/json' },
-      });
-      if (!response.ok) {
-        // Core down is an ordinary state the deck renders, not an exception (RESEARCH.md F.3.3).
-        this.set({ loading: false, coreUp: false, error: describe(response.status) });
-        return;
-      }
-      const snapshot = (await response.json()) as DeckSnapshot;
-      this.apply(snapshot);
-    } catch {
-      this.set({ loading: false, coreUp: false, error: 'Could not reach flightdeck-core.' });
+    const reply = await this.api.get(CORE_SESSIONS_PATH);
+    // Core down is an ordinary state the deck renders, not an exception (RESEARCH.md F.3.3).
+    if (reply === undefined) {
+      this.fail(UNREACHABLE);
+      return;
     }
+    if (reply.status !== 200) {
+      this.fail(describe(reply.status));
+      return;
+    }
+    // A 200 that is not a snapshot is core answering with something else, or Next answering with
+    // an HTML error page. Neither is a session list, and neither used to be noticed.
+    const snapshot = parseDeckSnapshot(reply.body);
+    if (snapshot === undefined) {
+      this.set({ loading: false, error: UNREADABLE });
+      return;
+    }
+    this.apply(snapshot);
   }
 
   /**
@@ -155,23 +181,16 @@ export class DeckStore {
     name: string | undefined,
   ): Promise<string | undefined> {
     this.set({ loading: true, error: undefined });
-    try {
-      const response = await fetch('/api/core/sessions', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ subscription, prompt, name }),
-      });
-      if (!response.ok) {
-        this.set({ loading: false, error: describe(response.status) });
-        return undefined;
-      }
-      const body = (await response.json()) as { sessionId: string };
+    const reply = await this.api.post(CORE_SESSIONS_PATH, { subscription, prompt, name });
+    const started = reply === undefined ? undefined : whatStarted(reply);
+    if (started !== undefined) {
       this.set({ loading: false });
-      return body.sessionId;
-    } catch {
-      this.set({ loading: false, error: 'Could not reach flightdeck-core.' });
-      return undefined;
+      return started.sessionId;
     }
+    // Not `coreUp: false`: the stream is the authority on that, and a refused launch says nothing
+    // about whether core is there — it usually means it answered.
+    this.set({ loading: false, error: whyNotLaunched(reply) });
+    return undefined;
   }
 
   /** One frame. Anything that does not parse is dropped rather than rendered (§11 rule 1). */
@@ -213,6 +232,12 @@ export class DeckStore {
     });
   }
 
+  /** A request that reached nobody, or an answer that was not one. The rows stay; they are still
+   * the best answer anyone has. */
+  private fail(error: string): void {
+    this.set({ loading: false, coreUp: false, error });
+  }
+
   private set(changes: Partial<DeckState>): void {
     this.state = { ...this.state, ...changes };
     for (const listener of this.subscribers) listener();
@@ -226,6 +251,35 @@ function upsert(rows: readonly SessionRow[], row: SessionRow): readonly SessionR
 
 function without(rows: readonly SessionRow[], key: string): readonly SessionRow[] {
   return rows.filter((row) => sessionKey(row) !== key);
+}
+
+/**
+ * The session a launch actually started, or `undefined` for a reply that did not start one.
+ *
+ * 201 exactly: core answers `created` for a session that now exists, and anything else — a 200
+ * included — is not one (LaunchRoute).
+ */
+function whatStarted(reply: JsonReply): LaunchAccepted | undefined {
+  return reply.status === 201 ? parseLaunchAccepted(reply.body) : undefined;
+}
+
+/**
+ * Why it did not, preferring core's own code to the status it came under.
+ *
+ * The status alone lies here. `no_claude` is a 503, and `describe` reads a 503 as "core is not
+ * running" — which is exactly wrong: core is running, it answered, and it cannot find claude.exe.
+ * That is the operator's to fix and the only one of the three codes worth repeating; the other two
+ * describe the request, which the owner cannot act on.
+ */
+function whyNotLaunched(reply: JsonReply | undefined): string {
+  if (reply === undefined) return UNREACHABLE;
+  const failure = parseLaunchFailure(reply.body);
+  if (failure === 'no_claude') {
+    return 'Core is running but cannot find claude.exe — run `npm run doctor`.';
+  }
+  if (failure !== undefined) return 'Core would not start that session.';
+  // A 201 that got this far carried something other than a session id.
+  return reply.status === 201 ? UNREADABLE : describe(reply.status);
 }
 
 function describe(status: number): string {

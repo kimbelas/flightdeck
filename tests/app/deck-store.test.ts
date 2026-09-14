@@ -11,6 +11,7 @@ import {
   type EventStreamSource,
   type StreamTransport,
 } from '../../app/deck/deck-store.ts';
+import { FakeDeckApi } from '../fakes/fake-deck-api.ts';
 
 const ROW: SessionRow = {
   sessionId: 'aaaaaaaa-0000-0000-0000-000000000000',
@@ -93,8 +94,11 @@ class FakeTransport implements StreamTransport {
 }
 
 function rig(): { store: DeckStore; transport: FakeTransport } {
+  // The API is never used here: nothing in this file asks for anything. `refresh` and `launch`
+  // have their own file (deck-store-requests.test.ts), because they are a different question —
+  // this one is about what arrives without anyone asking.
   const transport = new FakeTransport();
-  return { store: new DeckStore(transport), transport };
+  return { store: new DeckStore(transport, new FakeDeckApi()), transport };
 }
 
 function snapshot(rows: readonly SessionRow[], unreadable: readonly string[] = []): unknown {

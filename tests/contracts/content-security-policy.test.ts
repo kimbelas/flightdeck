@@ -3,7 +3,11 @@
 // F.5.1). A CSP fails quietly in both directions: too strict and the page never hydrates, too
 // loose and nothing complains at all.
 import { describe, expect, it } from 'vitest';
-import { contentSecurityPolicy, CORE_WEBSOCKET } from '../../contracts/content-security-policy.ts';
+import {
+  contentSecurityPolicy,
+  CORE_WEBSOCKET,
+  newNonce,
+} from '../../contracts/content-security-policy.ts';
 
 const NONCE = 'dGVzdC1ub25jZQ==';
 
@@ -92,5 +96,23 @@ describe('the development relaxations (RESEARCH.md G.3)', () => {
 
     expect(policy).toContain(`'nonce-${nonce}'`);
     expect(policy).toContain("'strict-dynamic'");
+  });
+});
+
+describe('newNonce', () => {
+  it('is different every time — a reused nonce is a static script-src with extra steps', () => {
+    const seen = new Set(Array.from({ length: 100 }, () => newNonce()));
+
+    expect(seen.size).toBe(100);
+  });
+
+  it('carries none of the characters that would end the directive early', () => {
+    // A nonce containing a quote, a space or a semicolon would truncate the policy rather than
+    // fail loudly, which is the quiet-failure shape this whole file is about.
+    expect(newNonce()).toMatch(/^[A-Za-z0-9+/=]+$/);
+  });
+
+  it('is long enough to be worth guessing at', () => {
+    expect(newNonce().length).toBeGreaterThanOrEqual(32);
   });
 });
