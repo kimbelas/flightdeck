@@ -12,11 +12,15 @@
 // stays out of the event spine. That also keeps it out of a construction cycle: a sink that
 // published into the sink it is part of would have to be wired after the thing that contains it.
 //
-// **Every path here is a string nobody resolves.** Attribution to a subscription already happened
-// at the ingest boundary (`SubscriptionPaths`, SEC-FS-1); this opens what those feeds reported.
+// **A reported path is screened before it is ever opened** (P1-T12, SEC-FS-2). Attribution to a
+// subscription happened at the ingest boundary (`SubscriptionPaths`, SEC-FS-1) and proves only
+// *whose* directory the path is under; `ReadPolicy` is what proves it is a transcript and not
+// `daemon\control.key`. The check belongs here rather than in the adapter because this is where a
+// path is accepted, and because this class has the logger that says a payload was ignored.
 import type { DraftEvent } from '../../contracts/fd-event.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
 import { TranscriptDigest } from '../domain/transcript-digest.ts';
+import type { ReadPolicy } from '../domain/read-policy.ts';
 import type { Cancellation } from '../ports/cancellation.ts';
 import type { EventSink } from '../ports/event-sink.ts';
 import type { Logger } from '../ports/logger.ts';
@@ -50,21 +54,27 @@ interface Tracked {
 
 export interface TranscriptReaderParts {
   readonly file: TranscriptFile;
+  /** SEC-FS-2 — what may be opened at all. Required, so a caller cannot forget to fail closed. */
+  readonly policy: ReadPolicy;
   readonly scheduler: Scheduler;
   readonly logger: Logger;
 }
 
 export class TranscriptReader implements EventSink {
   private readonly file: TranscriptFile;
+  private readonly policy: ReadPolicy;
   private readonly scheduler: Scheduler;
   private readonly logger: Logger;
   private readonly tracked = new Map<string, Tracked>();
+  /** Paths already refused, so a statusLine render per second is one log line and not thousands. */
+  private readonly refused = new Set<string>();
   private timer: Cancellation | undefined;
   /** Polls do not overlap. `Scheduler.every` does not chain, so the guard is this class's (port doc). */
   private polling = false;
 
   constructor(parts: TranscriptReaderParts) {
     this.file = parts.file;
+    this.policy = parts.policy;
     this.scheduler = parts.scheduler;
     this.logger = parts.logger;
   }
@@ -84,6 +94,11 @@ export class TranscriptReader implements EventSink {
     if (event.source !== 'hook' && event.source !== 'statusline') return;
     const path = transcriptPathOf(event.payload);
     if (path === undefined) return;
+    const refusal = this.policy.refusal(path);
+    if (refusal !== undefined) {
+      this.refuse(event.sessionId, path, refusal);
+      return;
+    }
     this.track(event.sessionId, event.subscription, path);
   }
 
@@ -122,6 +137,20 @@ export class TranscriptReader implements EventSink {
   /** Everything tracked, least-recently-read first. `flightdeck-core status` prints it (P1-T12). */
   public all(): readonly TrackedTranscript[] {
     return [...this.tracked].map(([sessionId, entry]) => view(sessionId, entry));
+  }
+
+  /**
+   * Says so once per distinct path, and never says which path.
+   *
+   * The reason names the rule that refused it, which is enough to act on; the path itself is
+   * attacker-supplied text that would land in a file the deck also reads (SEC-DATA-2, SEC-UI-2).
+   * The set is capped for the reason `tracked` is: a map that only grows is a slow leak.
+   */
+  private refuse(sessionId: string, path: string, reason: string): void {
+    if (this.refused.has(path)) return;
+    if (this.refused.size >= MAX_TRANSCRIPTS) this.refused.clear();
+    this.refused.add(path);
+    this.logger.warn('transcript_path_refused', { sessionId, reason });
   }
 
   private track(sessionId: string, subscription: SubscriptionId, path: string): void {

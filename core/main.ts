@@ -3,38 +3,31 @@
 // It returns the assembled service rather than starting it, so a test can build the whole graph
 // against fakes and `scripts/flightdeck-core.ts` can own the printing. No DI container, no
 // globals: everything below is constructor injection, read top to bottom.
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { ingestKeyFile } from '../contracts/ingest-key.ts';
 import { storeFile } from '../contracts/store-file.ts';
 import { CORE_PORT, UI_ORIGIN } from '../contracts/origins.ts';
 import { DeckQuery } from './application/deck-query.ts';
-import { EventHub } from './application/event-hub.ts';
-import { HookQueue } from './application/hook-queue.ts';
 import { IngestKeyIssuer } from './application/ingest-key-issuer.ts';
-import { StatuslineQueue } from './application/statusline-queue.ts';
 import { PaneRegistry } from './application/pane-registry.ts';
-import { Reconciler } from './application/reconciler.ts';
+import { type Reconciler } from './application/reconciler.ts';
 import { SessionLauncher } from './application/session-launcher.ts';
 import { AuditLog } from './application/audit-log.ts';
+import { StatusReport } from './application/status-report.ts';
 import { SubscriptionPaths } from './application/subscription-paths.ts';
-import { TranscriptReader } from './application/transcript-reader.ts';
-import { VitalsRegistry } from './application/vitals-registry.ts';
+import { type TranscriptReader } from './application/transcript-reader.ts';
+import { type VitalsRegistry } from './application/vitals-registry.ts';
 import { TicketOffice } from './application/ticket-office.ts';
 import { TokenIssuer } from './application/token-issuer.ts';
 import { ClaudeCliSessionSource } from './adapters/claude-cli/claude-cli-session-source.ts';
 import { ClaudeInstall } from './adapters/claude-cli/claude-install.ts';
 import { ExecFileProcessRunner } from './adapters/claude-cli/execfile-process-runner.ts';
 import { ConsoleLogger } from './adapters/console-logger.ts';
-import { FanOutEventSink } from './adapters/fan-out-event-sink.ts';
-import { LoggingEventSink } from './adapters/logging-event-sink.ts';
-import { FsDirectoryWatcher } from './adapters/node/fs-directory-watcher.ts';
-import { FsTranscriptFile } from './adapters/node/fs-transcript-file.ts';
 import { SqliteStore } from './adapters/sqlite/sqlite-store.ts';
-import { StoringEventSink } from './adapters/storing-event-sink.ts';
-import { NodeScheduler } from './adapters/node/node-scheduler.ts';
 import { NodePtyHost } from './adapters/node-pty/node-pty-host.ts';
 import { WindowsPtyCommands } from './adapters/windows/windows-pty-commands.ts';
+import { WindowsFileAcl } from './adapters/windows/windows-file-acl.ts';
 import { WindowsTokenFile } from './adapters/windows/windows-token-file.ts';
 import { CoreServer } from './http/core-server.ts';
 import { HealthRoute } from './http/health-route.ts';
@@ -46,15 +39,15 @@ import { RateLimiter } from './http/rate-limiter.ts';
 import { PtySocketServer } from './http/pty-socket-server.ts';
 import { RequestRouter } from './http/request-router.ts';
 import type { Route, StreamRoute } from './http/route.ts';
-import { SessionStreamRoute } from './http/session-stream-route.ts';
 import { SessionsRoute } from './http/sessions-route.ts';
+import { StatusRoute } from './http/status-route.ts';
 import { StatuslineRoute } from './http/statusline-route.ts';
 import { TicketRoute } from './http/ticket-route.ts';
 import { warmUp } from './http/warm-up.ts';
+import { buildFeeds, type Feeds } from './feeds.ts';
 import { stopCore, type Running } from './shutdown.ts';
 import { SystemClock } from './ports/clock.ts';
 import type { Logger } from './ports/logger.ts';
-import type { Store } from './ports/store.ts';
 
 export interface Core {
   readonly server: CoreServer;
@@ -117,12 +110,13 @@ export interface Core {
  * which a route is reachable without one (SEC-HTTP-3).
  */
 export function buildCore(logger: Logger = new ConsoleLogger()): Core {
-  const tokenFile = new WindowsTokenFile();
-  const issuer = new TokenIssuer(tokenFile);
-  const token = issuer.issue();
-  // Read-or-create, and NOT revoked on shutdown — the one secret that outlives the process, so a
-  // session that started three restarts ago still authenticates its hooks (SEC-HTTP-7, F.1.7).
-  const ingestKey = new IngestKeyIssuer(new WindowsTokenFile(ingestKeyFile())).ensure();
+  // SEC-FS-4, first, because everything below writes into this directory: the token, the ingest
+  // key and the database. The reason it is the DIRECTORY and not each file is that SQLite writes
+  // `flightdeck.db-wal` and `-shm` beside the database after anything could have restricted the
+  // database, and the WAL holds the most recently committed rows — hook payloads included
+  // (P1-T12; P1-T8 shipped the store with no ACL at all).
+  restrictDataDirectory();
+  const { tokenFile, issuer, token, ingestKey } = issueSecrets();
 
   // One install, shared: the panes attach with the same config dir the listing was read with, or
   // the deck shows a session a pane cannot find.
@@ -136,11 +130,17 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
   // store that cannot be opened stops core at boot rather than on the first hook.
   const store = new SqliteStore(storeFile());
   const feeds = buildFeeds({ install, sessions, store, clock, logger });
+  // SEC-PROC-3: every mutating action writes a row, and `POST /launch` is the only one today.
+  const audit = new AuditLog(store, clock, logger);
+  const version = readVersion();
   const http = buildHttp({
     guard: buildGuard(token, ingestKey),
     feeds,
-    // SEC-PROC-3: every mutating action writes a row, and `POST /launch` is the only one today.
-    audit: new AuditLog(store, clock, logger),
+    audit,
+    // Read once and handed to both routes that print it, rather than read twice: `/health` and
+    // `/status` disagreeing about which build is running would be a very silly bug to have.
+    version,
+    report: buildReport({ version, store, audit, feeds, tokenFile, install }),
     sessions,
     runner,
     clock,
@@ -164,6 +164,58 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
   };
 }
 
+interface Secrets {
+  readonly tokenFile: WindowsTokenFile;
+  readonly issuer: TokenIssuer;
+  readonly token: string;
+  readonly ingestKey: string;
+}
+
+/**
+ * The two secrets, which differ in exactly one way that matters: one is per boot and one is not.
+ *
+ * The token is issued fresh and revoked on shutdown (SEC-HTTP-3). The ingest key is read-or-create
+ * and is NOT revoked — it is the one secret that outlives the process, so a session that started
+ * three restarts ago still authenticates its hooks (SEC-HTTP-7, RESEARCH.md F.1.7).
+ */
+function issueSecrets(): Secrets {
+  const tokenFile = new WindowsTokenFile();
+  const issuer = new TokenIssuer(tokenFile);
+  const token = issuer.issue();
+  const ingestKey = new IngestKeyIssuer(new WindowsTokenFile(ingestKeyFile())).ensure();
+  return { tokenFile, issuer, token, ingestKey };
+}
+
+interface ReportParts {
+  readonly version: string;
+  readonly store: SqliteStore;
+  readonly audit: AuditLog;
+  readonly feeds: Feeds;
+  readonly tokenFile: WindowsTokenFile;
+  readonly install: ClaudeInstall;
+}
+
+/**
+ * The five in-memory counters the last five tasks left behind, gathered into one answer.
+ *
+ * A function here rather than in `StatusReport` itself, because choosing *which* store, audit log
+ * and registry it reports on is composition, and a class that found its own collaborators would be
+ * a service locator (CODING-STANDARDS §2).
+ */
+function buildReport(parts: ReportParts): StatusReport {
+  return new StatusReport({
+    version: parts.version,
+    store: { path: storeFile(), version: parts.store.version },
+    events: parts.feeds.storing,
+    audit: parts.audit,
+    transcripts: parts.feeds.transcripts,
+    vitals: parts.feeds.vitals,
+    tokenPath: parts.tokenFile.location(),
+    ingestKeyPath: ingestKeyFile(),
+    claudePath: parts.install.executable,
+  });
+}
+
 /** Everything that answers a socket, and the two things shutdown has to let go of with it. */
 interface HttpSide {
   readonly server: CoreServer;
@@ -176,6 +228,8 @@ interface HttpParts {
   readonly guard: LoopbackGuard;
   readonly feeds: Feeds;
   readonly audit: AuditLog;
+  readonly version: string;
+  readonly report: StatusReport;
   readonly sessions: ClaudeCliSessionSource;
   readonly runner: ExecFileProcessRunner;
   readonly clock: SystemClock;
@@ -200,6 +254,8 @@ function buildHttp(parts: HttpParts): HttpSide {
     guard,
     router: buildRouter({
       feeds,
+      version: parts.version,
+      report: parts.report,
       deck: new DeckQuery(parts.sessions, clock),
       launcher: new SessionLauncher({
         install,
@@ -239,83 +295,10 @@ function buildGuard(token: string, ingestKey: string): LoopbackGuard {
   });
 }
 
-/** The event side: what notices things, what is told about them, and what hands them to a browser. */
-interface Feeds {
-  readonly reconciler: Reconciler;
-  readonly stream: SessionStreamRoute;
-  readonly hooks: HookQueue;
-  readonly statusline: StatuslineQueue;
-  readonly transcripts: TranscriptReader;
-  /** The newest vitals per session. `flightdeck-core status` (P1-T12) and P2-T3 read it. */
-  readonly vitals: VitalsRegistry;
-}
-
-/**
- * The 10 s sweep and the `fs.watch` nudge (DECISIONS.md D3 feeds 3 and 5), and the fan-out.
- *
- * Built together because they share two things and both would be bugs if they did not. **One
- * scheduler**: the sweep, the watcher's 2 s stat poll and every stream's heartbeat run on it, so
- * there is a single place timers are created and, more to the point, cancelled — `NodeScheduler`
- * deliberately does not `unref`, and the one nobody cancelled keeps core alive after Ctrl+C.
- * **One hub**: the reconciler publishes into it without knowing who is listening, and the log is
- * still one of the listeners — an operator reading `.flightdeck-core.log` an hour later needs
- * what the browser saw, and the browser is not there an hour later (P1-T9).
- */
-interface FeedParts {
-  readonly install: ClaudeInstall;
-  readonly sessions: ClaudeCliSessionSource;
-  readonly store: Store;
-  readonly clock: SystemClock;
-  readonly logger: Logger;
-}
-
-function buildFeeds(parts: FeedParts): Feeds {
-  const { install, sessions, store, clock, logger } = parts;
-  const scheduler = new NodeScheduler();
-  const hub = new EventHub(logger);
-  // Feed 4 rides the fan-out as a SUBSCRIBER, not as a producer: it learns which transcripts are
-  // live from the `transcript_path` the hook and statusLine payloads already carry, so nothing
-  // walks 1.1 GB of `projects/` looking for them and no existing class had to change (P1-T7).
-  const transcripts = new TranscriptReader({
-    file: new FsTranscriptFile(),
-    scheduler,
-    logger,
-  });
-  // Four listeners, and none of them is redundant: the log is what an operator reads an hour
-  // later, the hub is what a browser sees now, the store is what can still answer next month, and
-  // the transcript reader is only here to learn which files are live (P1-T7).
-  const sink = new FanOutEventSink([
-    new LoggingEventSink(logger),
-    hub,
-    new StoringEventSink(store, logger),
-    transcripts,
-  ]);
-  const vitals = new VitalsRegistry();
-  const reconciler = new Reconciler({
-    source: sessions,
-    sink,
-    scheduler,
-    watcher: new FsDirectoryWatcher(install.watchTargets(), scheduler, logger),
-    clock,
-    logger,
-  });
-  return {
-    reconciler,
-    stream: new SessionStreamRoute({ sessions: reconciler, feed: hub, scheduler, logger }),
-    // A hook publishes into the same sink and then asks the reconciler to look — evidence that
-    // something happened, never a claim about what is true now (D3, P1-T5).
-    hooks: new HookQueue({ sink, trigger: reconciler, scheduler, clock, logger }),
-    // The statusLine posts on every render and asks for nothing: it records vitals and publishes
-    // only when they moved. No nudge — a sweep per repaint would be `agents --json` twice a
-    // second for news that is already in the payload (P1-T6).
-    statusline: new StatuslineQueue({ sink, registry: vitals, scheduler, clock, logger }),
-    transcripts,
-    vitals,
-  };
-}
-
 interface RouterParts {
   readonly feeds: Feeds;
+  readonly version: string;
+  readonly report: StatusReport;
   readonly deck: DeckQuery;
   readonly launcher: SessionLauncher;
   readonly tickets: TicketOffice;
@@ -327,8 +310,9 @@ interface RouterParts {
 /** Every path core answers, in one list. There are no patterns and no prefixes (RequestRouter). */
 function buildRouter(parts: RouterParts): RequestRouter<Route> {
   return new RequestRouter<Route>([
-    new HealthRoute(readVersion()),
+    new HealthRoute(parts.version),
     new SessionsRoute(parts.deck),
+    new StatusRoute(parts.report),
     new LaunchRoute(parts.launcher),
     new TicketRoute(parts.tickets),
     new HooksRoute({
@@ -355,6 +339,20 @@ function subscriptionPaths(install: ClaudeInstall): SubscriptionPaths {
     '365': install.configDirFor('365'),
     isg: install.configDirFor('isg'),
   });
+}
+
+/**
+ * Restricts `%LOCALAPPDATA%\flightdeck` to this user, creating it if it is not there.
+ *
+ * The directory is derived from the store's path rather than spelled again: three contracts
+ * already agree about this folder and a fourth opinion is how they stop agreeing
+ * (contracts/store-file.ts). It is created here rather than relied upon, so this does not depend
+ * on the token having been written first — an ordering that is true today and is not a contract.
+ */
+function restrictDataDirectory(): void {
+  const directory = dirname(storeFile());
+  mkdirSync(directory, { recursive: true });
+  new WindowsFileAcl().restrictDirectory(directory);
 }
 
 function readVersion(): string {

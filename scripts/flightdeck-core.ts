@@ -1,9 +1,14 @@
-// The entry point — `node scripts/flightdeck-core.ts`, no build step (P0-T2).
+// The entry point — `node scripts/flightdeck-core.ts [status]`, no build step (P0-T2).
 //
 // Everything here is process concerns: signals, exit codes, and the one line an operator reads.
 // The service graph is built by core/main.ts, which knows nothing about any of it.
+//
+// **Two verbs, one file, because they are one command.** P1's gate sentence is
+// `flightdeck-core status`, and a separate script would be a second thing to know the name of.
+// `status` starts nothing and builds nothing: it asks the core that is already listening (P1-T12).
 import { CORE_PORT } from '../contracts/origins.ts';
 import { buildCore } from '../core/main.ts';
+import { readStatus, renderStatus } from './core-status.ts';
 
 async function start(): Promise<void> {
   const core = buildCore();
@@ -37,4 +42,27 @@ async function start(): Promise<void> {
   }
 }
 
-void start();
+/**
+ * Prints what the running core knows about itself and every session on the machine.
+ *
+ * Exit 1 when there is nothing to print. Core being down is an ordinary state rather than an
+ * error, but this is a command somebody runs *because* they suspect it is down, so the exit code
+ * has to be the answer a script can read.
+ */
+async function status(): Promise<void> {
+  const reading = await readStatus();
+  if (!reading.ok) {
+    console.error(`flightdeck-core status: ${reading.error}`);
+    process.exitCode = 1;
+    return;
+  }
+  for (const line of renderStatus(reading.value, Date.now())) console.log(line);
+}
+
+const [verb] = process.argv.slice(2);
+if (verb === undefined) void start();
+else if (verb === 'status') void status();
+else {
+  console.error(`flightdeck-core: unknown verb ${JSON.stringify(verb)} — try "status", or no verb`);
+  process.exitCode = 1;
+}

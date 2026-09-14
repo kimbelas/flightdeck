@@ -16,7 +16,7 @@
 // that does not match is dropped rather than coerced — a deck that received a half-shaped row
 // should ignore it, not render a session with blank fields.
 import {
-  byAttentionThenAge,
+  parseDeckSnapshot,
   parseSessionRow,
   type DeckSnapshot,
   type SessionRow,
@@ -80,33 +80,6 @@ export function parseStreamFrame(name: string, data: string): StreamFrame | unde
     default:
       return undefined;
   }
-}
-
-/**
- * A snapshot, with rows that did not parse dropped.
- *
- * Dropped, not rejected: one unreadable row must not cost the deck the other nine and the
- * `unreadable` list with them. The rows are re-sorted here because the wire does not promise an
- * order — the same comparator the sender used, so nothing moves on arrival.
- */
-function parseDeckSnapshot(value: unknown): DeckSnapshot | undefined {
-  const fields = asRecord(value);
-  if (fields === undefined) return undefined;
-  const rows = fields['rows'];
-  const unreadable = fields['unreadable'];
-  const takenAt = fields['takenAt'];
-  if (!Array.isArray(rows) || !Array.isArray(unreadable)) return undefined;
-  if (typeof takenAt !== 'number') return undefined;
-  const parsed: SessionRow[] = [];
-  for (const row of rows) {
-    const session = parseSessionRow(row);
-    if (session !== undefined) parsed.push(session);
-  }
-  return {
-    rows: parsed.sort(byAttentionThenAge),
-    unreadable: unreadable.filter(isSubscriptionId),
-    takenAt,
-  };
 }
 
 function parseSessionGone(value: unknown): SessionGone | undefined {

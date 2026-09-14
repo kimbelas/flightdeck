@@ -102,8 +102,28 @@ function summarise(digest: TranscriptDigest): TranscriptReading['digest'] {
 
 /** Every transcript under both config dirs, largest first — the worst case is the interesting one. */
 export function findTranscripts(roots: readonly string[]): readonly string[] {
-  const found = roots.flatMap((root) => listing(root).flatMap((slug) => jsonlIn(join(root, slug))));
-  return [...found].sort((left, right) => statSync(right).size - statSync(left).size);
+  return [...allTranscripts(roots)].sort(
+    (left, right) => statSync(right).size - statSync(left).size,
+  );
+}
+
+/**
+ * The same corpus, most recently WRITTEN first — the sample `doctor` takes (P1-T12).
+ *
+ * A different order for a different question. "Can this build read a 22 MB transcript in one
+ * pass" is about the biggest file; "has Claude Code started writing a record type we have never
+ * seen" (SPEC §8 R2) is about the newest one, and the biggest files are the oldest long
+ * conversations. Reading all 315 costs 35 s, which is more than a health check should.
+ */
+export function recentTranscripts(roots: readonly string[], limit: number): readonly string[] {
+  return [...allTranscripts(roots)]
+    .sort((left, right) => statSync(right).mtimeMs - statSync(left).mtimeMs)
+    .slice(0, limit);
+}
+
+/** Every `.jsonl` under `<root>/<slug>/`, in whatever order the filesystem lists them. */
+export function allTranscripts(roots: readonly string[]): readonly string[] {
+  return roots.flatMap((root) => listing(root).flatMap((slug) => jsonlIn(join(root, slug))));
 }
 
 /** A directory that is not there is not an error here — one config dir may not exist. */
