@@ -4,10 +4,9 @@
 // against fakes and `scripts/flightdeck-core.ts` can own the printing. No DI container, no
 // globals: everything below is constructor injection, read top to bottom.
 import { readFileSync } from 'node:fs';
-import { request as httpRequest } from 'node:http';
 import { join } from 'node:path';
 import { ingestKeyFile } from '../contracts/ingest-key.ts';
-import { CORE_PORT, LOOPBACK_ADDRESS, UI_ORIGIN } from '../contracts/origins.ts';
+import { CORE_PORT, UI_ORIGIN } from '../contracts/origins.ts';
 import { DeckQuery } from './application/deck-query.ts';
 import { EventHub } from './application/event-hub.ts';
 import { HookQueue } from './application/hook-queue.ts';
@@ -17,6 +16,7 @@ import { PaneRegistry } from './application/pane-registry.ts';
 import { Reconciler } from './application/reconciler.ts';
 import { SessionLauncher } from './application/session-launcher.ts';
 import { SubscriptionPaths } from './application/subscription-paths.ts';
+import { TranscriptReader } from './application/transcript-reader.ts';
 import { VitalsRegistry } from './application/vitals-registry.ts';
 import { TicketOffice } from './application/ticket-office.ts';
 import { TokenIssuer } from './application/token-issuer.ts';
@@ -27,6 +27,7 @@ import { ConsoleLogger } from './adapters/console-logger.ts';
 import { FanOutEventSink } from './adapters/fan-out-event-sink.ts';
 import { LoggingEventSink } from './adapters/logging-event-sink.ts';
 import { FsDirectoryWatcher } from './adapters/node/fs-directory-watcher.ts';
+import { FsTranscriptFile } from './adapters/node/fs-transcript-file.ts';
 import { NodeScheduler } from './adapters/node/node-scheduler.ts';
 import { NodePtyHost } from './adapters/node-pty/node-pty-host.ts';
 import { WindowsPtyCommands } from './adapters/windows/windows-pty-commands.ts';
@@ -45,6 +46,7 @@ import { SessionStreamRoute } from './http/session-stream-route.ts';
 import { SessionsRoute } from './http/sessions-route.ts';
 import { StatuslineRoute } from './http/statusline-route.ts';
 import { TicketRoute } from './http/ticket-route.ts';
+import { warmUp } from './http/warm-up.ts';
 import { SystemClock } from './ports/clock.ts';
 import type { Logger } from './ports/logger.ts';
 
@@ -65,6 +67,13 @@ export interface Core {
    * (P1-T12) is what prints it; P2-T3 is what draws it.
    */
   readonly vitals: VitalsRegistry;
+  /**
+   * What the transcripts add to what the documented feeds already said (P1-T7).
+   *
+   * Started by the caller, like the reconciler, and for the same reason: a core that failed to
+   * bind must not leave a timer opening files every second for a service nobody can reach.
+   */
+  readonly transcripts: TranscriptReader;
   readonly logger: Logger;
   readonly tokenPath: string;
   /** Where the stable ingest key lives, for `flightdeck-core status` and Connect (SEC-HTTP-7). */
@@ -101,7 +110,6 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
   // session that started three restarts ago still authenticates its hooks (SEC-HTTP-7, F.1.7).
   const ingestKey = new IngestKeyIssuer(new WindowsTokenFile(ingestKeyFile())).ensure();
 
-  const guard = buildGuard(token, ingestKey);
   // One install, shared: the panes attach with the same config dir the listing was read with, or
   // the deck shows a session a pane cannot find.
   const install = new ClaudeInstall();
@@ -110,12 +118,58 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
   // One source for both readers: the deck's on-demand snapshot and the reconciler's timer must
   // not be able to disagree about what `--all` means or which config dir they read.
   const sessions = new ClaudeCliSessionSource(install, runner, logger);
-  const deck = new DeckQuery(sessions, clock);
-  const launcher = new SessionLauncher(install, runner, logger);
-
   const feeds = buildFeeds(install, sessions, clock, logger);
-  const { reconciler, stream } = feeds;
+  const http = buildHttp({
+    guard: buildGuard(token, ingestKey),
+    feeds,
+    sessions,
+    runner,
+    clock,
+    install,
+    logger,
+  });
+  const running: Running = { ...http, ...feeds, issuer, logger };
 
+  return {
+    server: http.server,
+    reconciler: feeds.reconciler,
+    vitals: feeds.vitals,
+    transcripts: feeds.transcripts,
+    logger,
+    tokenPath: tokenFile.location(),
+    ingestKeyPath: ingestKeyFile(),
+    claudePath: install.executable,
+    warmUp: () => warmUp(token, logger),
+    shutdown: () => stopCore(running),
+  };
+}
+
+/** Everything that answers a socket, and the two things shutdown has to let go of with it. */
+interface HttpSide {
+  readonly server: CoreServer;
+  readonly sockets: PtySocketServer;
+  readonly panes: PaneRegistry;
+  readonly tickets: TicketOffice;
+}
+
+interface HttpParts {
+  readonly guard: LoopbackGuard;
+  readonly feeds: Feeds;
+  readonly sessions: ClaudeCliSessionSource;
+  readonly runner: ExecFileProcessRunner;
+  readonly clock: SystemClock;
+  readonly install: ClaudeInstall;
+  readonly logger: Logger;
+}
+
+/**
+ * The HTTP and WebSocket side, built together because it is one server.
+ *
+ * The PTY side rides it rather than binding its own port, because a WebSocket upgrade is an HTTP
+ * request until it is not — one port, one screen, one place a connection can be refused.
+ */
+function buildHttp(parts: HttpParts): HttpSide {
+  const { guard, feeds, clock, install, logger } = parts;
   // The tickets the PTY socket takes in its first frame, so the token never reaches the page (D32).
   const tickets = new TicketOffice(clock);
   // SEC-HTTP-6, shared: the server spends the control budget per token, the hooks route spends the
@@ -123,72 +177,29 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
   const limiter = new RateLimiter(clock);
   const server = new CoreServer({
     guard,
-    router: buildRouter({ feeds, deck, launcher, tickets, limiter, install, logger }),
-    streams: new RequestRouter<StreamRoute>([stream]),
+    router: buildRouter({
+      feeds,
+      deck: new DeckQuery(parts.sessions, clock),
+      launcher: new SessionLauncher(install, parts.runner, logger),
+      tickets,
+      limiter,
+      install,
+      logger,
+    }),
+    streams: new RequestRouter<StreamRoute>([feeds.stream]),
     limiter,
     logger,
   });
-
-  // The PTY side rides the same server, because a WebSocket upgrade is an HTTP request until it
-  // is not — one port, one screen, one place a connection can be refused.
   const panes = new PaneRegistry(new NodePtyHost(), new WindowsPtyCommands(install), logger);
   const sockets = new PtySocketServer({ guard, panes, tickets, logger });
   sockets.attachTo(server.raw);
-
-  return {
-    server,
-    reconciler,
-    vitals: feeds.vitals,
-    logger,
-    tokenPath: tokenFile.location(),
-    ingestKeyPath: ingestKeyFile(),
-    claudePath: install.executable,
-    warmUp: () => warmUp(token, logger),
-    shutdown: () =>
-      stopCore({ reconciler, stream, issuer, tickets, sockets, panes, server, logger }),
-  };
-}
-
-/**
- * One `GET /health` against ourselves, awaited, with everything ignored but the timing.
- *
- * It goes over a real socket rather than calling the route directly, because what is cold is
- * Node's HTTP stack — the parser, the socket path, the first allocation — and a direct call warms
- * none of it. It spends one of the minute's 60 control requests, which is the right price.
- */
-async function warmUp(token: string, logger: Logger): Promise<void> {
-  const startedAt = Date.now();
-  const status = await new Promise<number>((resolve) => {
-    const probe = httpRequest(
-      {
-        host: LOOPBACK_ADDRESS,
-        port: CORE_PORT,
-        path: '/health',
-        headers: {
-          authorization: `Bearer ${token}`,
-          host: `${LOOPBACK_ADDRESS}:${String(CORE_PORT)}`,
-        },
-      },
-      (response) => {
-        response.resume();
-        response.on('end', () => {
-          resolve(response.statusCode ?? 0);
-        });
-      },
-    );
-    probe.on('error', () => {
-      resolve(0);
-    });
-    probe.end();
-  });
-  // Logged rather than discarded: a non-200 here is core failing to answer its own token, which is
-  // worth knowing at boot rather than when the first hook arrives.
-  logger.info('core_warm', { status, ms: Date.now() - startedAt });
+  return { server, sockets, panes, tickets };
 }
 
 /** Everything that has to be let go of on the way out. The ORDER is the documentation. */
 interface Running {
   readonly reconciler: Reconciler;
+  readonly transcripts: TranscriptReader;
   readonly stream: SessionStreamRoute;
   readonly issuer: TokenIssuer;
   readonly tickets: TicketOffice;
@@ -203,6 +214,8 @@ async function stopCore(running: Running): Promise<void> {
   // First, because NodeScheduler does not unref: a live sweep timer keeps the loop alive and the
   // process would never exit.
   running.reconciler.stop();
+  // Same reason, same sentence: another timer NodeScheduler does not unref.
+  running.transcripts.stop();
   // Second, and BEFORE the server, which is not interchangeable: `server.close()` waits for open
   // connections to end and an SSE response never does on its own, so a single deck tab would hold
   // core open through Ctrl+C. Closing the streams afterwards would not rescue it either —
@@ -244,6 +257,7 @@ interface Feeds {
   readonly stream: SessionStreamRoute;
   readonly hooks: HookQueue;
   readonly statusline: StatuslineQueue;
+  readonly transcripts: TranscriptReader;
   /** The newest vitals per session. `flightdeck-core status` (P1-T12) and P2-T3 read it. */
   readonly vitals: VitalsRegistry;
 }
@@ -267,7 +281,15 @@ function buildFeeds(
 ): Feeds {
   const scheduler = new NodeScheduler();
   const hub = new EventHub(logger);
-  const sink = new FanOutEventSink([new LoggingEventSink(logger), hub]);
+  // Feed 4 rides the fan-out as a SUBSCRIBER, not as a producer: it learns which transcripts are
+  // live from the `transcript_path` the hook and statusLine payloads already carry, so nothing
+  // walks 1.1 GB of `projects/` looking for them and no existing class had to change (P1-T7).
+  const transcripts = new TranscriptReader({
+    file: new FsTranscriptFile(),
+    scheduler,
+    logger,
+  });
+  const sink = new FanOutEventSink([new LoggingEventSink(logger), hub, transcripts]);
   const vitals = new VitalsRegistry();
   const reconciler = new Reconciler({
     source: sessions,
@@ -287,6 +309,7 @@ function buildFeeds(
     // only when they moved. No nudge — a sweep per repaint would be `agents --json` twice a
     // second for news that is already in the payload (P1-T6).
     statusline: new StatuslineQueue({ sink, registry: vitals, scheduler, clock, logger }),
+    transcripts,
     vitals,
   };
 }

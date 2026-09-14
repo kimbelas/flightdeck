@@ -9,7 +9,7 @@
 
 version: 1
 project: flightdeck
-updated: 2026-09-12
+updated: 2026-09-14
 
 docs:
   spec: SPEC.md
@@ -607,7 +607,75 @@ phases:
         security: [SEC-ING-3, SEC-HTTP-6]
       - id: P1-T7
         title: Transcript tail — byte offset, partial-line buffer, truncation detection; record parsers behind scrubbed fixtures; unknown shapes never throw
-        status: todo
+        status: done
+        done_on: 2026-09-14
+        depends_on: [P1-T5, P1-T6]
+        notes: >-
+          Feed 4, the only undocumented one (SPEC §4.2), so every number below was measured on the
+          real corpus rather than reasoned about — 315 transcripts, 918 MB (RESEARCH.md G.15).
+
+          **The cap came out of the measurement.** The longest single line on this machine is
+          3,230,728 bytes and the longest one the parser reads is 66,481; `MAX_LINE_CHARS` is 128 K,
+          which sits between them. Lines over 64 KB are 0.46 % of the corpus and are `user` and
+          `attachment` records — the two types feed 4 never reads — so the limit costs nothing and
+          a transcript cannot make core hold a multi-megabyte string. An oversize line is DROPPED
+          and resynchronised to the next newline, never truncated and parsed.
+
+          **`ignored` and `unknown` are two counters, and conflating them would have wasted the
+          only signal this feed gives.** 95 % of a transcript is types this build knows and does not
+          read; a record type it has NEVER seen is the first sign a Claude Code update moved the
+          format (SPEC §8 R2). Only the second is logged, and `npm run transcript:probe` exits
+          non-zero on one — the check `doctor` inherits at P1-T12.
+
+          **The sample was wrong and the probe is what caught it.** A survey of 40 of the 315 files
+          produced a known-types list that read as complete; run over everything it reported 62
+          unknown records across four shapes (`relocated`, `worktree-state`, `agent-setting`,
+          `system/model_refusal_fallback`). RESEARCH.md §C had none of them either.
+
+          **It learns which files to tail by listening.** `TranscriptReader` is an `EventSink` on
+          the existing fan-out: hook and statusLine payloads both carry `transcript_path`, so
+          nothing walks 1.1 GB of `projects/` and no existing class changed. It publishes nothing —
+          feed 4 is enrichment, owns no liveness and nudges no sweep (D3) — and keeps a registry
+          the deck reads, which is also what keeps it out of a construction cycle with the sink it
+          is part of.
+
+          **Truncation is identity, not just size.** A resumed session writes a fresh transcript at
+          a path already being tailed, and at the same length that is invisible to a byte
+          comparison; NTFS gives a real file index and creation time, so the cursor carries
+          `dev:ino:birthtime`. A restart drops the digest, because keeping it would show a resumed
+          session its predecessor's recap. **CI proved that is an NTFS guarantee and not a
+          universal one** — the assertion passed on Windows and failed on the Ubuntu runner, where
+          ext4 reuses a deleted inode and reports no true creation time — so it moved to
+          `tests/win/`, which runs on `windows-latest`, rather than being weakened into something
+          that passes everywhere and proves less.
+
+          **The capture leaked a client's project tree, and the rule is what got fixed**
+          (RESEARCH.md G.16). `trackedFileBackups` is keyed BY PATH and nothing here had ever
+          scrubbed a key — the same bug as P0-T9's `workers`, whose fix was built for one object.
+          Now `PATH_KEYED_OBJECTS` scrubs them and `assertNoDataKeys` fails the capture on any
+          unclassified key containing a separator, a drive letter or whitespace. The scrubber also
+          learned `.jsonl` (per line, re-printed compact).
+        deliverables:
+          [
+            contracts/transcript-record.ts,
+            core/application/transcript-reader.ts,
+            core/application/transcript-tail.ts,
+            core/domain/transcript-digest.ts,
+            core/ports/transcript-file.ts,
+            core/adapters/node/fs-transcript-file.ts,
+            core/http/warm-up.ts,
+            fixtures/transcript/records.jsonl,
+            scripts/transcript-probe.ts,
+            scripts/transcript-probe-cli.ts,
+            tests/core/adapters/fs-transcript-file.test.ts,
+            tests/core/application/transcript-reader.test.ts,
+            tests/core/application/transcript-tail.test.ts,
+            tests/core/domain/transcript-digest.test.ts,
+            tests/fakes/fake-transcript-file.ts,
+            tests/fixtures/transcript.test.ts,
+            tests/scripts/transcript-probe.test.ts,
+            tests/win/transcript-identity.test.ts,
+          ]
         security: [SEC-FS-2]
       - id: P1-T8
         title: SQLite store (node:sqlite) — schema, migrations, events, snapshots, audit table

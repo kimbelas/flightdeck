@@ -18,6 +18,7 @@
     "test:win": "vitest run tests/win --passWithNoTests --coverage.enabled=false",
     "roadmap": "node scripts/roadmap-cli.ts",
     "roadmap:check": "node scripts/roadmap-cli.ts --check",
+    "transcript:probe": "node scripts/transcript-probe-cli.ts",
     "check": "npm run lint && npm run typecheck && npm run format:check && npm run roadmap:check && npm test",
     "dev": "next dev -H 127.0.0.1 -p 4949",
     "build": "next build",
