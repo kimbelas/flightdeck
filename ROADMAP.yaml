@@ -1063,7 +1063,8 @@ phases:
           ]
       - id: P1-T14
         title: Narrow the roster read — named fields only; rvAuth, ptyAuth and dispatch on the deny-list with a test
-        status: todo
+        status: done
+        done_on: 2026-09-14
         notes: >-
           RESEARCH.md F.2.10. daemon/roster.json is allowlisted by SEC-FS-1, but it carries rvAuth
           and ptyAuth (the pipe auth, equivalent to the .key files SEC-FS-2 forbids) and the full
@@ -1072,6 +1073,40 @@ phases:
           ptyAuth and dispatch as never-read, and DECISIONS.md D24 records why the file stays
           allowlisted at all. What is left here is the adapter plus the deny-list test that fails
           if any of those three ever reaches a parsed value.
+
+          **Two thirds of this task turned out to be already done, and correctly so.** P0-T9 built
+          `projectRoster` and its deny-list test because the capture script had to write a fixture
+          to disk and the projection is what kept the secrets out of it — so what P1-T14 actually
+          adds is the adapter and the proof that the path from a FILE to a caller's value carries
+          nothing denied. The contract test proves the projection; the new one writes a hostile
+          roster to a real temp directory and asserts that what comes back contains no `rvAuth`,
+          no `ptyAuth`, no `dispatch` and not the prompt text `dispatch` carries.
+
+          **Three narrowings, because each catches what the next cannot.** The path is DERIVED from
+          a `SubscriptionId` and never accepted (SEC-FS-1's last sentence, as a signature — there
+          is no parameter to point elsewhere); `ReadPolicy` is asked anyway, which today can only
+          pass and is exactly why it is there, because SEC-FS-2 says the check runs before *every*
+          open and the day someone adds a path parameter the check is already in place; and
+          `projectRoster` discards every field not named, so a fourth secret in the next Claude
+          Code release is dropped with nobody editing anything.
+
+          **What is honestly NOT narrowed: the read itself.** There is no way to read half a JSON
+          document, so `readFileSync` touches the whole file and the secrets are in memory for the
+          length of one `JSON.parse`. The narrowing is about what leaves the adapter, and the code
+          comment says so rather than letting SECURITY.md imply otherwise.
+
+          `undefined` and an empty view are different answers on purpose: no roster at all is a
+          subscription that has never run a `--bg` session, while a view with no workers is a
+          daemon claiming to run nothing — and P7-T4's dead-supervisor check (F.2.16) is the caller
+          that has to tell them apart. Port and fake land here with no use case above them, which
+          is the P1-T3 pattern: `Store` shipped eleven tasks before anything wrote to it.
+        deliverables:
+          [
+            core/ports/roster-source.ts,
+            core/adapters/node/fs-roster-source.ts,
+            tests/core/adapters/fs-roster-source.test.ts,
+            tests/fakes/fake-roster-source.ts,
+          ]
         security: [SEC-FS-1, SEC-FS-2, SEC-DATA-2]
 
   - id: P2
