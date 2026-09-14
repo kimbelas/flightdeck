@@ -12,7 +12,7 @@
 // mid-line, and `parseTimeline` drops a line that does not parse, so the cost is one entry rather
 // than a corrupt one. That is the same division `TranscriptTail` uses and the reason the port hands
 // back text rather than records.
-import { open, stat } from 'node:fs/promises';
+import { open } from 'node:fs/promises';
 import type { JobFiles } from '../../ports/job-files.ts';
 
 export class FsJobFiles implements JobFiles {
@@ -21,18 +21,27 @@ export class FsJobFiles implements JobFiles {
     try {
       return await this.slice(path, maxBytes);
     } catch {
-      // No file, no permission, a delete between the stat and the open. A background session that
+      // No file, no permission, a delete between the open and the read. A background session that
       // has not written its state yet is the common one, and it is not a problem (SPEC §4.2).
       return undefined;
     }
   }
 
+  /**
+   * Opens FIRST, then measures the open descriptor.
+   *
+   * The obvious order — `stat(path)` to get the size, then `open(path)` — is a time-of-check /
+   * time-of-use race, and CodeQL was right to say so: the path can be replaced between the two
+   * calls, so the size would describe one file and the read would take bytes from another. Here
+   * that is mostly theoretical (a job directory the daemon owns), but the fix costs nothing and
+   * removes the question: one descriptor, measured and read, and the path is resolved exactly once.
+   */
   private async slice(path: string, maxBytes: number): Promise<string | undefined> {
-    const size = (await stat(path)).size;
-    if (size === 0) return '';
-    const from = Math.max(0, size - maxBytes);
     const handle = await open(path, 'r');
     try {
+      const size = (await handle.stat()).size;
+      if (size === 0) return '';
+      const from = Math.max(0, size - maxBytes);
       const buffer = Buffer.alloc(Math.min(size, maxBytes));
       const { bytesRead } = await handle.read(buffer, 0, buffer.length, from);
       // `toString` on a slice that starts mid-character yields U+FFFD for that one character. Here
