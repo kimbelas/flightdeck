@@ -165,3 +165,78 @@ describe('capture-fixtures scrub — roster workers are keyed by data, not by fi
     expect(Object.keys(scrubbed.usage)).toEqual(['sessionId']);
   });
 });
+
+describe('capture-fixtures scrub — trackedFileBackups is keyed by a PATH', () => {
+  type Backups = Record<string, { version?: number }>;
+
+  function scrubBackups(backups: Backups): Backups {
+    return (scrubValue({ trackedFileBackups: backups }) as { trackedFileBackups: Backups })
+      .trackedFileBackups;
+  }
+
+  it('scrubs a relative path key, keeping its depth and its extension', () => {
+    const scrubbed = scrubBackups({
+      'groundwork\\components\\board\\CardDetail.tsx': { version: 2 },
+    });
+    const [key] = Object.keys(scrubbed);
+
+    // The first transcript capture put a whole client project tree into the repo this way: the
+    // keys of this object are data, and nothing here had ever scrubbed a key (P1-T7, after P0-T9).
+    expect(key).not.toContain('groundwork');
+    expect(key).not.toContain('CardDetail');
+    expect(key?.split('\\')).toHaveLength(4);
+    expect(key?.endsWith('.tsx')).toBe(true);
+  });
+
+  it('scrubs an absolute path key too, keeping the structural segments a parser navigates by', () => {
+    const scrubbed = scrubBackups({
+      'C:\\Users\\someone\\.claude-365\\plans\\a-plan.md': { version: 1 },
+    });
+    const [key] = Object.keys(scrubbed);
+
+    expect(key).not.toContain('someone');
+    expect(key).not.toContain('a-plan');
+    expect(key?.startsWith('C:\\Users\\')).toBe(true);
+    expect(key).toContain('.claude-365');
+    expect(key?.endsWith('.md')).toBe(true);
+  });
+
+  it('is deterministic, so a re-capture is a zero-line diff', () => {
+    const once = Object.keys(scrubBackups({ 'a\\b.ts': {} }));
+    const twice = Object.keys(scrubBackups({ 'a\\b.ts': {} }));
+
+    expect(once).toEqual(twice);
+  });
+});
+
+describe('capture-fixtures scrub — transcript free text', () => {
+  it('scrubs the away summary, the titles and the prompt however short they are', () => {
+    const scrubbed = scrubValue({
+      aiTitle: 'fix bug',
+      customTitle: 'ACME-41',
+      agentName: 'sre',
+      lastPrompt: 'ship it',
+      content: 'I rebased the billing branch',
+      gitBranch: 'ACME-41-fix',
+      atis: 'idle',
+    }) as Record<string, string>;
+
+    // None of these are protected by the length rule, and every one of them names an employer, a
+    // ticket or a client in well under twelve characters.
+    for (const value of Object.values(scrubbed)) expect(value).toMatch(/^text-[0-9a-f]{8}$/);
+  });
+
+  it('leaves an empty free-text field empty', () => {
+    // A placeholder here would make a fixture assert content the capture never had — caught when
+    // adding `text` to the list rewrote an empty field in the P0-T4 jobs timeline (P1-T7).
+    expect(scrubValue({ content: '', lastPrompt: '' })).toEqual({ content: '', lastPrompt: '' });
+  });
+
+  it('still keeps a model id verbatim, because the deck maps an avatar off it', () => {
+    const scrubbed = scrubValue({ modelUsage: { 'claude-opus-5': { costUSD: 1 } } }) as {
+      modelUsage: Record<string, unknown>;
+    };
+
+    expect(Object.keys(scrubbed.modelUsage)).toEqual(['claude-opus-5']);
+  });
+});

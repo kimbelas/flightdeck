@@ -24,8 +24,10 @@ The scrub is deterministic — the same input always yields the same placeholder
 produces a zero-line diff unless the upstream shape actually changed. That property is the point:
 it makes a real shape change visible instead of drowning it in churn.
 
-Only `.json` is scrubbed. A capture that is not JSON must be named in the `DEFERRED` map with the
-task that will handle it, or the script fails. That list exists because silently skipping a file
+`.json` and `.jsonl` are scrubbed; JSONL goes through per line and comes back compact, because in
+that format the newline is the record separator and a pretty-printed transcript is a document no
+line-oriented reader could get back (P1-T7). A capture that is neither must be named in the
+`DEFERRED` map with the task that will handle it, or the script fails. That list exists because silently skipping a file
 it could not parse once hid a captured shape from the repo for a day (P0-T9). A deferral is
 allowed; a silent one is not.
 
@@ -50,6 +52,14 @@ every committed fixture (RESEARCH.md F.7.8, D23). Length was never a safety prop
 `pid` or `sessionId`, regardless of length, because a session named after a ticket identifies an
 employer in nine characters. Vocabulary names like `output_style.name` stay readable.
 
+**Keys are data too, and twice now they have not been treated that way.** `scrub` rewrites values
+and passes keys through as field names, which is right for `sessionId` and wrong for the two objects
+whose keys are content: `workers` (keyed by short session id, P0-T9) and `trackedFileBackups` (keyed
+by file path — it put a client's whole project tree and the account name into a fixture, P1-T7 /
+RESEARCH.md G.16). Both are classified, in `DATA_KEYED_OBJECTS` and `PATH_KEYED_OBJECTS`, and
+`assertNoDataKeys` now **fails the capture** on any unclassified key containing a separator, a drive
+letter or whitespace. If it fires, classify the parent — do not reach for the fixture.
+
 Relationships a parser depends on are restored after scrubbing, not left broken:
 `keepShortIdDerivable` keeps `id` the first segment of `sessionId`, and `rekeyByShortId` does the
 same for the `workers` map, whose **keys** are data. A fixture that asserts a relationship it no
@@ -71,6 +81,7 @@ just its output.
 - A short, fixed, non-sensitive enum the fixture exists to assert on → `VOCABULARY_KEYS`.
 - Something this script writes as documentation (`note`, `claude_version`) → `AUTHORED_KEYS`.
 - Free text a person or the model wrote → `FREE_TEXT_KEYS`, which ignores the length rule.
-- An object whose **keys** are data rather than field names → `DATA_KEYED_OBJECTS`.
+- An object whose **keys** are data rather than field names → `DATA_KEYED_OBJECTS` (keys derived
+  from another field) or `PATH_KEYED_OBJECTS` (keys that are file paths).
 
 Each of those has a test in `tests/capture-fixtures.test.ts`. Add one with the key.

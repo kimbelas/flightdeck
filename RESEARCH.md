@@ -129,7 +129,17 @@ Sizes: `.claude-365/projects` = 647 MB over 18 slugs, largest file **50.9 MB**; 
 | `system` subtypes | `turn_duration {durationMs, messageCount}` (2 051 hits in `.claude-isg`), `stop_hook_summary {hookInfos[{command,durationMs}], hookErrors}` (1 680), **`away_summary {content}`** — a natural-language recap of what happened while you were away (537) — ideal card text, `local_command`, `informational`, `scheduled_task_fire {taskId, cron, prompt, taskKind}` (loops/crons), `compact_boundary {compactMetadata:{trigger, preTokens, postTokens, cumulativeDroppedTokens, durationMs}}`, `model_consent_fallback`, `agents_killed`. Records also carry `slug` (e.g. `dazzling-snacking-squid`). |
 | `attachment` | tool results, `total_tokens_reminder`, skill listings — skip for live view. |
 | `history.jsonl` (per config dir) | `{display, pastedContents, timestamp, project, sessionId}` — cheapest "last prompt per session, with project path". |
+| `relocated`, `worktree-state` | a session whose `cwd` moved, and the worktree it was forked into — the only in-transcript evidence that two sessions are the same work in two places (P3). |
+| `agent-setting`, `atis-latch`, `frame-link`, `bridge-session`, `pr-link`, `artifact-*` | observed in P1-T7, absent from this table until then. Read by nothing; listed so they do not read as drift. |
 | `stats-cache.json` | `version 5`, `dailyActivity[{date, messageCount, sessionCount, toolCallCount}]`; `lastComputedDate` 2026-08-31 / 2026-09-01 — computed lazily, **not** a live source. Undocumented. |
+
+
+**P1-T7 re-surveyed all 315 transcripts** (918 MB, both dirs) rather than the sample this table came
+from, and the difference is the point: the sample missed four shapes and one `system` subtype, which
+is 62 lines the first build would have called a schema change. The full list now lives in
+`contracts/transcript-record.ts` as `KNOWN_RECORD_TYPES`, and `npm run transcript:probe` re-derives
+it — it exits non-zero on a record type this build has never seen, which is the check `doctor`
+(P1-T12) inherits.
 
 ---
 
@@ -1605,3 +1615,73 @@ The bug itself came from an escape that collapsed on its way into the file — `
 five Windows paths in the new tests, where it was harmless because both sides of every assertion
 used the same wrong constant. ESLint's `no-useless-escape` caught all of them; `tsc` caught none,
 because `'C:\cfg'` is a perfectly good string that just is not the one anybody meant.
+
+### G.15 The transcript corpus decided the cap, and the sample got the known list wrong
+
+P1-T7 measured all 315 transcripts on this machine (918 MB, both config dirs) rather than reasoning
+about them, and three numbers came out of it that the code now depends on.
+
+| Measurement | Value |
+| --- | --- |
+| Files / bytes | 315 / 918 MB; largest single file 22.2 MB |
+| Line endings | LF on all 315; every file ends with a newline at rest; no BOM |
+| Longest single line | **3,230,728 bytes** — one `user` record |
+| Lines over 64 KB | 0.46 % of 96,941, and they are `user` (414) and `attachment` (34) |
+| Largest line the parser reads | **66,481 bytes** — one `assistant` |
+| Full read, all 315 | 918 MB in 11.0 s, 0 unknown record types, 903 lines over the cap |
+
+**The cap is the gap between the last two rows.** `MAX_LINE_CHARS` is 128 K: above every record
+feed 4 reads, below the `user` and `attachment` records it does not. A transcript therefore cannot
+make core hold a multi-megabyte string, and nothing worth reading is lost to the limit — the 903
+dropped lines across the whole corpus are all records the parser would have discarded anyway.
+
+**The sample got the known list wrong, and the probe is what found it.** The first survey read 40
+of 315 files and produced a `KNOWN_RECORD_TYPES` that looked complete. Run over the whole corpus,
+`npm run transcript:probe` reported **62 unknown records** — `relocated` (23), `worktree-state`
+(23), `agent-setting` (15) and `system/model_refusal_fallback` (1). None of them is read by
+anything; all of them would have been counted as a Claude Code schema change, which is the one
+signal feed 4 exists to give. The probe now exits non-zero on an unseen type and `doctor` (P1-T12)
+inherits it.
+
+**`unknown` is a different number from "produced no record", and the first draft conflated them.**
+95 % of a transcript is `user`, `attachment`, `mode` and `atis-latch` — types this build knows and
+deliberately ignores. A counter that called those "could not name" would have read 96,941 as
+evidence of drift on day one. `TranscriptTail` counts `ignored` and `unknown` separately, and only
+the second is ever logged.
+
+Feed 4 on this session's own transcript, live: 2.78 MB in **3 slices** (the 1 MB `MAX_SLICE_BYTES`),
+72 ms, 410 records, 0 unknown, 1 oversize, 15 files touched, last tool `Bash`.
+
+### G.16 A fixture shipped a client's whole project tree, because nothing had ever scrubbed a KEY
+
+The first scrubbed transcript fixture contained, verbatim:
+
+```
+"groundwork\components\board\CardDetail.tsx": { … }
+"groundwork\vault\portal-rebuild\cards\0004-raise-work-order.md": { … }
+"C:\Users\belas\.claude-365\plans\i-want-to-create-cheerful-pearl.md": { … }
+```
+
+`file-history-snapshot.trackedFileBackups` is keyed **by the file each backup is of**. Every value
+in it was scrubbed correctly and every key went through untouched, because `scrub` walks
+`Object.entries` and rewrites values while passing keys along as field names. Ninety-eight of them,
+naming a client project, its domain vocabulary and the account.
+
+**This is P0-T9's `workers` bug, in a different object, seven weeks later.** The fix then was
+`DATA_KEYED_OBJECTS` + `rekeyByShortId` — a mechanism built for one object, which is why it did not
+generalise to the second one. So the fix now is two things rather than one: `PATH_KEYED_OBJECTS`
+scrubs these keys as paths (depth and extension preserved, per the normal rule), and
+`assertNoDataKeys` **fails the capture** on any key containing a separator, a drive letter or
+whitespace that nobody has classified. No JSON API names a field `a\b\c.tsx`; a key that looks like
+data is data. A leak of this class can no longer be silent, which is the part that mattered — the
+fixture had already been written and `--check` had already passed.
+
+`fakePath` also had to learn relative paths: it forced segment 0 to `C:`, which is right for a
+`cwd` and wrong for the project-relative keys that make up most of this object.
+
+**Footnote, and G.14 will recognise it.** Three of the edits in this task were written through a
+Git Bash heredoc, which collapses `\` to `\` — so `[\/]` arrived as `[\/]` in
+`DATA_KEY_PATTERN` and the guard matched forward slashes only. ESLint's `no-useless-escape` caught
+it, for the second time in the same repo and the same week. The lesson that did not transfer is not
+about regexes: it is that this shell is not a safe transport for backslashes, and the editing tools
+are.

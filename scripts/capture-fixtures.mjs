@@ -79,7 +79,7 @@ function fakeUuid(value) {
 // name. None of them identify a person, an employer or a client, and a fixture that loses them
 // loses the shape it was captured to assert on. Everything else in a path is scrubbed however
 // short it is — the account name, project folders, worktree and scratch directory names.
-const STRUCTURAL_SEGMENTS = new Set([
+export const STRUCTURAL_SEGMENTS = new Set([
   'Users',
   'AppData',
   'Local',
@@ -109,7 +109,10 @@ function fakePath(value) {
   const separator = value.includes('\\') ? '\\' : '/';
   const segments = value.split(/[\\/]/);
   const scrubbed = segments.map((segment, index) => {
-    if (index === 0) return 'C:';
+    // Only a real drive letter is kept as one. A relative path — which is what every
+    // `trackedFileBackups` key is — has a project folder in segment 0, and rewriting that to
+    // `C:` would both lose the shape and keep the name.
+    if (index === 0 && /^[A-Za-z]:$/.test(segment)) return 'C:';
     if (segment === '' || STRUCTURAL_SEGMENTS.has(segment)) return segment;
     const extension = /\.[A-Za-z0-9]+$/.exec(segment);
     return `path-${digest(segment, 6)}${extension ? extension[0] : ''}`;
@@ -151,7 +154,26 @@ function keepShortIdDerivable(original, scrubbed) {
 // nine characters. `name` is too overloaded a key to list here — `output_style.name` is
 // vocabulary the statusline fixtures assert on — so it is handled by scrubSessionName below,
 // which keys off the record the name belongs to rather than off the field alone.
-const FREE_TEXT_KEYS = new Set(['detail', 'intent', 'result', 'session_name', 'session_title']);
+const FREE_TEXT_KEYS = new Set([
+  'detail',
+  'intent',
+  'result',
+  'session_name',
+  'session_title',
+  // Transcript records (P1-T7). Every one of these is text a person or the model wrote, and the
+  // length rule protects none of them: `gitBranch` is routinely a ticket id, and an `aiTitle` is
+  // one sentence about what the owner was actually doing. `content` is the away_summary recap —
+  // the single most identifying field in the whole transcript, and the one the deck wants most.
+  'aiTitle',
+  'customTitle',
+  'agentName',
+  'lastPrompt',
+  'atis',
+  'content',
+  'gitBranch',
+  'title',
+  'text',
+]);
 
 // A session record — anything carrying a pid or a sessionId — has a user-chosen `name`, and that
 // is free text like the keys above. Deciding from the parent object keeps `output_style.name`
@@ -168,6 +190,54 @@ function scrubSessionName(original, scrubbed) {
 // keys alone produced a fixture asserting a relationship it no longer had — worse than an
 // unscrubbed one, because a parser built against it would have been built against a lie (P0-T9).
 const DATA_KEYED_OBJECTS = new Set(['workers']);
+
+// Objects whose keys are PATHS. `file-history-snapshot.trackedFileBackups` is keyed by the file
+// each backup is of, and the first transcript capture put a whole client project tree — every
+// component, every vault card, and one absolute path through the account name — into the fixture
+// verbatim, because nothing here has ever scrubbed a key (P1-T7).
+//
+// That is the same bug as P0-T9's `workers`, which is why the guard below exists as well as this
+// fix: a set that has to be extended by hand every time Claude Code adds a data-keyed object is a
+// rule that is one release behind, and the leak is silent until someone reads a fixture.
+const PATH_KEYED_OBJECTS = new Set(['trackedFileBackups']);
+
+function rekeyByPath(scrubbed) {
+  return Object.fromEntries(
+    Object.entries(scrubbed).map(([path, value]) => [fakePath(path), value]),
+  );
+}
+
+// A key that contains a separator, a drive letter or whitespace is DATA, not a field name — no
+// JSON API names a field `groundwork\components\board\Card.tsx`. Field names that are merely
+// long (`cumulativeDroppedTokens`) pass; model ids, short ids and uuids pass. Anything that trips
+// this is a data-keyed object nobody has classified, and the capture fails rather than writing it.
+const DATA_KEY_PATTERN = /[\\/]|^[A-Za-z]:|\s/;
+
+function assertNoDataKeys(node, trail, parentKey) {
+  if (Array.isArray(node)) {
+    node.forEach((item, index) => {
+      assertNoDataKeys(item, `${trail}[${String(index)}]`, undefined);
+    });
+    return;
+  }
+  if (node === null || typeof node !== 'object') return;
+  // A classified object's own keys are data on purpose and have a scrubber; only its values are
+  // still worth walking. Checking the raw record rather than the scrubbed one is what makes this
+  // a test of classification instead of a test of output shape — a scrubbed path key still looks
+  // exactly like a path, which is the whole point of keeping the shape.
+  const classified =
+    parentKey !== undefined &&
+    (PATH_KEYED_OBJECTS.has(parentKey) || DATA_KEYED_OBJECTS.has(parentKey));
+  for (const [key, value] of Object.entries(node)) {
+    if (!classified && DATA_KEY_PATTERN.test(key)) {
+      throw new Error(
+        `unscrubbed data key at ${trail}: ${JSON.stringify(key)} — add its parent to ` +
+          `PATH_KEYED_OBJECTS or DATA_KEYED_OBJECTS in scripts/capture-fixtures.mjs`,
+      );
+    }
+    assertNoDataKeys(value, `${trail}.${key}`, key);
+  }
+}
 
 function rekeyByShortId(scrubbed) {
   return Object.fromEntries(
@@ -186,11 +256,14 @@ export function scrub(node, key) {
       Object.entries(node).map(([name, value]) => [name, scrub(value, name)]),
     );
     if (key !== undefined && DATA_KEYED_OBJECTS.has(key)) return rekeyByShortId(scrubbed);
+    if (key !== undefined && PATH_KEYED_OBJECTS.has(key)) return rekeyByPath(scrubbed);
     return scrubSessionName(node, keepShortIdDerivable(node, scrubbed));
   }
   if (typeof node !== 'string') return node;
   if (key !== undefined && AUTHORED_KEYS.has(key)) return node;
-  if (key !== undefined && FREE_TEXT_KEYS.has(key)) return `text-${digest(node, 8)}`;
+  // An empty string is not free text, it is an absent value with a key — and replacing it with a
+  // placeholder would have a fixture assert content that was never in the capture.
+  if (key !== undefined && FREE_TEXT_KEYS.has(key) && node !== '') return `text-${digest(node, 8)}`;
   if (key !== undefined && VOCABULARY_KEYS.has(key)) return value12(node);
   return scrubString(node);
 }
@@ -229,11 +302,37 @@ function triage(files) {
   const unhandled = [];
   for (const file of files) {
     const name = basename(file);
-    if (name.endsWith('.json')) scrubbable.push(file);
+    if (name.endsWith('.json') || name.endsWith('.jsonl')) scrubbable.push(file);
     else if (DEFERRED.has(name)) deferred.push(file);
     else unhandled.push(file);
   }
   return { scrubbable, deferred, unhandled };
+}
+
+/**
+ * One capture, scrubbed, as the text to write.
+ *
+ * JSONL is scrubbed **per line and re-printed compact**, because in that format the newline is
+ * the record separator — pretty-printing a transcript would turn every record into a document no
+ * line-oriented reader could get back, and a line-oriented reader is exactly what P1-T7's tail
+ * is. Blank lines are dropped rather than carried: a real transcript ends with a newline, and a
+ * fixture whose last line is empty asserts a trailing record that is not there.
+ */
+/** Scrubs one record and refuses to hand back anything still keyed by data. */
+function scrubChecked(record) {
+  assertNoDataKeys(record, '$', undefined);
+  return scrub(record, undefined);
+}
+
+function render(raw, name) {
+  if (!name.endsWith('.jsonl')) {
+    return `${JSON.stringify(scrubChecked(JSON.parse(raw)), null, 2)}\n`;
+  }
+  const records = raw
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .map((line) => JSON.stringify(scrubChecked(JSON.parse(line))));
+  return `${records.join('\n')}\n`;
 }
 
 function main() {
@@ -260,9 +359,8 @@ function main() {
   let changed = 0;
   for (const file of raw) {
     const source = basename(dirname(file));
-    const parsed = JSON.parse(readFileSync(file, 'utf8'));
     const output = join(ROOT, 'fixtures', source, basename(file));
-    const text = `${JSON.stringify(scrub(parsed, undefined), null, 2)}\n`;
+    const text = render(readFileSync(file, 'utf8'), basename(file));
 
     // No initialiser: both paths below assign, and eslint 10's `no-useless-assignment` is right
     // that writing one here only hides which of them ran.
