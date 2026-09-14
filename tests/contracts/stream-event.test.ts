@@ -93,10 +93,36 @@ describe('parseStreamFrame — sessions', () => {
   });
 });
 
+describe('parseStreamFrame — quota', () => {
+  const SUMMARY = {
+    at: 1_789_000_100_000,
+    subscriptions: [
+      {
+        subscription: 'isg',
+        at: 1_789_000_090_000,
+        fiveHour: { usedPercentage: 23, resetsAt: 1_789_007_300_000, at: 1_789_000_090_000 },
+        sevenDay: { usedPercentage: 61, resetsAt: 1_789_400_000_000, at: 1_789_000_090_000 },
+        claudeVersion: '2.1.7',
+        spendUsd: 4.2,
+        spendingSessions: 3,
+      },
+    ],
+  };
+
+  it('admits a whole summary', () => {
+    expect(frame('quota', SUMMARY)).toEqual({ name: 'quota', data: SUMMARY });
+  });
+
+  it('drops a body that is not a summary rather than rendering empty gauges', () => {
+    expect(frame('quota', { used: 1 })).toBeUndefined();
+    expect(frame('quota', [])).toBeUndefined();
+  });
+});
+
 describe('parseStreamFrame — everything else', () => {
   it('drops a frame name it does not know, rather than guessing', () => {
     // What lets core add a frame type without breaking a deck that has not been rebuilt.
-    expect(frame('quota', { used: 1 })).toBeUndefined();
+    expect(frame('event', { type: 'Stop' })).toBeUndefined();
     expect(frame('', {})).toBeUndefined();
   });
 
@@ -107,6 +133,11 @@ describe('parseStreamFrame — everything else', () => {
   });
 
   it('lists exactly the names the deck subscribes to', () => {
-    expect([...STREAM_FRAME_NAMES]).toEqual(['snapshot', 'session.upsert', 'session.gone']);
+    expect([...STREAM_FRAME_NAMES]).toEqual([
+      'snapshot',
+      'session.upsert',
+      'session.gone',
+      'quota',
+    ]);
   });
 });

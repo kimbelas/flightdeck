@@ -11,10 +11,18 @@
 // after it is a delta. One frame rather than a burst of upserts because `unreadable` is a property
 // of the sweep, not of any row, and a replay made of rows could not carry it.
 //
+// **`quota` is replayed too, and that is why the header is on the stream rather than polling**
+// (P2-T3). It is whole-state, not a delta: quota belongs to a subscription and the deck draws both
+// at once, so a frame carrying one session's reading would be a frame the header could not use.
+// Replaying it on connect is also the only thing that fills the header when nothing is running —
+// the statusLine posts on every render and therefore posts nothing at all when no session is open,
+// so a deck that waited for an event would show two empty gauges until somebody started work.
+//
 // **Hand-rolled parsing, matching pty-protocol.ts**: the project carries no schema library. Every
 // frame is `unknown` until the parser below rebuilds it (CODING-STANDARDS §11 rule 1), and a frame
 // that does not match is dropped rather than coerced — a deck that received a half-shaped row
 // should ignore it, not render a session with blank fields.
+import { parseQuotaSummary, type QuotaSummary } from './quota-summary.ts';
 import {
   parseDeckSnapshot,
   parseSessionRow,
@@ -39,7 +47,8 @@ export interface SessionGone {
 export type StreamFrame =
   | { readonly name: 'snapshot'; readonly data: DeckSnapshot }
   | { readonly name: 'session.upsert'; readonly data: SessionRow }
-  | { readonly name: 'session.gone'; readonly data: SessionGone };
+  | { readonly name: 'session.gone'; readonly data: SessionGone }
+  | { readonly name: 'quota'; readonly data: QuotaSummary };
 
 export type StreamFrameName = StreamFrame['name'];
 
@@ -47,6 +56,7 @@ export const STREAM_FRAME_NAMES: readonly StreamFrameName[] = [
   'snapshot',
   'session.upsert',
   'session.gone',
+  'quota',
 ];
 
 /**
@@ -76,6 +86,10 @@ export function parseStreamFrame(name: string, data: string): StreamFrame | unde
     case 'session.gone': {
       const gone = parseSessionGone(value);
       return gone === undefined ? undefined : { name: 'session.gone', data: gone };
+    }
+    case 'quota': {
+      const summary = parseQuotaSummary(value);
+      return summary === undefined ? undefined : { name: 'quota', data: summary };
     }
     default:
       return undefined;

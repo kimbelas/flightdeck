@@ -47,7 +47,18 @@ export interface TranscriptsStatus {
   readonly oversize: number;
 }
 
-/** The newest vitals for one session, as the status table's columns and no more. */
+/**
+ * The newest vitals for one session, as the status table's columns and no more.
+ *
+ * **Also the deck header's input** (P2-T3), which is why the two `resetsAt` fields and
+ * `claudeVersion` are here rather than only in `StatuslineReport`. `summariseQuota` reads this
+ * shape and nothing else, so `GET /status` and the `quota` frame cannot come to different
+ * conclusions about a subscription — there is one projection of `VitalsRegistry`, with two
+ * readers (contracts/quota-summary.ts).
+ *
+ * Flat rather than two nested `QuotaWindow`s: this is a table row upstream of anything that
+ * groups, and `flightdeck-core status` prints the four numbers as four columns.
+ */
 export interface SessionVitalsLine {
   readonly sessionId: string;
   readonly subscription: SubscriptionId;
@@ -55,11 +66,17 @@ export interface SessionVitalsLine {
   readonly at: number;
   readonly sessionName: string | undefined;
   readonly modelName: string | undefined;
+  /** What `claude --version` would say, as this session reported it. Moves on a `claude update`. */
+  readonly claudeVersion: string | undefined;
   /** Percent of the context window used, or `undefined` before the first turn — never `0`. */
   readonly usedPercentage: number | undefined;
   readonly costUsd: number | undefined;
   readonly fiveHourPercentage: number | undefined;
+  /** Epoch **milliseconds** — statusline-report.ts converted it from the payload's seconds. */
+  readonly fiveHourResetsAt: number | undefined;
   readonly sevenDayPercentage: number | undefined;
+  /** Epoch **milliseconds**, as `fiveHourResetsAt`. */
+  readonly sevenDayResetsAt: number | undefined;
 }
 
 export interface CoreStatus {
@@ -169,10 +186,13 @@ function vitalsLineOf(value: unknown): SessionVitalsLine | undefined {
     at: numberAt(line, 'at') ?? 0,
     sessionName: stringAt(line, 'sessionName'),
     modelName: stringAt(line, 'modelName'),
+    claudeVersion: stringAt(line, 'claudeVersion'),
     usedPercentage: numberAt(line, 'usedPercentage'),
     costUsd: numberAt(line, 'costUsd'),
     fiveHourPercentage: numberAt(line, 'fiveHourPercentage'),
+    fiveHourResetsAt: numberAt(line, 'fiveHourResetsAt'),
     sevenDayPercentage: numberAt(line, 'sevenDayPercentage'),
+    sevenDayResetsAt: numberAt(line, 'sevenDayResetsAt'),
   };
 }
 

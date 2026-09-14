@@ -56,19 +56,45 @@ describe('VitalsRegistry — what counts as news', () => {
     }
   });
 
-  it('ignores the fields that move on every render', () => {
-    // A render that only advanced the clock is not news. `resetsAt` moves when a window rolls over
-    // and the percentage moves with it, so the percentage is the one worth watching.
+  it('ignores the fields that move without moving a pixel', () => {
+    // A render that changed nothing a reader would draw differently is not news, whatever else
+    // moved in the payload. The statusLine posts on every repaint, so this is most of them.
     const registry = new VitalsRegistry();
     registry.record(report(), 'isg', 1000);
 
     const same = registry.record(
-      report({ fiveHour: { usedPercentage: 23, resetsAt: 9_999_999_999_000 } }),
+      report({ contextWindowSize: 500_000, modelName: 'Opus 5 (1M context)' }),
       'isg',
       2000,
     );
 
     expect(same).toBe(false);
+  });
+
+  it('counts a window rolling over as news, because the header counts down to it', () => {
+    // This one INVERTED in P2-T3, and the reason it used to be safe is the reason it is not now.
+    // The old rule was "the percentage moves when a window rolls, so watch the percentage" — true
+    // of a bar, false of a countdown. `resets_at` is fixed for the life of a window, so the two
+    // never have to move in the same render; if this said `false`, every open deck would keep
+    // counting down to an instant that had already passed. It costs nothing in volume: a window
+    // rolls about five times a day.
+    const registry = new VitalsRegistry();
+    registry.record(report(), 'isg', 1000);
+
+    const news = registry.record(
+      report({ fiveHour: { usedPercentage: 23, resetsAt: 9_999_999_999_000 } }),
+      'isg',
+      2000,
+    );
+
+    expect(news).toBe(true);
+  });
+
+  it('counts a `claude update` as news, because the header wears the version', () => {
+    const registry = new VitalsRegistry();
+    registry.record(report({ claudeVersion: '2.1.6' }), 'isg', 1000);
+
+    expect(registry.record(report({ claudeVersion: '2.1.7' }), 'isg', 2000)).toBe(true);
   });
 
   it('treats the first real percentage after a fresh session as news', () => {

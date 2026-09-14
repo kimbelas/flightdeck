@@ -143,10 +143,13 @@ describe('StatusReport', () => {
       at: 5000,
       sessionName: 'the-one',
       modelName: 'Opus 5',
+      claudeVersion: '2.1.267',
       usedPercentage: 42,
       costUsd: 1.25,
       fiveHourPercentage: 23,
+      fiveHourResetsAt: 1_789_080_600_000,
       sevenDayPercentage: 7,
+      sevenDayResetsAt: 1_789_600_000_000,
     });
     // The transcript path is in the report and must not be in the projection (SEC-DATA-2).
     expect(JSON.stringify(lines)).not.toContain('projects');

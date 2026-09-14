@@ -29,10 +29,13 @@ const WHOLE: CoreStatus = {
       at: 1_789_000_000_000,
       sessionName: 'the-one',
       modelName: 'Opus 5',
+      claudeVersion: '2.1.7',
       usedPercentage: 42,
       costUsd: 1.25,
       fiveHourPercentage: 23,
+      fiveHourResetsAt: 1_789_003_600_000,
       sevenDayPercentage: 7,
+      sevenDayResetsAt: 1_789_400_000_000,
     },
   ],
 };

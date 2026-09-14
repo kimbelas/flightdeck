@@ -16,6 +16,12 @@
 // `parseLaunchAccepted` now, and through a `DeckApi` port rather than a bare `fetch`, which is
 // what makes the paths testable at all.
 //
+// **The header's gauges arrive here too, and they are whole-state** (P2-T3). `quota` is not a
+// delta: quota belongs to a subscription, the deck draws both at once, and core decides which of a
+// subscription's sessions represents it (`summariseQuota`). So the frame replaces what is held
+// rather than merging into it, and it is replayed on connect — which is what fills the header on an
+// idle machine, where nothing renders a status line and therefore nothing publishes.
+//
 // **Reconnection is this class's job, not the browser's.** An `EventSource` retries a dropped
 // connection on its own but gives up permanently on an HTTP error, and "core is not running" is
 // exactly that: the route handler answers 503 (RESEARCH.md F.6.7). Since core restarting is an
@@ -27,6 +33,7 @@ import {
   parseLaunchFailure,
   type LaunchAccepted,
 } from '../../contracts/launch-reply.ts';
+import type { QuotaSummary } from '../../contracts/quota-summary.ts';
 import {
   byAttentionThenAge,
   parseDeckSnapshot,
@@ -46,6 +53,8 @@ import {
 export interface DeckState {
   readonly rows: readonly SessionRow[];
   readonly unreadable: readonly SubscriptionId[];
+  /** Both subscriptions' gauges, or `undefined` until the first `quota` frame (P2-T3). */
+  readonly quota: QuotaSummary | undefined;
   readonly coreUp: boolean;
   readonly loading: boolean;
   readonly error: string | undefined;
@@ -82,6 +91,7 @@ const UNREADABLE = 'flightdeck-core answered something the deck could not read.'
 const EMPTY: DeckState = {
   rows: [],
   unreadable: [],
+  quota: undefined,
   coreUp: false,
   loading: false,
   error: undefined,
@@ -139,6 +149,11 @@ export class DeckStore {
 
   /**
    * Sweeps both subscriptions now, through the same-origin rewrite.
+   *
+   * It does not move the gauges, and nothing here should make it: `GET /sessions` answers the
+   * session table and quota is not in it. The header's numbers are the stream's to update — a
+   * second path to them would be a second opinion, and a `refresh` button that quietly re-fetched
+   * everything is how the polling loop P1-T9 removed would grow back.
    *
    * The token never appears here: `/api/core/*` is proxied server-side and `proxy.ts` attaches the
    * bearer on the way (SEC-HTTP-5). Only the PTY socket needs a credential in the page, and it is
@@ -206,6 +221,11 @@ export class DeckStore {
         return;
       case 'session.gone':
         this.set({ rows: without(this.state.rows, sessionKey(frame.data)) });
+        return;
+      // Replaced, never merged: core sends the whole picture for both subscriptions, and half of
+      // an older one beside half of a newer one is a reading that was never taken.
+      case 'quota':
+        this.set({ quota: frame.data, coreUp: true });
         return;
     }
   }

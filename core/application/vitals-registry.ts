@@ -8,9 +8,15 @@
 // for the same reason: a `changed` event for something that did not change is worse than no event.
 //
 // **What counts as different is deliberately short**: context percentage, cost, the two quota
-// percentages, the model and the session name. Not `total_duration_ms`, which moves every render
-// by definition; not `prompt_cache`, which moves constantly and is nobody's decision. The test is
-// "would the deck paint a different pixel".
+// percentages and their reset instants, the Claude version, the model and the session name. Not
+// `total_duration_ms`, which moves every render by definition; not `prompt_cache`, which moves
+// constantly and is nobody's decision. The test is "would the deck paint a different pixel".
+//
+// The reset instants and the version joined that list in P2-T3, when the header grew a countdown
+// and a version chip and they became pixels. Neither costs anything in volume: `resets_at` is
+// fixed for the life of a window and only moves when one rolls over, and the version moves on a
+// `claude update`. Without them a window could roll — or the owner could update Claude Code — and
+// every open deck would keep counting down to an instant that had already passed.
 //
 // **`undefined` is not zero.** A fresh session reports `used_percentage: null` and a session that
 // has spoken reports a number; the transition between them is a real change and the comparison
@@ -63,7 +69,7 @@ export class VitalsRegistry {
     return this.latest.get(sessionId);
   }
 
-  /** Everything known, newest-updated last. `flightdeck-core status` reads this (P1-T12). */
+  /** Everything known, newest-updated last. `vitals-lines.ts` projects it for both readers. */
   public all(): readonly Vitals[] {
     return [...this.latest.values()];
   }
@@ -82,7 +88,10 @@ function differs(previous: StatuslineReport, next: StatuslineReport): boolean {
     previous.costUsd !== next.costUsd ||
     previous.modelId !== next.modelId ||
     previous.sessionName !== next.sessionName ||
+    previous.claudeVersion !== next.claudeVersion ||
     previous.fiveHour.usedPercentage !== next.fiveHour.usedPercentage ||
-    previous.sevenDay.usedPercentage !== next.sevenDay.usedPercentage
+    previous.fiveHour.resetsAt !== next.fiveHour.resetsAt ||
+    previous.sevenDay.usedPercentage !== next.sevenDay.usedPercentage ||
+    previous.sevenDay.resetsAt !== next.sevenDay.resetsAt
   );
 }

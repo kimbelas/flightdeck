@@ -24,6 +24,7 @@ import type {
 } from '../../contracts/core-status.ts';
 import type { AuditLog } from './audit-log.ts';
 import type { TranscriptReader } from './transcript-reader.ts';
+import { vitalsLines } from './vitals-lines.ts';
 import type { VitalsRegistry } from './vitals-registry.ts';
 
 /** What a thing that writes events into the store can say about how that is going. */
@@ -109,18 +110,14 @@ export class StatusReport {
     };
   }
 
-  /** Newest-updated last, as `VitalsRegistry` keeps them — the CLI decides how to sort. */
+  /**
+   * Newest-updated last, as `VitalsRegistry` keeps them — the CLI decides how to sort.
+   *
+   * The mapping moved to `vitals-lines.ts` in P2-T3, when the `quota` frame became its second
+   * reader. Two copies of it would be two opinions about what of a `StatuslineReport` may leave
+   * core, and they would diverge on the first field either one added.
+   */
   private vitals(): readonly SessionVitalsLine[] {
-    return this.parts.vitals.all().map((entry) => ({
-      sessionId: entry.report.sessionId,
-      subscription: entry.subscription,
-      at: entry.at,
-      sessionName: entry.report.sessionName,
-      modelName: entry.report.modelName,
-      usedPercentage: entry.report.usedPercentage,
-      costUsd: entry.report.costUsd,
-      fiveHourPercentage: entry.report.fiveHour.usedPercentage,
-      sevenDayPercentage: entry.report.sevenDay.usedPercentage,
-    }));
+    return vitalsLines(this.parts.vitals);
   }
 }

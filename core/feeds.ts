@@ -8,6 +8,7 @@
 import { SUBSCRIPTION_IDS } from '../contracts/session.ts';
 import { EventHub } from './application/event-hub.ts';
 import { HookQueue } from './application/hook-queue.ts';
+import { QuotaReport } from './application/quota-report.ts';
 import { Reconciler } from './application/reconciler.ts';
 import { StatuslineQueue } from './application/statusline-queue.ts';
 import { TranscriptReader } from './application/transcript-reader.ts';
@@ -33,7 +34,7 @@ export interface Feeds {
   readonly hooks: HookQueue;
   readonly statusline: StatuslineQueue;
   readonly transcripts: TranscriptReader;
-  /** The newest vitals per session. `flightdeck-core status` (P1-T12) and P2-T3 read it. */
+  /** The newest vitals per session. `flightdeck-core status` (P1-T12) and the header (P2-T3). */
   readonly vitals: VitalsRegistry;
   /** Held only so `GET /status` can print how many events reached the store (P1-T12). */
   readonly storing: StoringEventSink;
@@ -90,7 +91,16 @@ export function buildFeeds(parts: FeedParts): Feeds {
   });
   return {
     reconciler,
-    stream: new SessionStreamRoute({ sessions: reconciler, feed: hub, scheduler, logger }),
+    // The stream replays two things on connect and they come from different places: the session
+    // table from the reconciler's map, the quota gauges from the vitals registry (P2-T3). Neither
+    // costs a sweep.
+    stream: new SessionStreamRoute({
+      sessions: reconciler,
+      quota: new QuotaReport({ vitals, clock }),
+      feed: hub,
+      scheduler,
+      logger,
+    }),
     // A hook publishes into the same sink and then asks the reconciler to look — evidence that
     // something happened, never a claim about what is true now (D3, P1-T5).
     hooks: new HookQueue({ sink, trigger: reconciler, scheduler, clock, logger }),

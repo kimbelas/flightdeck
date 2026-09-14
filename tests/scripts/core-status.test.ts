@@ -19,10 +19,13 @@ function vitals(overrides: Partial<SessionVitalsLine> = {}): SessionVitalsLine {
     at: NOW - 5000,
     sessionName: 'the-one',
     modelName: 'Opus 5',
+    claudeVersion: '2.1.7',
     usedPercentage: 42,
     costUsd: 1.25,
     fiveHourPercentage: 23,
+    fiveHourResetsAt: NOW + 7_200_000,
     sevenDayPercentage: 88,
+    sevenDayResetsAt: NOW + 400_000_000,
     ...overrides,
   };
 }

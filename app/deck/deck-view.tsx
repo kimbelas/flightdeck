@@ -32,10 +32,7 @@ const AGE_TICK_MS = 10_000;
 const SHELL_PANE: OpenPane = { key: 'shell', title: 'shell', target: { kind: 'shell' } };
 
 export function DeckView(): JSX.Element {
-  const store = useMemo(
-    () => new DeckStore(new BrowserStreamTransport(), new BrowserDeckApi()),
-    [],
-  );
+  const store = useDeckStore();
   const state = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot);
   useLiveStream(store);
   const { panes, openPane, closePane } = useOpenPanes();
@@ -48,6 +45,8 @@ export function DeckView(): JSX.Element {
       <DeckHeader
         coreUp={state.coreUp}
         sessionCount={rows.length}
+        quota={state.quota}
+        now={now}
         loading={state.loading}
         onRefresh={() => void store.refresh()}
         onOpenShell={() => {
@@ -72,6 +71,16 @@ export function DeckView(): JSX.Element {
       </div>
     </main>
   );
+}
+
+/**
+ * One store for the life of the page, with the browser's two adapters in it.
+ *
+ * A hook so the composition is named rather than inlined, and `useMemo` rather than `useState`
+ * because a second store would be a second stream: the identity is the point, not the caching.
+ */
+function useDeckStore(): DeckStore {
+  return useMemo(() => new DeckStore(new BrowserStreamTransport(), new BrowserDeckApi()), []);
 }
 
 /**
@@ -119,7 +128,13 @@ function useOpenPanes(): OpenPanes {
   return { panes, openPane, closePane };
 }
 
-/** Only so "started 4m ago" does not freeze. It reads no data and asks core for nothing. */
+/**
+ * Only so "started 4m ago" and the header's quota countdowns do not freeze.
+ *
+ * It reads no data and asks core for nothing — it is a clock, not a poll, which is the distinction
+ * P1-T9 drew. One clock for both because two would drift against each other on the same screen, and
+ * 10 s is fine for a countdown printed to the minute.
+ */
 function useTickingClock(): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
