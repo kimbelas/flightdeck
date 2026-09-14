@@ -94,3 +94,43 @@ describe('ReadPolicy — everything else', () => {
     expect(new ReadPolicy(['']).allows(`${CFG}\\projects\\s\\a.jsonl`)).toBe(false);
   });
 });
+
+describe('ReadPolicy — the job state file (P2-T4)', () => {
+  it('allows the one `.json` under jobs that an expanded row needs', () => {
+    // It was REFUSED before this task, which is how the bug surfaced: SEC-FS-2 denies every `.json`
+    // nobody has named, and `jobs\\<shortId>\\state.json` carries an id, so it could not be named
+    // by exact string the way `settings.json` is.
+    expect(policy().allows(`${CFG}\\jobs\\cb5e8102\\state.json`)).toBe(true);
+  });
+
+  it('still refuses every other `.json` under a job directory', () => {
+    // The half of SEC-FS-2 with value: the settings file the NEXT Claude Code release invents is
+    // unreadable until a person names it. One narrow pattern, not a hole for `jobs\\`.
+    for (const name of ['secrets.json', 'config.json', 'state.json.bak.json']) {
+      expect(policy().allows(`${CFG}\\jobs\\cb5e8102\\${name}`)).toBe(false);
+    }
+  });
+
+  it('matches exactly one segment for the id, so the pattern cannot be walked', () => {
+    // Deeper, shallower, and the same filename under a different directory. `*` is one segment and
+    // there is deliberately no `**`.
+    expect(policy().allows(`${CFG}\\jobs\\cb5e8102\\tmp\\state.json`)).toBe(false);
+    expect(policy().allows(`${CFG}\\jobs\\state.json`)).toBe(false);
+    expect(policy().allows(`${CFG}\\daemon\\x\\state.json`)).toBe(false);
+  });
+
+  it('keeps refusing the files the new pattern sits next to', () => {
+    expect(policy().allows(`${CFG}\\jobs\\cb5e8102\\control.key`)).toBe(false);
+    expect(policy().allows(`${CFG}\\daemon\\control.key`)).toBe(false);
+  });
+
+  it('allows the timeline, which never met the deny rule at all', () => {
+    // `.jsonl` does not end with `.json`; it is admitted by `jobs` being an allowlisted directory,
+    // and has been since P1-T12. Asserted so a future tightening of the deny rule cannot take it.
+    expect(policy().allows(`${CFG}\\jobs\\cb5e8102\\timeline.jsonl`)).toBe(true);
+  });
+
+  it('refuses a job file under a directory that is not a config dir', () => {
+    expect(policy().allows(`C:\\evil\\jobs\\cb5e8102\\state.json`)).toBe(false);
+  });
+});

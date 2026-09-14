@@ -8,6 +8,7 @@
 // `status` starts nothing and builds nothing: it asks the core that is already listening (P1-T12).
 import { CORE_PORT } from '../contracts/origins.ts';
 import { buildCore } from '../core/main.ts';
+import { startCore } from '../core/shutdown.ts';
 import { readStatus, renderStatus } from './core-status.ts';
 
 async function start(): Promise<void> {
@@ -24,8 +25,10 @@ async function start(): Promise<void> {
     return;
   }
 
-  // Only now: a core that could not bind has nothing to reconcile for (core/main.ts).
-  core.reconciler.start();
+  // Only now: a core that could not bind has nothing to reconcile for (core/main.ts). Both timers,
+  // through one call — starting them one at a time here is how feed 4 spent P1-T7 through P2-T3
+  // tracking transcripts it never read (core/shutdown.ts).
+  startCore(core);
   // Before anything else can be the first request: SEC-ING-2's 5 ms budget is missed by the first
   // one after boot and by no other (RESEARCH.md F.1.4), and a hook is a bad thing to be first.
   await core.warmUp();

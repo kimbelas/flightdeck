@@ -43,6 +43,21 @@ export type TranscriptRecord =
       readonly linesAdded: number;
       readonly linesRemoved: number;
       readonly spend: readonly ModelSpend[];
+      /**
+       * When this reading was taken, epoch ms. Added in P2-T4 for the tokens sparkline.
+       *
+       * **Derived, because a `cost-state` line has no `timestamp`** — which is not what the record
+       * beside it does, and is the sort of assumption that ships an empty chart. `turn_duration`
+       * carries `timestamp` and this does not; what it carries is `startTime` (epoch ms, the
+       * SESSION's start, identical on every record of the session) and `totalDuration` (ms since
+       * that start, climbing). Their sum is the instant the line was written. Measured on a real
+       * session: three records, one `startTime` of 1789392887439, `totalDuration` 315773 →
+       * 11624456 → 11624509.
+       *
+       * `timestamp` is still preferred if a release ever adds one, so the derivation is the
+       * fallback rather than the rule.
+       */
+      readonly at: number | undefined;
     }
   | { readonly kind: 'away'; readonly summary: string; readonly at: number | undefined }
   | {
@@ -255,7 +270,17 @@ function parseCost(fields: Readonly<Record<string, unknown>>): TranscriptRecord 
     linesAdded: countAt(fields, 'totalLinesAdded') ?? 0,
     linesRemoved: countAt(fields, 'totalLinesRemoved') ?? 0,
     spend: usage === undefined ? [] : spendOf(usage),
+    at: costInstant(fields),
   };
+}
+
+/** `timestamp` if a release ever adds one; otherwise `startTime + totalDuration`. See `at`. */
+function costInstant(fields: Readonly<Record<string, unknown>>): number | undefined {
+  const stamped = instantAt(fields, 'timestamp');
+  if (stamped !== undefined) return stamped;
+  const startTime = countAt(fields, 'startTime');
+  const elapsed = countAt(fields, 'totalDuration');
+  return startTime === undefined || elapsed === undefined ? undefined : startTime + elapsed;
 }
 
 /** `modelUsage` is keyed BY MODEL ID — the keys are the data, and the only place the model appears. */

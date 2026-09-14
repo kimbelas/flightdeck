@@ -3,6 +3,7 @@
 // Components render these fields. Nothing below needs a DOM to test, which is the point: "is this
 // row attachable, and what should it say if not" is the deck's most important question and it
 // should not require rendering a page to answer.
+import type { SessionRef } from '../../contracts/session-ref.ts';
 import type { SessionRow } from '../../contracts/session-row.ts';
 import type { PtyTarget } from '../../contracts/pty-protocol.ts';
 
@@ -62,6 +63,22 @@ export class SessionRowViewModel {
   /** Why the pane button is absent. Shown, not hidden — the reason is the product (SPEC §5.2). */
   public get blockedReason(): string | undefined {
     return this.row.notAttachableBecause;
+  }
+
+  /**
+   * Which session to ask about when this row is expanded — P2-T4.
+   *
+   * `shortId` is sent rather than derived from `sessionId`, even though it is the first block of
+   * it: that equality is an observation about how Claude Code names job directories today
+   * (RESEARCH.md F.7.1), and the row already carries the real value. Deriving it here would be the
+   * deck guessing at a filename.
+   */
+  public get ref(): SessionRef {
+    return {
+      sessionId: this.row.sessionId,
+      shortId: this.row.shortId,
+      subscription: this.row.subscription,
+    };
   }
 
   public get target(): PtyTarget {

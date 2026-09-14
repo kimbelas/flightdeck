@@ -21,6 +21,14 @@
 // **Only the config directories.** SEC-FS-1 also allowlists imported project folders; nothing
 // reads one yet, and a rule for a caller that does not exist is a rule nobody can test. P3-T1 is
 // the task that adds them.
+//
+// **P2-T4 is the first task to need a `.json` whose path carries an id**, and it is worth saying
+// what did NOT happen. `jobs\<shortId>\state.json` answers "what does this session want from
+// me" (RESEARCH.md F.2.4), and the deny rule refused it — SEC-FS-2 refuses every `.json` nobody has
+// named. The fix is one narrow pattern, not a hole for `jobs\`: the deny rule is the half of
+// SEC-FS-2 with value, since it is what makes the settings file of the NEXT Claude Code release
+// unreadable until a person decides otherwise, and widening it to a whole directory would have
+// traded that away for one filename's worth of convenience.
 
 /** Files allowlisted by name, relative to a config directory (SEC-FS-1). */
 const ALLOWED_FILES: readonly string[] = [
@@ -41,6 +49,18 @@ const ALLOWED_DIRECTORIES: readonly string[] = ['sessions', 'jobs', 'projects'];
  * from being readable by default.
  */
 const ALLOWED_JSON: readonly string[] = ['settings.json', 'daemon\\roster.json'];
+
+/**
+ * The `.json` files whose NAME is known but whose path carries an id —
+ * `jobs\<shortId>\state.json` (P2-T4, RESEARCH.md F.2.4).
+ *
+ * A second list rather than a glob library, and a second list rather than relaxing the rule for
+ * `jobs\`. The deny rule is the valuable half of SEC-FS-2 — it is what makes a `.json` the next
+ * Claude Code release invents unreadable until somebody names it here — so the exception has to be
+ * as narrow as the one file it exists for. `*` stands for exactly one segment, so the pattern
+ * admits that file and nothing deeper, nothing shallower, and no sibling.
+ */
+const ALLOWED_JSON_PATTERNS: readonly string[] = ['jobs\\*\\state.json'];
 
 const SEPARATOR = '\\';
 
@@ -94,10 +114,24 @@ function denied(relative: string): string | undefined {
   const name = basename(relative);
   if (relative.endsWith('.key')) return 'a .key file is never read (SEC-FS-2)';
   if (name.startsWith('.credentials')) return 'credentials are never read (SEC-FS-2)';
-  if (relative.endsWith('.json') && !ALLOWED_JSON.includes(relative)) {
+  if (relative.endsWith('.json') && !allowedJson(relative)) {
     return 'an unlisted .json under the config directory (SEC-FS-2)';
   }
   return undefined;
+}
+
+/** By exact name, or by one of the narrow id-bearing patterns. See `ALLOWED_JSON_PATTERNS`. */
+function allowedJson(relative: string): boolean {
+  if (ALLOWED_JSON.includes(relative)) return true;
+  return ALLOWED_JSON_PATTERNS.some((pattern) => matches(pattern, relative));
+}
+
+/** `*` matches exactly one path segment. No `**`, deliberately — see `ALLOWED_JSON_PATTERNS`. */
+function matches(pattern: string, relative: string): boolean {
+  const wanted = pattern.split(SEPARATOR);
+  const actual = relative.split(SEPARATOR);
+  if (wanted.length !== actual.length) return false;
+  return wanted.every((segment, index) => segment === '*' || segment === actual[index]);
 }
 
 /** A file inside an allowlisted directory — a transcript under `projects\<slug>\` and the like. */

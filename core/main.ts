@@ -39,12 +39,14 @@ import { RateLimiter } from './http/rate-limiter.ts';
 import { PtySocketServer } from './http/pty-socket-server.ts';
 import { RequestRouter } from './http/request-router.ts';
 import type { Route, StreamRoute } from './http/route.ts';
+import { SessionDetailRoute, type DetailSource } from './http/session-detail-route.ts';
 import { SessionsRoute } from './http/sessions-route.ts';
 import { StatusRoute } from './http/status-route.ts';
 import { StatuslineRoute } from './http/statusline-route.ts';
 import { TicketRoute } from './http/ticket-route.ts';
 import { warmUp } from './http/warm-up.ts';
 import { buildFeeds, type Feeds } from './feeds.ts';
+import { buildDetailReader } from './reads.ts';
 import { stopCore, type Running } from './shutdown.ts';
 import { SystemClock } from './ports/clock.ts';
 import type { Logger } from './ports/logger.ts';
@@ -256,6 +258,7 @@ function buildHttp(parts: HttpParts): HttpSide {
       feeds,
       version: parts.version,
       report: parts.report,
+      detail: buildDetailReader({ ...feeds, install, clock, logger }),
       deck: new DeckQuery(parts.sessions, clock),
       launcher: new SessionLauncher({
         install,
@@ -299,6 +302,7 @@ interface RouterParts {
   readonly feeds: Feeds;
   readonly version: string;
   readonly report: StatusReport;
+  readonly detail: DetailSource;
   readonly deck: DeckQuery;
   readonly launcher: SessionLauncher;
   readonly tickets: TicketOffice;
@@ -312,6 +316,7 @@ function buildRouter(parts: RouterParts): RequestRouter<Route> {
   return new RequestRouter<Route>([
     new HealthRoute(parts.version),
     new SessionsRoute(parts.deck),
+    new SessionDetailRoute(parts.detail),
     new StatusRoute(parts.report),
     new LaunchRoute(parts.launcher),
     new TicketRoute(parts.tickets),

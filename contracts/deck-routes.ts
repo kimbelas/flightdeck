@@ -79,3 +79,17 @@ export const CORE_REWRITE = {
  * a route handler in the deck rather than forwarded to core (D27).
  */
 export const CORE_SESSIONS_PATH = `${CORE_PREFIX}sessions`;
+
+/**
+ * One session's detail, for an expanded row — P2-T4.
+ *
+ * A second core route, and the first one the deck calls with parameters. They ride the query string
+ * rather than the path because `RequestRouter` matches literally and deliberately has no path
+ * parameters; `contracts/session-ref.ts` owns the spelling of the three, so neither end can drift.
+ *
+ * It is a REQUEST and not a frame, unlike everything else the deck learns. The rows are the picture
+ * of the machine and belong on the stream; a detail is one session, asked for by a person who just
+ * clicked, and pushing every expansion's worth of model text to every open deck would be sending
+ * SEC-UI-2 material nobody is looking at.
+ */
+export const CORE_SESSION_PATH = `${CORE_PREFIX}session`;

@@ -27,13 +27,15 @@
 // exactly that: the route handler answers 503 (RESEARCH.md F.6.7). Since core restarting is an
 // ordinary event on this machine (F.3.3), a deck that stopped retrying would be a deck that needs
 // a page reload every time. One path for both cases: close, wait, reopen.
-import { CORE_SESSIONS_PATH } from '../../contracts/deck-routes.ts';
+import { CORE_SESSION_PATH, CORE_SESSIONS_PATH } from '../../contracts/deck-routes.ts';
 import {
   parseLaunchAccepted,
   parseLaunchFailure,
   type LaunchAccepted,
 } from '../../contracts/launch-reply.ts';
 import type { QuotaSummary } from '../../contracts/quota-summary.ts';
+import { parseSessionDetail, type SessionDetail } from '../../contracts/session-detail.ts';
+import { sessionRefQuery, type SessionRef } from '../../contracts/session-ref.ts';
 import {
   byAttentionThenAge,
   parseDeckSnapshot,
@@ -55,6 +57,14 @@ export interface DeckState {
   readonly unreadable: readonly SubscriptionId[];
   /** Both subscriptions' gauges, or `undefined` until the first `quota` frame (P2-T3). */
   readonly quota: QuotaSummary | undefined;
+  /**
+   * The expanded rows' details, keyed by `sessionKey` — P2-T4.
+   *
+   * Keyed rather than a single `expanded`, because more than one row can be open and closing one
+   * must not throw away the others. A key present with `undefined` means "asked, still waiting",
+   * which is what draws the spinner; a key absent means nobody asked.
+   */
+  readonly details: Readonly<Record<string, SessionDetail | undefined>>;
   readonly coreUp: boolean;
   readonly loading: boolean;
   readonly error: string | undefined;
@@ -92,6 +102,7 @@ const EMPTY: DeckState = {
   rows: [],
   unreadable: [],
   quota: undefined,
+  details: {},
   coreUp: false,
   loading: false,
   error: undefined,
@@ -206,6 +217,54 @@ export class DeckStore {
     // about whether core is there — it usually means it answered.
     this.set({ loading: false, error: whyNotLaunched(reply) });
     return undefined;
+  }
+
+  /**
+   * Fetches one session's detail for an expanded row — P2-T4.
+   *
+   * A REQUEST, deliberately, where everything else here is a frame. The rows are the picture of the
+   * machine and belong on the stream; a detail is one session that one person just clicked, and
+   * broadcasting every expansion's worth of model text to every open deck would be pushing SEC-UI-2
+   * material nobody asked for.
+   *
+   * **Re-asked on every expand, never cached past a collapse.** `state.json` and `timeline.jsonl`
+   * move while the row is open, and a detail from four minutes ago that looks current is worse than
+   * a spinner. Collapsing drops it (`forget`), so re-expanding is a fresh read.
+   */
+  public async expand(ref: SessionRef): Promise<void> {
+    const key = `${ref.subscription}:${ref.sessionId}`;
+    // Marked as asked BEFORE the await, so a second click while the first is in flight does not
+    // start a second request and the row can draw its spinner immediately.
+    if (key in this.state.details) return;
+    this.setDetail(key, undefined);
+    const reply = await this.api.get(`${CORE_SESSION_PATH}?${sessionRefQuery(ref)}`);
+    if (reply?.status !== 200) {
+      // The row stays expanded with nothing in it rather than snapping shut under the pointer: a
+      // detail that could not be read is a thing to say, and `SessionDetailView` says it.
+      return;
+    }
+    const detail = parseSessionDetail(reply.body);
+    // A body that is not a detail is dropped exactly as an unparseable frame is (§11 rule 1) —
+    // and it must not be rendered against this row, because the one field that is required is the
+    // session id that says which row it belongs to.
+    if (detail?.sessionId !== ref.sessionId) return;
+    this.setDetail(key, detail);
+  }
+
+  /** Drops one detail, on collapse. See `expand` for why nothing is kept. */
+  public forget(key: string): void {
+    if (!(key in this.state.details)) return;
+    // Rebuilt without the key rather than `delete`d: absent and "asked, waiting" are different
+    // states here — the spinner is drawn from the second — so the key has to GO, not become
+    // `undefined`, and a filtered rebuild says that without a dynamic delete.
+    const details = Object.fromEntries(
+      Object.entries(this.state.details).filter(([held]) => held !== key),
+    );
+    this.set({ details });
+  }
+
+  private setDetail(key: string, detail: SessionDetail | undefined): void {
+    this.set({ details: { ...this.state.details, [key]: detail } });
   }
 
   /** One frame. Anything that does not parse is dropped rather than rendered (§11 rule 1). */

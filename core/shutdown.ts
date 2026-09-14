@@ -1,9 +1,19 @@
-// Letting go of core, in the one order that works — P1-T4 onward.
+// Starting and stopping core's timers, in the one order that works — P1-T4 onward.
 //
 // Lifted out of `main.ts` because it is not composition: that file says what is built from what,
 // and this says what has to stop before what. Every line below is a bug that was fixed once, and
 // the sequence is the only documentation of it that cannot go stale — a test in
 // `core-server.test.ts` pins the two that are load-bearing.
+//
+// **`startCore` exists because its absence was a real bug, found in P2-T4 by running the thing.**
+// The two feeds with timers are started by the caller rather than by `buildCore`, so that a core
+// which failed to bind leaves nothing sweeping (core/main.ts says so on both fields). The caller
+// started ONE of them: `scripts/flightdeck-core.ts` called `reconciler.start()` and never
+// `transcripts.start()`, so from P1-T7 until this task feed 4 tracked every transcript it was told
+// about and read none of them. Nothing looked wrong — `/status` printed `4 transcripts · 0 ignored
+// · 0 unknown`, which is exactly what a healthy idle feed prints — and every `TranscriptDigest`
+// stayed EMPTY, which is what P2-T4's expanded row reads. A start that mirrors the stop is the fix:
+// one list, two directions, and `tests/core/lifecycle.test.ts` asserts they cover the same set.
 import type { PaneRegistry } from './application/pane-registry.ts';
 import type { Reconciler } from './application/reconciler.ts';
 import type { TicketOffice } from './application/ticket-office.ts';
@@ -27,6 +37,38 @@ export interface Running {
   readonly panes: PaneRegistry;
   readonly server: CoreServer;
   readonly logger: Logger;
+}
+
+/**
+ * Starts the timers `buildCore` deliberately left stopped. Idempotent, as both `start`s are.
+ *
+ * Called once `listen` has succeeded and never before — see the header, and the JSDoc on
+ * `Core.reconciler`. The pairing with `stopCore` is the point: anything that gains a timer gains a
+ * line here and a line there, and the test refuses a `Running` field that has one and is missed.
+ */
+export function startCore(running: StartableCore): void {
+  // The 10 s sweep and the `fs.watch` nudge (D3 feeds 3 and 5).
+  running.reconciler.start();
+  // Feed 4's 1 s poll. The line whose absence cost P1-T7 its whole output — see the header.
+  running.transcripts.start();
+}
+
+/** A thing with a timer to start. Structural, so a test can supply a counter and not a Reconciler. */
+export interface Startable {
+  start(): void;
+}
+
+/**
+ * What `startCore` needs, which is far less than a `Running`.
+ *
+ * Narrow on purpose: this is the list of things with timers, and nothing else about them matters
+ * here. Typing the fields as `Reconciler` and `TranscriptReader` would make the list impossible to
+ * test without constructing both — a session source, a watcher, a scheduler, a file reader and a
+ * policy — to prove that two methods were called.
+ */
+export interface StartableCore {
+  readonly reconciler: Startable;
+  readonly transcripts: Startable;
 }
 
 /** Stops core. Idempotent, because every step below is. */
