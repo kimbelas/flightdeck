@@ -11,10 +11,17 @@
 // `agents --json` on every sweep. What survives a restart is what was *observed* — which is the
 // events — not what was concluded from it.
 //
+// **Vitals snapshots are the one exception, and they are not a contradiction of it.** A snapshot is
+// an observation too: "at this instant the context was 62 % and the cost was $4.10". What the store
+// still refuses to hold is a conclusion — no flags, no `live`, no derived state. The series exists
+// because the burn-rate and sparkline readings are questions no registry of "now" can answer
+// (contracts/vitals-snapshot.ts, SPEC §5.4/§5.5).
+//
 // This is what P1 needs. The FTS5 index and transcript excerpts are P7 and widen this interface
 // then, against a task that knows what it is searching for.
 import type { AuditRow, DraftAuditRow } from '../../contracts/audit-row.ts';
 import type { DraftEvent, FdEvent } from '../../contracts/fd-event.ts';
+import type { DraftVitalsSnapshot, VitalsSnapshot } from '../../contracts/vitals-snapshot.ts';
 
 export interface Store {
   /**
@@ -39,4 +46,17 @@ export interface Store {
 
   /** Audit rows after `since`, oldest first, at most `limit`. */
   auditSince(since: number, limit: number): readonly AuditRow[];
+
+  /** Appends one vitals snapshot and returns it with its id. @throws as `appendEvent`. */
+  appendSnapshot(snapshot: DraftVitalsSnapshot): VitalsSnapshot;
+
+  /**
+   * One session's snapshots, **oldest first**, at most `limit` — the most RECENT `limit` of them.
+   *
+   * The two halves of that are not a contradiction and the ordering is what a chart needs: a
+   * sparkline plots left to right and wants the last hour, not the first. Taking the newest and
+   * handing them back in time order is the only combination that is useful, and doing it here
+   * rather than in every caller keeps the `ORDER BY` off the hot path of the deck.
+   */
+  snapshotsForSession(sessionId: string, limit: number): readonly VitalsSnapshot[];
 }

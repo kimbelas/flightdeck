@@ -1685,3 +1685,34 @@ Git Bash heredoc, which collapses `\` to `\` — so `[\/]` arrived as `[\/]` in
 it, for the second time in the same repo and the same week. The lesson that did not transfer is not
 about regexes: it is that this shell is not a safe transport for backslashes, and the editing tools
 are.
+
+### G.17 A constructor that throws leaks the handle, and on Windows that locks the file
+
+`SqliteStore`'s constructor opened the database, then set pragmas, then migrated:
+
+```ts
+this.db = new DatabaseSync(path);
+for (const pragma of PRAGMAS) this.db.exec(pragma);   // throws on a file that is not a database
+migrate(this.db);
+```
+
+A throw from either of the last two lines means the constructor returns no object, so nothing has
+a reference to `this.db` and nothing can ever `close()` it. On Linux that is a leaked descriptor
+until the process exits. On Windows it is a **file and a directory nobody can delete**, and that
+is how it surfaced: the test asserting "refuse a file that is not a database" passed its own
+assertion and then failed in `afterEach` with `EPERM` on `rmSync`, taking fifteen unrelated tests
+down with it because they shared the temp directory.
+
+Two fixes, and only one of them is the bug:
+
+1. The constructor now closes the handle before rethrowing. That is the actual defect — a core
+   that fails to start would otherwise hold the store file open for as long as the process lived.
+2. The test suite tracks every store it opens and closes them all in `afterEach`. WAL leaves a
+   `-wal` and a `-shm` beside the database, so "stopped using it" is not the same as "let go of
+   it" on this platform.
+
+**The lesson is about the shape, not about SQLite.** Any constructor that acquires a resource and
+then does fallible work has this hole, and TypeScript cannot see it: the type says the constructor
+returns a `SqliteStore`, and the case where it does not is exactly the case where cleanup matters.
+`WindowsTokenFile` and `NodePtyHost` were both checked after this; neither acquires anything before
+its fallible step, so neither has it.
