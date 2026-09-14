@@ -193,7 +193,22 @@ No abbreviations except `id`, `cwd`, `pty`, `url`, `json`. `configDir`, not `cfg
   in-memory implementation (`FakeClock.advance(ms)`, `FakeProcessRunner.willReturn(...)`).
   Mocking libraries are not used; spying on a real class is a smell.
 - Table tests for the state machine: `(currentState, event) → (nextState, flags)`.
-- Coverage gates (enabled in P1-T13): `core/domain` ≥ 95 %, `core` ≥ 80 %, `contracts` ≥ 90 %.
+- **Coverage gates are on** (P1-T13), in `vitest.config.ts` as `COVERAGE_THRESHOLDS`:
+  `core/domain/**` ≥ 95 %, `core/**` ≥ 80 %, `contracts/**` ≥ 90 % — on lines, statements,
+  functions *and* branches, except branches in `contracts/**`, which is held at 80 because the
+  hand-written parsers there are mostly defensive guards on shapes nothing has ever sent (the
+  group measures 85 %). Each glob is its own group and they overlap, so a domain file is counted
+  against both 95 % and 80 %. There is no global threshold: `coverage.include` covers
+  `scripts/**`, which is CLI printing at ~20 %, and one number spanning that and the domain would
+  mean nothing.
+- **Read the numbers off the coverage map, never off the text table** — on a full run the text
+  reporter silently omits rows it prints on a smaller one (P1-T1). Vitest's thresholds read the
+  map, which is why they are the gate.
+- `tests/coverage-gate.test.ts` proves the gate can actually fail, because a glob that matches
+  nothing is a threshold that passes vacuously and reads as a gate in every review afterwards.
+- **CI measures less than your machine does.** `npm test` gates on `ubuntu-latest`, where every
+  `tests/win/**` body skips, so `core/**` measures ~2 points lower there than locally (86.4 % vs
+  88.2 % at the time of writing). A change that squeaks past locally can still redden CI.
 
 ### 10.2 Integration tests
 - `tests/win/**` runs on `windows-latest` in CI: node-pty spawn/resize, path handling, ACLs.

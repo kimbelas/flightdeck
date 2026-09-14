@@ -1762,3 +1762,67 @@ which is the whole reason the directory rather than the file carries the ACL: `f
 holds the most recently committed rows and is created after anything could have restricted the
 database itself. Before the change, on the same machine, the same check read
 `also granted to NT AUTHORITY\SYSTEM, BUILTIN\Administrators`.
+
+
+### G.19 The coverage gate, and the two ways it could have passed vacuously (P1-T13)
+
+Measured 2026-09-14, Vitest 5.0.0, v8 provider. `core/domain/**` 99.35 % lines / 99.17 % branches,
+`core/**` 88.22 / 85.32, `contracts/**` 96.67 / 85.42. The thresholds are therefore 95, 80 and 90,
+with `contracts/**` branches held at 80 — see `COVERAGE_THRESHOLDS`.
+
+**How Vitest resolves a glob threshold, from its source** (`resolveThresholds`): one coverage map
+per glob, built from `files.filter(file => picomatch(glob)(relative(root, file)))`, and the groups
+are **independent** — a `core/domain` file is counted against both `core/domain/**` and `core/**`.
+A global threshold, if set, applies to every file "even if they are included by glob patterns".
+The `relative()` there is why this was worth checking on Windows: it returns backslashes, and a
+pattern written with forward slashes could have matched nothing. It matches; the separator is
+normalised before the comparison. Confirmed by setting `core/domain/**` to 100 and watching the
+run report `96.07 %` against it and exit 1.
+
+**The gate bites on the real config.** A throwaway `core/domain/gate-probe.ts` of twenty uncovered
+branches took the group to `lines 87.35 %, statements 80.93 %, branches 75.47 %` and failed the
+run with every metric named. That is the check this task's notes asked for.
+
+**The probe for it was broken in the way it was meant to detect.** The first version of
+`tests/coverage-gate.test.ts` wrote a `vitest.config.ts` into a temp directory outside the repo and
+asserted the child run exited non-zero. It did exit 1 — with `Cannot find module 'vitest/config'`,
+because nothing outside the repo can resolve it. An exit-code-only assertion therefore passed while
+proving nothing about coverage at all. The test now passes the whole configuration as CLI flags,
+needs no config file, and asserts the threshold's own error text and that the child actually ran a
+test. **An assertion that cannot tell the two failures apart is not an assertion.**
+
+**CI measures less than this machine does.** `npm test` gates on `ubuntu-latest`, where every
+`tests/win/**` body skips (`it.skipIf(!onWindows)`), so the Windows adapters contribute nothing:
+`core/**` is 86.39 % lines / 83.87 % branches there against 88.22 / 85.32 locally. Both clear 80,
+but the margin that matters is the CI one, and it is the smaller.
+
+### G.20 P1's gate, measured — and the second it does not have (P1 gate, 2026-09-14)
+
+P1's gate sentence ends *"and a `Stop` in any session appears within one second"*. It had never been
+measured end to end. A throwaway `--bg` session (`fd-t14-gate`, isg, one tiny prompt) was launched,
+watched and stopped, with core running and both subscriptions connected:
+
+| | timestamp | Δ |
+|---|---|---|
+| `claude stop efea5f67` issued | `13:14:37.099Z` | — |
+| `SessionEnd` hook received by core | `13:14:38.439Z` | **+1.340 s** |
+| `reconcile / changed` for that session | `13:14:38.849Z` | **+0.410 s after the hook** |
+| `claude stop` returns to its caller | `13:14:38.727Z` | core knew 288 ms before the CLI finished |
+
+**The row changes 410 ms after core learns of the stop, and 1.75 s after a person asks for it.**
+Two independent numbers, and only the first is Flightdeck's: the 1.34 s is `claude stop`'s own
+round trip before it fires a hook at all, which nothing here can influence. Corroborated by the
+same session's earlier turn, where the `Stop` hook at `13:14:04.003` produced `changed` at
+`13:14:05.326` (1.32 s) — the spread is the sweep's ~760 ms per config dir landing at a different
+point in the cycle, not variance in the nudge.
+
+**So the gate is reworded rather than declared, which is what P0-T5 did to SEC-ING-3** when
+"refused connection under 5 ms" turned out to have been measured wrong at design time. The claim
+Flightdeck can keep is *within one second of core learning of it*; the claim it cannot keep is
+*within one second of the operator's keystroke*, and the difference belongs to `claude.exe`. A gate
+sentence nobody re-measured is worth less than a smaller one that is true.
+
+Also worth recording, because it is the whole design working in one screen: the session was
+`done/idle` **and** `live` within 17 s of launch, with vitals attached — `done` means "not running
+a turn" and liveness is the presence of `pid` (F.2.1, P1-T1's correction to D7). A build that
+conflated them would have shown it as finished while it was still there to attach to.
