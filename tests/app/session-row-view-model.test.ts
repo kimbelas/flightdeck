@@ -108,3 +108,35 @@ describe('SessionRowViewModel — age', () => {
     expect(view().startedAgo(BASE.startedAt - 60_000)).toBe('0s');
   });
 });
+
+describe('SessionRowViewModel — the / filter (P2-T5)', () => {
+  it('keeps everything for an empty or blank query', () => {
+    expect(view().matches('')).toBe(true);
+    expect(view().matches('   ')).toBe(true);
+  });
+
+  it('matches what the row actually shows — name, project, subscription, kind and state', () => {
+    expect(view().matches('fd-pane')).toBe(true);
+    expect(view().matches('flightdeck')).toBe(true);
+    expect(view().matches('365')).toBe(true);
+    expect(view().matches('background')).toBe(true);
+    expect(view().matches('working')).toBe(true);
+  });
+
+  it('matches the short id, which is the identifier a person can actually read off the row', () => {
+    expect(view({ name: undefined }).matches('337975f9')).toBe(true);
+  });
+
+  it('does not match on the full session id — a UUID nobody types would match too much', () => {
+    expect(view().matches('c9c0-454a')).toBe(false);
+  });
+
+  it('is case-insensitive', () => {
+    expect(view().matches('FLIGHTDECK')).toBe(true);
+  });
+
+  it('requires every term, so a second word narrows the list', () => {
+    expect(view().matches('365 flightdeck')).toBe(true);
+    expect(view().matches('isg flightdeck')).toBe(false);
+  });
+});

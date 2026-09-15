@@ -702,3 +702,44 @@ running session a restart — acceptable when a person asked for it, which is ex
 restart must not do it. Connect publishes the key as the `FLIGHTDECK_TOKEN` user environment
 variable and Disconnect withdraws it; terminals already open do not see it, which is a one-time
 cost because the key never changes.
+
+## D34 — the keyboard is a table keyed on focus, and it claims exactly one key from a pane (decided 2026-09-14, P2-T5)
+
+SPEC §5.4 asks for `Ctrl+K`, `j`/`k`/arrows, `Enter`/`Esc`, `1`–`9`, `/` and `?`. Every one of those
+except `Ctrl+K` is a single character somebody is otherwise in the middle of typing, and the deck is
+a page with xterm panes and a launch textarea on it. **The keymap was never the hard part; deciding
+where each key is dead was.**
+
+**Decided: bindings carry a `contexts` column and the deck resolves against a `KeyContext`** —
+`deck`, `text`, `terminal`, `palette` — derived from four facts about the focused element
+(`contracts/keymap.ts`). Three consequences that are the actual decision:
+
+- **`Esc` is never taken from a terminal pane.** It belongs to vim, to Claude Code's own TUI and to
+  everything else that will ever run in one. A deck that swallows `Esc` is a deck you cannot work in.
+- **`Ctrl+K` *is* taken from a terminal pane**, and it is the only key that is. A pane that can
+  swallow the one global key is a pane you cannot leave without reaching for the mouse. The trade is
+  named on the `?` sheet (`TERMINAL_CLAIMED`) rather than left to be discovered.
+- **The listener captures on `window`.** Bubbling is too late — xterm handles keys on its own hidden
+  textarea — so the deck now sees every keystroke on the page first, and `keyContextFor` is the only
+  thing between that and a swallowed prompt. It is tested against a plain object, not a DOM.
+
+**`j`/`k` move real DOM focus rather than a selection index.** The session row's title already *is*
+a button (P2-T4), so focusing it buys `Enter`, `Space`, scroll-into-view and the screen reader's
+announcement for nothing. That is also why `Enter` is deliberately unbound on the deck: binding it
+would mean `preventDefault`-ing it, which breaks `refresh`, `open pane` and every other control the
+moment one of them holds focus. It appears on the sheet under `NATIVE_KEYS` instead.
+
+**The `?` sheet lists the browser-owned keys; it does not remap them.** RESEARCH.md E.2 already
+measured why it cannot: Keyboard Lock works only in JavaScript-initiated fullscreen, so it is
+unavailable in the Edge `--app` window; `Ctrl+W` closes an installed PWA or `--app` window with no
+documented suppression; nobody reclaims it in a window, and code-server remaps its own bindings out
+of the way instead. E.3 says the Tauri shell is where that changes, and that is P5b. SPEC §5.3's
+helper — one click writing the `Ctrl+W`/`Ctrl+T` remaps into both config directories — is a
+different task with a different blast radius, and nothing in P2-T5 goes near `~/.claude*`.
+
+**The palette lists only commands that exist.** Launch, shell, refresh, filter, shortcuts, and two
+per session. Switch-project (P3), Ask (P4) and change-layout have no code behind them and are
+absent; `connect` exists but as a CLI whose whole point is a dry run, a diff and a `--apply`
+opt-in (P1-T11, SEC-ING-3), and a palette entry that performed that write on one keypress would
+defeat every control the task put around it. A palette entry that does nothing is worse than an
+absent one: the first no-op teaches you not to trust the entries beside it.

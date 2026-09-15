@@ -36,7 +36,7 @@ export function SessionRowCard({
   return (
     <article className={`row tone-${row.tone}${expanded ? ' row-open' : ''}`}>
       <div className="row-main">
-        <RowToggle title={row.title} expanded={expanded} onToggle={onToggle} />
+        <RowToggle rowKey={row.key} title={row.title} expanded={expanded} onToggle={onToggle} />
         <span className="tag">{row.subscriptionLabel}</span>
         <span className="tag">{row.kindLabel}</span>
       </div>
@@ -58,6 +58,8 @@ export function SessionRowCard({
 }
 
 interface RowToggleProps {
+  /** `data-deck-row`, which is how `j`/`k` and the palette's "jump to" find this button. */
+  readonly rowKey: string;
   readonly title: string;
   readonly expanded: boolean;
   readonly onToggle: () => void;
@@ -69,12 +71,16 @@ interface RowToggleProps {
  * The row is dense, and a 4 mm chevron next to a 30 mm title is the wrong thing to have to aim at.
  * `aria-expanded` is on the button rather than the article because the button is what a screen
  * reader announces as the control.
+ *
+ * It is also where `j`/`k` put focus (P2-T5), which is why the keyboard needed no selection state
+ * of its own: this was already a focusable control that does the row's one thing on Enter.
  */
-function RowToggle({ title, expanded, onToggle }: RowToggleProps): JSX.Element {
+function RowToggle({ rowKey, title, expanded, onToggle }: RowToggleProps): JSX.Element {
   return (
     <button
       type="button"
       className="row-toggle"
+      data-deck-row={rowKey}
       aria-expanded={expanded}
       onClick={onToggle}
       title={expanded ? 'Collapse' : 'Show what this session is doing'}
