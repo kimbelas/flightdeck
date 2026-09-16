@@ -2073,3 +2073,69 @@ collapses the `..` before anything sees it, so the refusal in that case comes fr
 path being outside the root rather than from the segment being spotted. Both halves of the rule are
 therefore load-bearing, and the lexical `..` check earns its place at IMPORT time — where there is
 no `realpath` yet and refusing is cheaper than resolving (`ProjectImport.refuseRequested`).
+
+### G.26 Every imported project reported an empty stack, past 1 550 green tests and 108 green smoke checks (P3-T2, 2026-09-16)
+
+The seventh entry in this section and the same shape as the first six: the unit suite was green,
+the deck smoke was green, and the feature did not work. Running it took about ninety seconds.
+
+`GET /projects/status` against the live registry, with `flightdeck` itself imported:
+
+```json
+{"path":"…\\flightdeck","at":…,"stack":[],
+ "git":{"branch":"feat/P3-T2-git-detection","ahead":0,"behind":0,"dirty":16,"conflicts":0}}
+```
+
+Git was right. `stack` was empty for a repository with `package.json` and `next.config.ts` in its
+root. The core log said why, three times:
+
+```
+{"level":"warn","event":"project_root_unreadable",
+ "refusal":"the project directory itself is not a file"}
+```
+
+**The cause is a question asked of the wrong method.** `ProjectRegistry.resolve` is the door
+P3-T1 built and its JSDoc is exact about what it answers: *"a path core has been asked to OPEN"*.
+It delegates to `ReadPolicy.refusal`, whose project branch opens with
+
+```ts
+if (relative === '') return 'the project directory itself is not a file';
+```
+
+That is correct for what it is asked — `open()` on a directory is not a read — and P3-T2 asked it
+whether it could *list* a root, which is a different question with a different answer. The two had
+never been distinguished because nothing before this had wanted to list anything.
+
+**Why both suites missed it, and this is the part worth keeping.** `FakeProjectPaths.resolve`
+screens by containment (`isUnder(candidate, root)`), and `isUnder(root, root)` is true — so the
+fake allowed the root that the real policy refuses. The fake was not wrong about the contract it
+was written against; it was wrong about a rule that lives in a *collaborator of* the thing it
+doubles, and no test of `ProjectStatusReader` could see that. The deck smoke could not see it
+either: `FixtureCore` answers `/projects/status` with a fixed reading, because what the smoke
+tests is the deck, and a fixture core that ran `git` would be testing the runner's filesystem.
+
+So the gap is structural rather than careless. **A fake that stands in for a class whose answer is
+computed by a domain rule can only be as strict as its author remembered that rule to be**, and
+the fix is not "write better fakes" — it is to notice which assertions the fakes are load-bearing
+for and run the real thing against those.
+
+**The fix is a second door, not a loosened one.** `ProjectRegistry.resolveRoot` canonicalises and
+then asks whether that folder is *in the registry*, rather than asking `ReadPolicy` a question
+about files. Membership rather than containment, which keeps SEC-FS-1's junction defence intact in
+the one shape this method can meet it: a root replaced by a junction since it was imported
+resolves to a folder that is not in the registry, and is refused. `ReadPolicy` was not touched.
+
+**Measured after the fix, same call:**
+
+```json
+{"path":"…\\flightdeck","stack":["Next.js","Node"],
+ "git":{"branch":"feat/P3-T2-git-detection","dirty":18,…}}
+{"path":"…\\claude-kit","stack":[],
+ "git":{"branch":"master","ahead":0,"behind":0,"dirty":0,"conflicts":0}}
+```
+
+`claude-kit`'s empty stack is correct and had been correct all along — it has no `package.json`,
+no `next.config.*`, no `angular.json`, no `.csproj` and no `Dockerfile` — which is exactly why
+importing one project and calling it verified would have shipped this. It is also a useful second
+measurement: a branch with no upstream prints no `# branch.ab` line at all, so the parser reads
+0/0 rather than leaving the divergence unknown.

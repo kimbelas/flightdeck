@@ -831,3 +831,48 @@ form, `path` is what `realpath` returned and what goes on screen, and both are s
 first mistyped import permanent, and D26's "one deliberate act at a time" reads very differently if
 the acts cannot be undone. `POST /projects/forget` withdraws a root and takes the read permission
 with it, and both halves write an audit row (SEC-PROC-3). Same argument as Disconnect (SEC-OPS-2).
+
+## D37 — Git state is a computed wire type, never a stored field, and a root has its own door (P3-T2)
+
+BUILD-PLAN §3 sketches `stack` and `git` as fields on `Project`, beside `path`, `name` and
+`worktrees`. The sketch is declined, for the reason `SessionDetail` is not `SessionRow`: those two
+fields are a **reading taken a moment ago**, and the rest of the row is a **standing permission the
+owner granted**. `core/ports/store.ts` already draws that line — everything in the store is an
+observation of what happened, and D36 admitted the `projects` table as the single exception because
+a root is a permission rather than an event. Putting a branch name on that row would make the one
+table that says "which folders may core read" change every time somebody commits, and the next
+reader would reasonably ask which half of it survives a restart.
+
+So `ProjectStatus` is its own type on its own route, `GET /projects/status`, and nothing it holds is
+written anywhere. The cache that keeps it cheap is in memory and dies with the process, which is the
+right lifetime for a fact about now.
+
+**The cache is `statusline.py`'s, and the shape is more specific than "cached".** A value is
+recomputed when its **signature** moves *or* its **TTL** lapses, and the two do different jobs. The
+signature is `mtime(.git/HEAD)/mtime(.git/index)` — two stats, microseconds — and any commit,
+checkout, stage or merge moves one of them, so "nothing happened" becomes something core can prove
+rather than assume. The TTL is what covers the change the signature cannot see: editing a tracked
+file moves neither mtime. Four seconds for git, five minutes for the stack, which are the numbers
+that file has been running with on this machine for months.
+
+**One spawn, and the in-progress state costs none.** `git status --porcelain=v2 --branch -uno`
+answers branch, divergence, dirty and conflicts together; asking `rev-parse` then `rev-list` then
+`status` would pay Windows' spawn cost three times for one answer. Mid-merge, mid-rebase and
+mid-bisect are read as the presence of a file in the git directory instead, which is not only free
+but is what makes them worktree-safe — a linked worktree has its own `rebase-merge` under
+`<main>\.git\worktrees\<name>`. `-uno` is not an optimisation either: counting untracked files
+would make "dirty" mean "there are files here" rather than "there is work here".
+
+`ProcessRunner` did not grow a `cwd` for this. `git -C <root>` is an argv element like any other, so
+SEC-PROC-1's "an array, always" still covers the whole invocation, and the child is given an empty
+environment — `execFile` resolves the executable through the parent's `PATH` regardless (measured),
+so an empty block is a child that inherits no token and no `CLAUDE_CONFIG_DIR` and still finds git.
+
+**And listing a root is a different question from opening a file.** `ProjectRegistry.resolve`
+answers the second and refuses a directory outright — "the project directory itself is not a file" —
+which is correct for what it is asked and wrong for what P3-T2 needed. `resolveRoot` is the second
+door: canonicalise, then check the result is **in the registry**. Membership rather than
+containment, so a root replaced by a junction since it was imported resolves somewhere that is not
+a project and is refused; `ReadPolicy` was not loosened to make this work. It shipped without that
+distinction, past a green unit suite and a green deck smoke, and was found by running it — the
+fakes screened a root the way a subdirectory is screened (RESEARCH.md G.26).

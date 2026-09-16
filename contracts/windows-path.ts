@@ -39,3 +39,47 @@ export function isUnder(candidate: string, root: string): boolean {
   if (root === '') return false;
   return candidate === root || candidate.startsWith(root + WINDOWS_SEPARATOR);
 }
+
+/**
+ * `directory` and one entry inside it, joined with exactly one separator — P3-T2.
+ *
+ * Trivial everywhere except at a drive root, which is exactly where a template string gets it
+ * wrong: `C:\` already ends in a separator, so `${directory}\\.git` composes `C:\\.git`, and
+ * `canonicalWindowsPath` reads that as a different path from `c:\.git` — so the screen that is
+ * supposed to allow it refuses it instead. A folder imported at a drive root is an odd thing to do
+ * and not one that should quietly stop working.
+ */
+export function childPath(directory: string, name: string): string {
+  return `${directory.replace(/[\\/]+$/, '')}${WINDOWS_SEPARATOR}${name}`;
+}
+
+/**
+ * The folder above, or `undefined` at a root — P3-T2.
+ *
+ * Here rather than `node:path.dirname` for this file's standing reason: `contracts/` is compiled
+ * into the browser bundle and `core/domain/` may not import a Node built-in at all. The walk that
+ * needs it is the one `statusline.py`'s `git_dir()` does — climb until `.git` turns up — and
+ * P3-T4 climbs the same way, so the stopping rule belongs in one place.
+ *
+ * **Casing is preserved**, unlike `canonicalWindowsPath`: the result is composed with and opened,
+ * not compared, and a lower-cased path is only good for matching.
+ *
+ * Both roots terminate, which is the whole point of returning `undefined`: `C:\` has no parent,
+ * and neither does `\\server\share` — a UNC share is the top of its tree, and walking past it
+ * would ask the filesystem about `\\server`, which is not a directory.
+ */
+export function parentDirectory(path: string): string | undefined {
+  const normalised = path.replaceAll('/', WINDOWS_SEPARATOR).replace(/\\+$/, '');
+  const cut = normalised.lastIndexOf(WINDOWS_SEPARATOR);
+  if (cut < 0) return undefined;
+  const parent = normalised.slice(0, cut);
+  // `C:\foo` climbs to `C:\`, which is a folder; `C:` on its own is a drive-relative reference and
+  // is not one, so the separator is kept rather than trimmed with the others.
+  if (/^[a-z]:$/i.test(parent)) return `${parent}${WINDOWS_SEPARATOR}`;
+  if (parent === '' || parent === WINDOWS_SEPARATOR) return undefined;
+  // `\\server\share` — a parent with nothing but a host left in it is the top of the tree.
+  if (normalised.startsWith('\\\\') && !parent.slice(2).includes(WINDOWS_SEPARATOR)) {
+    return undefined;
+  }
+  return parent;
+}

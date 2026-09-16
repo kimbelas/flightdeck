@@ -6,8 +6,13 @@
 // empty registry is a real state, so nothing here may fill it in, and a failed request must not
 // empty it.
 import { describe, expect, it } from 'vitest';
-import { CORE_PROJECT_FORGET_PATH, CORE_PROJECTS_PATH } from '../../contracts/deck-routes.ts';
-import type { ProjectRecord } from '../../contracts/project.ts';
+import {
+  CORE_PROJECT_FORGET_PATH,
+  CORE_PROJECT_STATUS_PATH,
+  CORE_PROJECTS_PATH,
+} from '../../contracts/deck-routes.ts';
+import { projectKey, type ProjectRecord } from '../../contracts/project.ts';
+import type { ProjectStatus } from '../../contracts/project-status.ts';
 import {
   DeckStore,
   type EventStreamSource,
@@ -49,7 +54,11 @@ describe('DeckStore.loadProjects', () => {
     expect(store.snapshot().projects).toEqual([]);
     await store.loadProjects();
 
-    expect(api.requests).toEqual([{ method: 'GET', path: CORE_PROJECTS_PATH, body: undefined }]);
+    expect(api.requests).toEqual([
+      { method: 'GET', path: CORE_PROJECTS_PATH, body: undefined },
+      // The readings follow the list, and cost nothing on a registry with nothing in it (P3-T2).
+      { method: 'GET', path: CORE_PROJECT_STATUS_PATH, body: undefined },
+    ]);
     // Still empty, and that is the answer rather than a failure: the registry ships empty (D26).
     expect(store.snapshot().projects).toEqual([]);
   });
@@ -105,6 +114,8 @@ describe('DeckStore.importProject', () => {
     const imported = await store.importProject(APP_NEXT.path);
 
     expect(imported).toBe(true);
+    // Two, not three: this rig answers the re-read with the import's own 201, and a list that did
+    // not come back is not one to fetch readings for (P3-T2).
     expect(api.requests.map((request) => request.method)).toEqual(['POST', 'GET']);
     expect(api.requests[0]?.body).toEqual({ path: APP_NEXT.path });
   });
@@ -171,6 +182,7 @@ describe('DeckStore.forgetProject', () => {
     expect(api.requests).toEqual([
       { method: 'POST', path: CORE_PROJECT_FORGET_PATH, body: { path: APP_NEXT.path } },
       { method: 'GET', path: CORE_PROJECTS_PATH, body: undefined },
+      { method: 'GET', path: CORE_PROJECT_STATUS_PATH, body: undefined },
     ]);
     expect(store.snapshot().projects).toEqual([]);
   });
@@ -182,5 +194,83 @@ describe('DeckStore.forgetProject', () => {
     await store.forgetProject(APP_NEXT.path);
 
     expect(api.requests.map((request) => request.method)).toEqual(['POST']);
+  });
+});
+
+const READING: ProjectStatus = {
+  path: APP_NEXT.path,
+  at: 1_700_000_000_000,
+  stack: ['Next.js', 'Node'],
+  git: { branch: 'main', ahead: 0, behind: 0, dirty: 2, conflicts: 0, progress: undefined },
+};
+
+describe('DeckStore.loadProjectStatuses', () => {
+  it('follows the registry read, so a row and its branch arrive together', async () => {
+    const { store, api } = rig();
+    api.willAnswerPath(CORE_PROJECTS_PATH, 200, listing(APP_NEXT));
+    api.willAnswerPath(CORE_PROJECT_STATUS_PATH, 200, { statuses: [READING] });
+
+    await store.loadProjects();
+
+    expect(store.snapshot().statuses[projectKey(APP_NEXT.path)]).toEqual(READING);
+  });
+
+  it('keys the readings the way the panel keys its rows', async () => {
+    // Two spellings of one folder are one project, so the key has to be the folded one or the
+    // reading lands on no row at all.
+    const { store, api } = rig();
+    api.willAnswerPath(CORE_PROJECTS_PATH, 200, listing(APP_NEXT));
+    api.willAnswerPath(CORE_PROJECT_STATUS_PATH, 200, {
+      statuses: [{ ...READING, path: APP_NEXT.path.toUpperCase() }],
+    });
+
+    await store.loadProjects();
+
+    expect(Object.keys(store.snapshot().statuses)).toEqual([projectKey(APP_NEXT.path)]);
+  });
+
+  it('replaces what is held rather than merging, so a forgotten folder loses its branch', async () => {
+    const { store, api } = rig();
+    api.willAnswerPath(CORE_PROJECTS_PATH, 200, listing(APP_NEXT));
+    api.willAnswerPath(CORE_PROJECT_STATUS_PATH, 200, { statuses: [READING] });
+    await store.loadProjects();
+
+    api.willAnswerPath(CORE_PROJECTS_PATH, 200, listing());
+    api.willAnswerPath(CORE_PROJECT_STATUS_PATH, 200, { statuses: [] });
+    await store.loadProjects();
+
+    expect(store.snapshot().statuses).toEqual({});
+  });
+
+  it('keeps what it has when the request fails, rather than blanking every row', async () => {
+    const { store, api } = rig();
+    api.willAnswerPath(CORE_PROJECTS_PATH, 200, listing(APP_NEXT));
+    api.willAnswerPath(CORE_PROJECT_STATUS_PATH, 200, { statuses: [READING] });
+    await store.loadProjects();
+
+    api.willNotAnswer();
+    await store.loadProjectStatuses();
+
+    expect(store.snapshot().statuses[projectKey(APP_NEXT.path)]).toEqual(READING);
+  });
+
+  it('drops a reading it cannot read rather than the whole set', async () => {
+    const { store, api } = rig();
+    api.willAnswerPath(CORE_PROJECTS_PATH, 200, listing(APP_NEXT));
+    api.willAnswerPath(CORE_PROJECT_STATUS_PATH, 200, { statuses: [READING, { at: 2 }] });
+
+    await store.loadProjects();
+
+    expect(Object.keys(store.snapshot().statuses)).toHaveLength(1);
+  });
+
+  it('does not ask for readings when the registry itself could not be read', async () => {
+    // Nothing to annotate, and a second request for it would be a second failure to report.
+    const { store, api } = rig();
+    api.willAnswer(503, { error: 'nope' });
+
+    await store.loadProjects();
+
+    expect(api.requests.map((request) => request.path)).toEqual([CORE_PROJECTS_PATH]);
   });
 });

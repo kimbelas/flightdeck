@@ -25,6 +25,7 @@
 // import and every forget writes through to it and then re-reads.
 import {
   MAX_PROJECT_PATH_CHARS,
+  projectKey,
   projectName,
   type ImportRefusal,
   type ProjectRecord,
@@ -150,6 +151,36 @@ export class ProjectRegistry {
     if (refusal === undefined) return ok(canonical.path);
     this.parts.logger.warn('project_path_refused', { refusal });
     return err(refusal);
+  }
+
+  /**
+   * A project ROOT core has been asked to list — P3-T2.
+   *
+   * `resolve` cannot answer this and should not be made to. `ReadPolicy` decides whether core may
+   * OPEN a path, and it refuses a root outright with "the project directory itself is not a file",
+   * which is correct: listing a directory is a different question from reading a file, and a
+   * policy that conflated them would have to allow `open()` on a folder to allow `readdir()` on
+   * one. Found by running it — the unit suite and the deck smoke were both green while every
+   * imported project reported an empty stack, because the fakes screened the root the way a
+   * subdirectory is screened (RESEARCH.md G.26).
+   *
+   * The check is membership rather than containment, and that is the junction defence again: the
+   * path is canonicalised FIRST, so a root replaced by a junction since it was imported resolves
+   * to a folder that is not in the registry and is refused (SEC-FS-1). Nothing is trusted about
+   * the stored string except that it was once canonical.
+   *
+   * @returns the directory to list, or why it may not be listed.
+   */
+  public async resolveRoot(path: string): Promise<Result<string, string>> {
+    const canonical = await this.parts.paths.canonicalise(path);
+    if (canonical === undefined) return err('no such path');
+    if (!canonical.isDirectory) return err('not a directory');
+    const key = projectKey(canonical.path);
+    if (!this.held.some((project) => projectKey(project.path) === key)) {
+      this.parts.logger.warn('project_root_refused', { refusal: 'not an imported project' });
+      return err('not an imported project');
+    }
+    return ok(canonical.path);
   }
 
   /**

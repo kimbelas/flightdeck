@@ -113,7 +113,7 @@ function DeckBody({
     <div className="deck-body">
       <div className="deck-left">
         <ProjectsPanel
-          model={new ProjectsViewModel(state.projects, state.importRefusal)}
+          model={new ProjectsViewModel(state.projects, state.importRefusal, state.statuses)}
           disabled={!state.coreUp}
           onImport={actions.onImportProject}
           onForget={actions.onForgetProject}

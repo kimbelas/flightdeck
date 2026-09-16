@@ -29,22 +29,18 @@
 // a page reload every time. One path for both cases: close, wait, reopen.
 import {
   CORE_PROJECT_FORGET_PATH,
+  CORE_PROJECT_STATUS_PATH,
   CORE_PROJECTS_PATH,
   CORE_SESSION_PATH,
   CORE_SESSIONS_PATH,
 } from '../../contracts/deck-routes.ts';
-import {
-  parseImportRefusal,
-  parseProjectList,
-  type ImportRefusal,
-  type ProjectRecord,
-} from '../../contracts/project.ts';
+import { parseImportRefusal, parseProjectList, projectKey } from '../../contracts/project.ts';
+import { parseProjectStatusList, type ProjectStatus } from '../../contracts/project-status.ts';
 import {
   parseLaunchAccepted,
   parseLaunchFailure,
   type LaunchAccepted,
 } from '../../contracts/launch-reply.ts';
-import type { QuotaSummary } from '../../contracts/quota-summary.ts';
 import { parseSessionDetail, type SessionDetail } from '../../contracts/session-detail.ts';
 import { sessionRefQuery, type SessionRef } from '../../contracts/session-ref.ts';
 import {
@@ -57,59 +53,21 @@ import {
 import type { SubscriptionId } from '../../contracts/session.ts';
 import type { DeckApi, JsonReply } from './deck-api.ts';
 import {
+  EMPTY,
+  type DeckState,
+  type EventStreamSource,
+  type StreamTransport,
+} from './deck-state.ts';
+import {
   DECK_STREAM_PATH,
   parseStreamFrame,
   STREAM_FRAME_NAMES,
   type StreamFrameName,
 } from '../../contracts/stream-event.ts';
 
-export interface DeckState {
-  readonly rows: readonly SessionRow[];
-  readonly unreadable: readonly SubscriptionId[];
-  /** Both subscriptions' gauges, or `undefined` until the first `quota` frame (P2-T3). */
-  readonly quota: QuotaSummary | undefined;
-  /**
-   * The expanded rows' details, keyed by `sessionKey` — P2-T4.
-   *
-   * Keyed rather than a single `expanded`, because more than one row can be open and closing one
-   * must not throw away the others. A key present with `undefined` means "asked, still waiting",
-   * which is what draws the spinner; a key absent means nobody asked.
-   */
-  readonly details: Readonly<Record<string, SessionDetail | undefined>>;
-  /**
-   * The imported projects, newest first — P3-T1.
-   *
-   * Empty is the honest starting state and stays empty until the owner imports something: the
-   * registry ships empty and nothing scans the disk (DECISIONS.md D26). Fetched rather than
-   * streamed, because only a person sitting here can change it.
-   */
-  readonly projects: readonly ProjectRecord[];
-  /** Why the last import was refused, as core's code. `undefined` once one succeeds. */
-  readonly importRefusal: ImportRefusal | undefined;
-  readonly coreUp: boolean;
-  readonly loading: boolean;
-  readonly error: string | undefined;
-}
-
-/**
- * One open connection to the stream, reduced to what the store uses.
- *
- * An interface rather than `EventSource` itself, for the same reason every port in core is one:
- * this file is unit-tested without a browser, and a DOM type here would also make it untypeable by
- * the Node TypeScript project the tests compile under (tsconfig.json vs tsconfig.app.json).
- */
-export interface EventStreamSource {
-  /** @param listener receives the frame's `data` text, unparsed. */
-  on(type: string, listener: (data: string) => void): void;
-  close(): void;
-}
-
-/** What the store needs from the browser: a connection, and a way to wait before retrying. */
-export interface StreamTransport {
-  open(url: string): EventStreamSource;
-  /** @returns a cancel. Calling it after the task has run is a no-op. */
-  wait(ms: number, task: () => void): () => void;
-}
+// Re-exported so the twelve files that already import these from here did not have to move. The
+// split was for the line count; it is not a new boundary (deck-state.ts).
+export type { DeckState, EventStreamSource, StreamTransport } from './deck-state.ts';
 
 /** Matches core's own `retry:` hint (SseStream). Loopback; there is nothing to back off from. */
 const RECONNECT_MS = 2000;
@@ -118,18 +76,6 @@ const UNREACHABLE = 'Could not reach flightdeck-core.';
 
 /** Said out loud rather than swallowed: a reply nobody can parse is not an empty session list. */
 const UNREADABLE = 'flightdeck-core answered something the deck could not read.';
-
-const EMPTY: DeckState = {
-  rows: [],
-  unreadable: [],
-  quota: undefined,
-  details: {},
-  projects: [],
-  importRefusal: undefined,
-  coreUp: false,
-  loading: false,
-  error: undefined,
-};
 
 export class DeckStore {
   private readonly subscribers = new Set<() => void>();
@@ -189,13 +135,21 @@ export class DeckStore {
    * second path to them would be a second opinion, and a `refresh` button that quietly re-fetched
    * everything is how the polling loop P1-T9 removed would grow back.
    *
+   * **It does re-read the projects** (P3-T2), and that is not the same re-fetch. Quota has a
+   * stream frame of its own and a second path to it would be a second opinion; the registry and
+   * its git readings have no frame at all — nothing pushes them, by design — so the deliberate act
+   * is the only thing that can move them. A refresh button that left a branch name from ten
+   * minutes ago on screen would be a button that did not refresh.
+   *
    * The token never appears here: `/api/core/*` is proxied server-side and `proxy.ts` attaches the
    * bearer on the way (SEC-HTTP-5). Only the PTY socket needs a credential in the page, and it is
    * a ticket rather than the token (D32).
    */
   public async refresh(): Promise<void> {
     this.set({ loading: true, error: undefined });
-    const reply = await this.api.get(CORE_SESSIONS_PATH);
+    // In parallel: the two answers are independent, and a sweep of both subscriptions is the slow
+    // one. Nothing here throws, so neither can lose the other's result.
+    const [reply] = await Promise.all([this.api.get(CORE_SESSIONS_PATH), this.loadProjects()]);
     // Core down is an ordinary state the deck renders, not an exception (RESEARCH.md F.3.3).
     if (reply === undefined) {
       this.fail(UNREACHABLE);
@@ -288,6 +242,28 @@ export class DeckStore {
     const reply = await this.api.get(CORE_PROJECTS_PATH);
     if (reply?.status !== 200) return;
     this.set({ projects: parseProjectList(reply.body) });
+    await this.loadProjectStatuses();
+  }
+
+  /**
+   * Re-reads stack and git for every imported folder — P3-T2.
+   *
+   * A second request rather than more fields on the first, because the two cost different things:
+   * listing the registry opens nothing, and this one may spawn a `git` per project. Core holds
+   * each reading for four seconds (`SignatureCache`), so asking again straight away is cheap and
+   * asking rarely is what keeps it accurate.
+   *
+   * **Replaced wholesale, never merged.** Core answers about every imported project, so a merge
+   * would leave a branch name on screen for a folder that has just been forgotten.
+   *
+   * A reply that cannot be read leaves what is held alone, exactly as `loadProjects` does: an
+   * empty answer is a real state, and rendering one because a request failed would say every
+   * project stopped being a repository.
+   */
+  public async loadProjectStatuses(): Promise<void> {
+    const reply = await this.api.get(CORE_PROJECT_STATUS_PATH);
+    if (reply?.status !== 200) return;
+    this.set({ statuses: byProject(parseProjectStatusList(reply.body)) });
   }
 
   /**
@@ -392,6 +368,11 @@ export class DeckStore {
     this.state = { ...this.state, ...changes };
     for (const listener of this.subscribers) listener();
   }
+}
+
+/** Readings by `projectKey`, which is the same key the panel draws its rows under. */
+function byProject(statuses: readonly ProjectStatus[]): Readonly<Record<string, ProjectStatus>> {
+  return Object.fromEntries(statuses.map((status) => [projectKey(status.path), status]));
 }
 
 /** Replaces the row if it is already known, appends it if not, and re-sorts either way. */

@@ -118,6 +118,41 @@ function ProjectRow({ line, onForget }: ProjectRowProps): JSX.Element {
       >
         forget
       </button>
+      <ProjectMeta line={line} />
     </li>
+  );
+}
+
+/**
+ * The second line: what this repository is, and where git has got to — P3-T2.
+ *
+ * Absent entirely when nothing is known, rather than drawn empty. A folder with no marker and no
+ * repository is an ordinary thing to import — SPEC §5.1's "degrades gracefully" half is a repo
+ * with no `.claude` at all — and a row that reserved space for a branch it will never have would
+ * make the common case look like a failed read.
+ *
+ * Every value here came out of a closed union or a number core counted. Nothing on this line was
+ * composed by core from what is on disk, which is the same property `ProjectsViewModel`'s refusal
+ * sentences have.
+ */
+function ProjectMeta({ line }: { readonly line: ProjectLine }): JSX.Element | undefined {
+  if (line.stack.length === 0 && line.gitSummary === undefined) return undefined;
+  return (
+    <span className="project-meta">
+      {line.stack.map((label) => (
+        <span key={label} className="project-stack">
+          {label}
+        </span>
+      ))}
+      {line.branch !== undefined && (
+        // Clipped rather than wrapped, like the path above it — `title` carries the whole of a
+        // branch name that a task-per-branch machine makes long.
+        <span className="project-branch" title={line.branch}>
+          {line.branch}
+        </span>
+      )}
+      {line.progress !== undefined && <span className="project-progress">{line.progress}</span>}
+      {line.gitSummary !== undefined && <span className="project-git">{line.gitSummary}</span>}
+    </span>
   );
 }

@@ -19,6 +19,7 @@ export async function projectChecks(page, report, core) {
   report.group('Projects — import by path (P3-T1)');
   await emptyChecks(page, report, core);
   await importChecks(page, report, core);
+  await statusChecks(page, report, core);
   await refusalChecks(page, report);
   await forgetChecks(page, report, core);
 }
@@ -65,6 +66,50 @@ async function importChecks(page, report, core) {
   report.check('an accepted import clears the box', cleared);
 }
 
+/**
+ * Stack and git on the row — P3-T2.
+ *
+ * The fixture core answers a fixed reading rather than running `git`, because what is being tested
+ * here is the hop the unit tests cannot see: a second request goes out after the list, its answer
+ * lands on the right row by `projectKey`, and the numbers come out as English. Whether porcelain
+ * v2 parses is settled in tests/contracts.
+ */
+async function statusChecks(page, report, core) {
+  const asked = await waitFor(() =>
+    core.requests.some((request) => request.path === '/projects/status'),
+  );
+  report.check('the deck asks core for the readings after the list (P3-T2)', asked);
+
+  const drew = await waitFor(async () => (await page.locator('.project-meta').count()) === 1);
+  report.check('the row grows a second line once its reading arrives', drew);
+
+  const stack = await page.locator('.project-stack').allTextContents();
+  // Framework before runtime — the specific answer first, then the general one.
+  report.check(
+    'the detected stack is drawn in core’s order',
+    stack.join(' ') === 'Next.js Node',
+    stack.join(' '),
+  );
+
+  report.check(
+    'the branch is on the row',
+    (await page.locator('.project-branch').textContent()) === 'feat/smoke',
+  );
+
+  const summary = (await page.locator('.project-git').textContent()) ?? '';
+  // Numbers on the wire, English on the screen. Nothing here was composed by core.
+  report.check(
+    'the counts are drawn as a phrase, in the order somebody acts on them',
+    summary === '3 changed · 2 ahead',
+    summary,
+  );
+  report.check(
+    'nothing that is zero is printed',
+    !summary.includes('0') && !summary.includes('behind'),
+    summary,
+  );
+}
+
 async function refusalChecks(page, report) {
   await page.fill('#project-path', MISSING);
   await page.locator('.project-add button').click();
@@ -94,4 +139,11 @@ async function forgetChecks(page, report, core) {
 
   const gone = await waitFor(async () => (await page.locator('.project').count()) === 0);
   report.check('the panel goes back to empty, from core\u2019s answer rather than locally', gone);
+
+  // The reading goes with the row. A branch left on screen for a folder core may no longer read
+  // would be the cache outliving the permission, drawn (P3-T2, SEC-FS-1).
+  report.check(
+    'the withdrawn folder\u2019s reading goes with it',
+    (await page.locator('.project-meta').count()) === 0,
+  );
 }

@@ -272,3 +272,75 @@ describe('ProjectRegistry — resolve, which is SEC-FS-1 composed', () => {
     expect((await harness.registry.resolve(`${CFG}\\daemon\\control.key`)).ok).toBe(false);
   });
 });
+
+describe('ProjectRegistry.resolveRoot', () => {
+  // The method `resolve` could not be made to answer, and the bug that proved it. `ReadPolicy`
+  // decides whether core may OPEN a file and refuses a directory outright — "the project directory
+  // itself is not a file" — which is correct for what it is asked. Listing a root is a different
+  // question, and asking the wrong one shipped past a green unit suite and a green deck smoke with
+  // every imported project reporting an empty stack (P3-T2, RESEARCH.md G.26).
+
+  it('answers the canonical directory for a folder that is imported', async () => {
+    await harness.registry.import(APP_NEXT);
+
+    expect(await harness.registry.resolveRoot(APP_NEXT)).toEqual({ ok: true, value: APP_NEXT });
+  });
+
+  it('answers where `resolve` refuses, which is the whole reason it exists', async () => {
+    await harness.registry.import(APP_NEXT);
+
+    // Both are right about their own question. Only one of them is about listing a folder.
+    expect((await harness.registry.resolve(APP_NEXT)).ok).toBe(false);
+    expect((await harness.registry.resolveRoot(APP_NEXT)).ok).toBe(true);
+  });
+
+  it('refuses a folder that was never imported', async () => {
+    expect(await harness.registry.resolveRoot(DOCS_TOOL)).toEqual({
+      ok: false,
+      error: 'not an imported project',
+    });
+  });
+
+  it('refuses one that has been forgotten, so permission really is withdrawn', async () => {
+    await harness.registry.import(APP_NEXT);
+    harness.registry.forget(APP_NEXT);
+
+    expect((await harness.registry.resolveRoot(APP_NEXT)).ok).toBe(false);
+  });
+
+  it('refuses a file, because a file is not a root to list', async () => {
+    await harness.registry.import(APP_NEXT);
+
+    expect(await harness.registry.resolveRoot(`${APP_NEXT}\\CLAUDE.md`)).toEqual({
+      ok: false,
+      error: 'not a directory',
+    });
+  });
+
+  it('refuses a path that resolves to nothing', async () => {
+    expect(await harness.registry.resolveRoot('Z:\\gone')).toEqual({
+      ok: false,
+      error: 'no such path',
+    });
+  });
+
+  it('matches two spellings of one folder, because a root is a path and casing is not identity', async () => {
+    await harness.registry.import(APP_NEXT);
+
+    expect((await harness.registry.resolveRoot(APP_NEXT.toUpperCase())).ok).toBe(true);
+  });
+
+  it('refuses a root replaced by a junction to somewhere that was never imported', async () => {
+    // SEC-FS-1's fourth check, in the one shape this method can meet it: the stored string is
+    // canonicalised FIRST, so what is checked against the registry is where the folder now points
+    // rather than what it was called when it was imported.
+    await harness.registry.import(APP_NEXT);
+    const swapped = build(harness.store);
+    swapped.paths.junction(APP_NEXT, 'C:\\Users\\belas\\.claude-365');
+
+    const resolved = await swapped.registry.resolveRoot(APP_NEXT);
+
+    expect(resolved).toEqual({ ok: false, error: 'not an imported project' });
+    expect(swapped.logger.logged('project_root_refused')).toBe(true);
+  });
+});
