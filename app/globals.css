@@ -161,6 +161,13 @@ button.ghost {
   overflow-y: auto;
 }
 
+/* An open workflow map needs room the closed list does not (P3-T3). 20vh is right for a list of
+   one-line rows and squeezes a 17-hook timeline into a scroll strip, so the cap lifts only while
+   something is open — the closed panel is unchanged and the launcher stays where it was. */
+.project-list:has(details[open]) {
+  max-height: 60vh;
+}
+
 .project {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -224,6 +231,130 @@ button.ghost {
 
 .project-git {
   color: var(--dim);
+}
+
+/* ---- The workflow map (P3-T3, SPEC 5.1a) ------------------------------------
+   Closed by default: the summary is the counts, the detail is behind the marker.
+   A repository with 17 hooks does not fit on a row, and the shape of the config
+   is what answers "what does Claude do here" at a glance. */
+.project-map {
+  grid-column: 1;
+  margin-top: 3px;
+  font-size: 11px;
+}
+
+.project-map > summary {
+  cursor: pointer;
+  color: var(--dim);
+  list-style-position: outside;
+}
+
+.map-summary {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.map-count {
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+.map-section {
+  margin: 6px 0 0 8px;
+}
+
+.map-section h4 {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
+
+.map-section ul,
+.map-section ol {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+}
+
+.map-section li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  padding: 1px 0;
+}
+
+/* The stack is a two-column read: what speaks, and how much of the window it spends. */
+.map-stack li {
+  justify-content: space-between;
+}
+
+.map-size {
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.map-asset-name {
+  font-weight: 600;
+}
+
+/* The trigger text is the longest thing on the row and the least urgent, so it wraps last. */
+.map-trigger {
+  color: var(--dim);
+  flex: 1 1 100%;
+}
+
+.map-badge {
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 3px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.map-hook-group {
+  margin-top: 3px;
+}
+
+/* The event is the heading over a run of rows that were already adjacent — the order
+   below it is the order they run in, and nothing re-sorts it. */
+.map-event {
+  font-weight: 600;
+}
+
+.map-matcher,
+.map-if {
+  color: var(--accent);
+}
+
+/* A command carries an absolute path; clipped, with `title` for the whole of it. */
+.map-command {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 22em;
+  color: var(--dim);
+}
+
+.map-names {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.map-permissions > summary {
+  cursor: pointer;
+  color: var(--dim);
+}
+
+.map-permissions li {
+  color: var(--dim);
+  font-family: monospace;
 }
 
 .row {

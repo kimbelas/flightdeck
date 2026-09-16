@@ -86,7 +86,14 @@ describe('ReadPolicy — everything else', () => {
   });
 
   it('refuses a file at the root of a config directory that is not named', () => {
-    expect(policy().refusal(`${CFG}\\CLAUDE.md`)).toContain('SEC-FS-1');
+    // `CLAUDE.md` used to be the example here and is allowlisted by name from P3-T3 (D38). That is
+    // the point rather than a loosening: the list is named-or-nothing, so a neighbour of exactly
+    // the same shape is still refused, and so is the markdown file the next release invents.
+    expect(policy().refusal(`${CFG}\\AGENTS.md`)).toContain('SEC-FS-1');
+    expect(policy().refusal(`${CFG}\\soul.md`)).toContain('SEC-FS-1');
+    expect(policy().allows(`${CFG}\\CLAUDE.md`)).toBe(true);
+    // By name, not by suffix — a CLAUDE.md deeper in the config directory is not the user file.
+    expect(policy().refusal(`${CFG}\\plugins\\CLAUDE.md`)).toContain('SEC-FS-1');
   });
 
   it('refuses everything when it was given no config directories', () => {
@@ -205,7 +212,9 @@ describe('ReadPolicy — imported project roots (P3-T1)', () => {
     expect(wide.allows(`${CFG}\\daemon\\control.key`)).toBe(false);
     expect(wide.allows(`${CFG}\\statsig\\x.json`)).toBe(false);
     expect(wide.allows(`${CFG}\\.credentials.json`)).toBe(false);
-    expect(wide.allows(`${CFG}\\CLAUDE.md`)).toBe(false);
+    // Allowed under project rules (D36 deny-lists a root) and refused under config rules, which is
+    // what makes it the example: the config branch runs first whatever else contains the path.
+    expect(wide.allows(`${CFG}\\AGENTS.md`)).toBe(false);
     // And the rest of the wide root is still a project, which is the other half of the ordering.
     expect(wide.allows('C:\\Users\\x\\Documents\\notes.md')).toBe(true);
   });

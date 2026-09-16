@@ -127,3 +127,13 @@ export const CORE_PROJECT_FORGET_PATH = `${CORE_PROJECTS_PATH}/forget`;
  * rewrite for a list of four would be three more than are needed.
  */
 export const CORE_PROJECT_STATUS_PATH = `${CORE_PROJECTS_PATH}/status`;
+
+/**
+ * What Claude is configured to do in each imported folder — `GET`, P3-T3.
+ *
+ * A third project route for the reason there is a second: the three cost different things.
+ * Listing the registry opens nothing, a status may spawn `git`, and a map is a directory listing
+ * per asset kind plus a head read per asset. Core holds a map for five minutes because almost
+ * nothing moves one, so the deck may ask whenever it draws the panel.
+ */
+export const CORE_PROJECT_MAP_PATH = `${CORE_PROJECTS_PATH}/map`;

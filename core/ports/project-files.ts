@@ -27,6 +27,18 @@ export interface FileFacts {
    * no reason. Sub-second precision would buy nothing a 4-second TTL does not already give.
    */
   readonly modifiedAt: number;
+  /**
+   * Size in bytes — P3-T3, for SPEC §5.1's instruction stack.
+   *
+   * On `FileFacts` rather than on a `size(path)` of its own for the reason this interface has one
+   * `facts` and not an `exists` and a `modifiedAt`: every caller that wants a size has already
+   * asked whether the thing is there and whether it is a directory, and a second call would be a
+   * second chance for the answer to change underneath. `stat` returns all three together.
+   *
+   * `0` for a directory, which is what the platform reports and is why `isDirectory` is the field
+   * a caller checks first.
+   */
+  readonly sizeBytes: number;
 }
 
 export interface ProjectFiles {
