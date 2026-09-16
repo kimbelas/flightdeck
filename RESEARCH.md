@@ -1980,3 +1980,52 @@ Two things that mode has to do that the production run does not:
   `PaneSocket.abandoned`, so the socket it was for is never opened, and a ticket is single-use and
   expires in seconds. Not a leak, but it IS two mints where production has one, and a check saying
   "exactly one" in both modes would have been asserting that StrictMode does not do its job.
+
+### G.24 P2's gate, measured — and the dead session that had been sitting in the attention slot (P2 gate, 2026-09-16)
+
+P2's gate: *"What needs me?" is answerable from the deck alone, for both subscriptions, without
+opening or alt-tabbing to any terminal.* Measured against the running deck and a real core, 13 live
+sessions — `365` 6, `isg` 7, `unreadable: []`, both ports on `127.0.0.1` (SEC-NET-1 holds).
+
+**It answered, and the top of the answer was wrong.** The first row on the page was a background
+session reading `blocked`, five days old, above four sessions that were actually busy. It had ended
+five days ago.
+
+`runState` is the last state a session was *seen* in, so one that ends while blocked keeps
+`blocked` forever, and `byAttentionThenAge` sorted on that field alone:
+
+```ts
+const leftBlocked = left.runState === 'blocked' ? 0 : 1;   // no `live` in it
+```
+
+So a dead session took the attention slot at the top of the one page whose entire job is to answer
+which session is waiting on you. Nothing was waiting on anybody.
+
+**Two opinions about one question, and the quiet one was wrong.**
+`SessionRowViewModel.tone` already had it right — it tests `!live → 'ended'` *before*
+`runState === 'blocked'` — which is why the row was correctly dimmed as ended while sitting at the
+top of the list as if it needed attention. The tone and the sort disagreed, and a row that is
+greyed out *and* first is a contradiction nobody reads as a bug; it reads as a UI quirk. That is
+the `toSessionRow` lesson (P1-T4) arriving from a new direction: a second opinion about one fact,
+where only one of them is on screen in a form anybody checks.
+
+The fix is `row.live && row.runState === 'blocked'`, in `contracts/session-row.ts`, so the three
+callers that sort — the on-demand sweep, the reconciler's replay and the browser's re-sort after an
+upsert — all move together.
+
+**Why no test had it.** The comparator's unit tests used the default row, which is `live: true`, so
+"blocked sorts first" and "ended sorts last" were each true and never met in one row. The smoke's
+fixture had the same hole: `blocked` appeared only on a live row. Both now carry the combination —
+`fixture-foxtrot` is `live: false, runState: 'blocked'` and the smoke asserts it sorts to the
+BOTTOM, which fails against the old comparator.
+
+**What the gate could not measure.** Nothing on the machine was live-and-blocked during the run, so
+the deck's answer was "four busy, nothing needs you", which is correct but does not exercise the
+`needs-you` tone or the attention text on live data. That path is covered against the fixture by the
+smoke (`the doing-now line is the daemon's needs, badged as such`). A live blocked session would
+make the measurement complete, and is worth taking the next time one occurs naturally rather than
+manufacturing one.
+
+Also observed, and the reason the version chip earns its place: **the two subscriptions are running
+different Claude Code builds** — `isg` on 2.1.272, `365` on 2.1.273 — visible on the header without
+asking either of them.

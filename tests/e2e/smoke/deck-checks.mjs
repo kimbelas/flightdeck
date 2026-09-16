@@ -37,8 +37,12 @@ async function renderChecks(page, report) {
     titles[0] === 'fixture-alpha',
     titles.slice(0, 3).join(', '),
   );
+  // `fixture-foxtrot` is `live: false` with `runState: 'blocked'` — the shape that took the top of
+  // a real deck for five days (G.24). `runState` is the last state a session was SEEN in, so an
+  // ended one keeps `blocked` forever, and sorting on it alone put a dead session above four busy
+  // ones under the heading the page exists to answer. It belongs at the bottom.
   report.check(
-    'the ended session sorts to the bottom',
+    'a session that ended while blocked sorts to the BOTTOM, not the attention slot (G.24)',
     titles.at(-1) === 'fixture-foxtrot',
     String(titles.at(-1)),
   );

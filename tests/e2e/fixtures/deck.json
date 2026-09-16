@@ -78,7 +78,7 @@
         "cwd": "C:\\Users\\owner\\Documents\\ledger",
         "startedAt": 1788913600000,
         "live": false,
-        "runState": "done",
+        "runState": "blocked",
         "attachable": false,
         "notAttachableBecause": "Not running. Resume it to attach."
       },

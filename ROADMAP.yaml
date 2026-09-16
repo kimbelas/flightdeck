@@ -1129,9 +1129,24 @@ phases:
 
   - id: P2
     name: The deck — sessions view
-    status: doing
+    status: done
     goal: One page that answers "what needs me?" for both subscriptions.
-    gate: '"What needs me?" is answerable from the deck alone, for both subscriptions, without opening or alt-tabbing to any terminal.'
+    gate: >-
+      "What needs me?" is answerable from the deck alone, for both subscriptions, without opening or
+      alt-tabbing to any terminal. **Met and measured on 2026-09-16** (RESEARCH.md G.24): 13 real
+      sessions on one page, 6 on 365 and 7 on isg, `unreadable: []`, every state, age, project and
+      attachability readable without a terminal, both subscriptions' 5h/7d quota, spend and Claude
+      Code version in the header — and the two accounts turned out to be on different builds,
+      2.1.272 and 2.1.273, which is the version chip earning its place. The measurement is what
+      caught the one thing wrong with the answer: `byAttentionThenAge` sorted on `runState` alone,
+      so a background session that had ENDED five days ago while blocked held the top of the list
+      above four that were busy — `runState` is the last state a session was seen in, and the
+      comparator never asked whether it was still running. `SessionRowViewModel.tone` had always
+      had it right, so the row was correctly dimmed while sitting in the attention slot: two
+      opinions about one question, and the quiet one was wrong. Fixed in contracts/, so all three
+      sorters move together. NOT exercised: nothing was live-and-blocked during the run, so the
+      needs-you tone and the attention text were proven against the fixture rather than on live
+      data — worth taking the next time a session blocks naturally.
     depends_on: [P1]
     tasks:
       - id: P2-T1
