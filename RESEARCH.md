@@ -1314,6 +1314,9 @@ solved, editing the deck means rebuilding, and `npm run dev` is misleading rathe
 The last change is kept regardless of its effect here: `X-Frame-Options` and `Referrer-Policy` on a
 JavaScript chunk were always meaningless.
 
+**Closed 2026-09-16 — see G.23.** It is no longer reproducible, and nothing in this repository
+fixed it.
+
 ### G.4 `@xterm/addon-webgl` 0.19 on `@xterm/xterm` 6.0 activates and paints NOTHING
 
 A pane attached to a real Claude session, with the socket reporting `live` and `onData` delivering
@@ -1917,3 +1920,63 @@ discovered: a field misspelled INSIDE an entry that still parses is invisible to
 timeline entry's `state` to `runState` leaves three entries, each with `state: undefined`, and the
 boot guard is silent. Only an assertion about what is on screen sees it — which is the argument for
 checks that name values rather than shapes.
+
+### G.23 `next dev` hydrates, and nothing here fixed it — so the guard is the deliverable (P2-T6b, 2026-09-16)
+
+G.3 left one symptom open for five days: under `next dev` the deck rendered server-side and never
+hydrated, with `ws://127.0.0.1:4949/_next/hmr` failing `ERR_INVALID_HTTP_RESPONSE` on every retry.
+It is gone.
+
+**Measured.** `next dev -H 127.0.0.1 -p 4949` against the fixture core, driven headless:
+
+```
+[ws open] ws://127.0.0.1:4949/_next/hmr?id=1jo-UNgX8F_UKIcdFFX3F
+[console.log] [HMR] connected
+{ "chip": "live", "rows": 7, "hydrated": true }
+```
+
+No page error, no failed request, no CSP refusal, and the deck's own `GET /api/stream` is issued —
+which is the part G.3 said never happened. Reproduced from a cold `.next` and from a directory left
+by a production build. Node v26.3.0, Next 16.3.4, Chromium via Playwright 1.63.0.
+
+**Nothing in this repository fixed it, and that is the uncomfortable part.** Every file that governs
+this is byte-identical to when G.3 was written:
+
+| Suspect | Between G.3 and now |
+| --- | --- |
+| `proxy.ts` body | identical — P2-T1 extracted `newNonce()` and moved constants to `contracts/`, nothing else |
+| the proxy `matcher` | identical, `/((?!_next/\|favicon.ico).*)` both sides |
+| `contentSecurityPolicy`'s dev relaxations | identical — `'unsafe-eval'` and the HMR origin, added at P2-T6 |
+| `next` | pinned at 16.3.4 the whole time; never bumped |
+
+So the honest conclusion is the one that is no fun to write: **the remaining symptom was
+environmental, it was never diagnosed, and it cannot now be.** A machine state, a stale process on
+4949, or a Node patch release — the evidence to tell those apart is gone. Recording a cause here
+would be inventing one.
+
+**Which makes the guard the actual deliverable.** A fix nobody can explain is a fix nobody can trust
+not to come back, and the failure is silent by construction: the page renders, everything looks
+right, and one console line explains it to nobody. So `npm run smoke:dev` runs the whole suite —
+`deckChecks`, `keyboardChecks`, `paneChecks`, 79 checks — against `next dev` on every PR. "It
+hydrates" is not a special assertion in it; it is those groups passing at all.
+
+Two things that mode has to do that the production run does not:
+
+- **Prove it was a dev run.** A `--dev` run that silently fell back to the production server would
+  report that `next dev` hydrates on the strength of a build. So `devChecks` asserts the two
+  relaxations the dev policy carries and the production policy is separately tested never to have —
+  the inverse of `securityChecks`, deliberately. And it asserts the HMR *socket opened*, which is
+  G.3's exact symptom stated as a measurement: an upgrade answered with an HTTP response raises no
+  `websocket` event at all.
+- **Leave `next-env.d.ts` alone afterwards.** Running `next dev` REWRITES that committed generated
+  file, flipping its two imports from `./.next/types/...` to `./.next/dev/types/...`; `next build`
+  flips them back. So `npm run smoke:dev` leaves the tree dirty in a file nobody edited, and
+  committing that variant would hand CI a `next-env.d.ts` pointing at a directory that does not
+  exist on a runner — the quality job type-checks with no `.next` at all. Caught here by `git
+  status` on the commit, not by any check. Build before you commit, or `git checkout` the file.
+
+- **Expect StrictMode.** `reactStrictMode: true`, so under dev React mounts every effect twice, and
+  `PaneView`'s effect mints a pane ticket on each. The first is never spent — the teardown sets
+  `PaneSocket.abandoned`, so the socket it was for is never opened, and a ticket is single-use and
+  expires in seconds. Not a leak, but it IS two mints where production has one, and a check saying
+  "exactly one" in both modes would have been asserting that StrictMode does not do its job.

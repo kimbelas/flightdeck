@@ -2,10 +2,10 @@
 setlocal EnableDelayedExpansion
 REM Start Flightdeck: core, the deck, and a window pointed at it (P2-T6).
 REM
-REM It runs the PRODUCTION build on purpose. `next dev` renders the deck and never hydrates - no
-REM button works and no fetch is issued (RESEARCH.md G.3, open as P2-T6b). `next build` then
-REM `next start` works completely, so that is what this does, and it rebuilds every time rather
-REM than serving a stale bundle silently.
+REM It runs the PRODUCTION build on purpose, and still does now that `next dev` hydrates again
+REM (P2-T6b, RESEARCH.md G.23): this is the launcher the owner uses, and a dev bundle is slower,
+REM noisier and double-mounts every effect under StrictMode. Use `npm run dev` to EDIT the deck.
+REM It rebuilds every time rather than serving a stale bundle silently.
 REM
 REM Ports are never chosen dynamically. A second core would issue a second token and answer with a
 REM stale session list, which is worse than not starting (SECURITY.md section 7 rule 1).

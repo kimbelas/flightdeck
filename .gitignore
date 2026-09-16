@@ -19,8 +19,9 @@ __pycache__/
 .flightdeck-deck.log
 *.local.mjs
 
-# What `npm run smoke` leaves behind. CI uploads it as an artifact on failure (P2-T7).
+# What `npm run smoke` and `npm run smoke:dev` leave behind. CI uploads them on failure.
 smoke.png
+smoke-dev.png
 
 # Local Claude Code overrides; the shared config is .claude/settings.json
 .claude/settings.local.json

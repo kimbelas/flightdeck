@@ -9,11 +9,11 @@
 // running the thing. A page that renders and never hydrates passes 1290 tests.
 //
 // **What it starts, and why that is the task.** `flightdeck.cmd` starts a real core, a real Claude
-// session and an Edge window; none of that exists on a runner. `next dev` renders and never
-// hydrates (G.3), so the dev server is not an option either. So: the real PRODUCTION build, served
-// by real `next start`, with a fixture core on the far side of the wire (DECISIONS.md D35). Every
-// layer that has ever broken here — the proxy's nonce, the rewrite's bearer, the stream route's
-// `no-transform` — is the real one.
+// session and an Edge window; none of that exists on a runner. So: the real PRODUCTION build,
+// served by real `next start`, with a fixture core on the far side of the wire (DECISIONS.md D35).
+// Every layer that has ever broken here — the proxy's nonce, the rewrite's bearer, the stream
+// route's `no-transform` — is the real one. `--dev` swaps `next start` for `next dev` and is
+// P2-T6b's guard; see that flag's own comment below.
 //
 // **Nothing under `~/.claude*` or `%LOCALAPPDATA%\flightdeck` is touched.** The token file goes to
 // a fresh temp directory and both processes are pointed at it with `FD_TOKEN_FILE`, so a smoke run
@@ -27,6 +27,7 @@ import { chromium } from 'playwright';
 import { FixtureCore } from './fixture-core.mjs';
 import { Report, waitFor } from './smoke/report.mjs';
 import { deckChecks } from './smoke/deck-checks.mjs';
+import { devChecks } from './smoke/dev-checks.mjs';
 import { keyboardChecks } from './smoke/keyboard-checks.mjs';
 import { paneChecks } from './smoke/pane-checks.mjs';
 import { securityChecks } from './smoke/security-checks.mjs';
@@ -35,7 +36,22 @@ import { LOOPBACK_ADDRESS, UI_PORT } from '../../contracts/origins.ts';
 const DECK = `http://${LOOPBACK_ADDRESS}:${String(UI_PORT)}/deck`;
 const NEXT_BIN = fileURLToPath(new URL('../../node_modules/next/dist/bin/next', import.meta.url));
 const BUILD_ID = new URL('../../.next/BUILD_ID', import.meta.url);
-const SHOT = process.env.FD_SHOT ?? 'smoke.png';
+
+/**
+ * `--dev` runs the same deck against `next dev` instead of the production build — P2-T6b.
+ *
+ * It exists because G.3 cost this project a fortnight of "editing the deck means rebuilding", and
+ * the symptom was silent: the page rendered, never hydrated, and no assertion anywhere would have
+ * noticed. The dev server hydrates again; this is what keeps that true.
+ *
+ * The security group does NOT run in this mode, and that is the point rather than a gap: the dev
+ * policy deliberately carries `'unsafe-eval'` and the HMR origin, so asserting the production
+ * policy against it would fail correctly. `devChecks` asserts the dev-specific half instead —
+ * including that this run really was the dev server, so a green `--dev` run cannot be a production
+ * run in disguise.
+ */
+const DEV = process.argv.includes('--dev');
+const SHOT = process.env.FD_SHOT ?? (DEV ? 'smoke-dev.png' : 'smoke.png');
 
 const report = new Report();
 const workspace = await mkdtemp(join(tmpdir(), 'flightdeck-smoke-'));
@@ -44,7 +60,8 @@ let deck;
 let browser;
 
 try {
-  await requireBuild();
+  console.log(DEV ? 'mode: next dev (P2-T6b)' : 'mode: production build');
+  if (!DEV) await requireBuild();
   await core.start();
   deck = await startDeck(core.tokenFile);
   browser = await chromium.launch();
@@ -54,8 +71,9 @@ try {
   await page.goto(DECK, { waitUntil: 'domcontentloaded' });
   await deckChecks(page, report, core);
   await keyboardChecks(page, report);
-  await paneChecks(page, report, core);
-  await securityChecks(page, report, core, seen);
+  await paneChecks(page, report, core, { dev: DEV });
+  if (DEV) devChecks(report, seen);
+  else await securityChecks(page, report, core, seen);
   await page.screenshot({ path: SHOT });
   console.log(`\nscreenshot: ${SHOT}`);
 } finally {
@@ -75,13 +93,16 @@ process.exitCode = report.summary();
  * are what that check needs anyway — `no-transform` is the value F.6.3 was about.
  */
 function watch(page) {
-  const seen = { served: [], problems: [] };
+  const seen = { served: [], problems: [], sockets: [] };
   page.on('console', (message) => {
     const text = message.text();
     if (/Content Security Policy|Refused to/iu.test(text)) seen.problems.push(text);
   });
   page.on('pageerror', (error) => seen.problems.push(`pageerror: ${error.message}`));
   page.on('websocket', (socket) => {
+    // The URL as well as the frames: G.3's whole remaining symptom was an upgrade that never
+    // became a socket, and `--dev` asserts the HMR one opened at all (dev-checks.mjs).
+    seen.sockets.push(socket.url());
     socket.on('framesent', (frame) => seen.served.push(wireFrame(socket, frame)));
     socket.on('framereceived', (frame) => seen.served.push(wireFrame(socket, frame)));
   });
@@ -113,25 +134,28 @@ async function requireBuild() {
   try {
     await access(BUILD_ID);
   } catch {
-    throw new Error(
-      'no production build — run `npm run build` first (`next dev` never hydrates, G.3)',
-    );
+    throw new Error('no production build — run `npm run build` first, or pass --dev (P2-T6b)');
   }
 }
 
 /**
- * The real deck, from the real build.
+ * The real deck — from the production build, or from `next dev` under `--dev`.
  *
  * `next` is invoked through its own bin with the current `node` rather than through a package
  * script, so the child is a process this file can kill on Windows as well as on the runner —
  * an `npm start` in between leaves the server orphaned holding port 4949.
+ *
+ * `NODE_ENV` is set rather than left to `next`, because it is what `proxy.ts` reads to decide
+ * whether the policy may carry `'unsafe-eval'` and the HMR origin. Getting it wrong in either
+ * direction is silent, which is the entire history of this file's subject.
  */
 async function startDeck(tokenFile) {
-  const args = [NEXT_BIN, 'start', '-H', LOOPBACK_ADDRESS, '-p', String(UI_PORT)];
+  const command = DEV ? 'dev' : 'start';
+  const args = [NEXT_BIN, command, '-H', LOOPBACK_ADDRESS, '-p', String(UI_PORT)];
   const child = spawn(process.execPath, args, {
     env: {
       ...process.env,
-      NODE_ENV: 'production',
+      NODE_ENV: DEV ? 'development' : 'production',
       NEXT_TELEMETRY_DISABLED: '1',
       FD_TOKEN_FILE: tokenFile,
     },
@@ -146,7 +170,7 @@ async function startDeck(tokenFile) {
       fetch(DECK)
         .then((reply) => reply.ok)
         .catch(() => false),
-    { timeout: 60_000, every: 250 },
+    { timeout: DEV ? 180_000 : 60_000, every: 250 },
   );
   if (!up) {
     child.kill();

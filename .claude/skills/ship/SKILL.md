@@ -29,10 +29,13 @@ there genuinely is not one.
 
 ## 3. Build it, then run it
 
-`npm run check` being green is not evidence the change works. Six real bugs shipped past a green
-unit suite and were only found by running the thing (RESEARCH.md §G) — including the one this
-project keeps re-learning, that `next dev` never hydrates. Use the `run` skill and actually look
-at the deck.
+`npm run check` being green is not evidence the change works, and it measures nothing under
+`app/`. Six real bugs shipped past a green unit suite and were only found by running the thing
+(RESEARCH.md §G).
+
+For anything touching the deck: `npm run build && npm run smoke` — 87 checks against a fixture
+core — and `npm run smoke:dev` as well if you touched the CSP, `proxy.ts` or `next.config.ts`.
+That pair is what G.3 cost a fortnight for. Then use the `run` skill and actually look at the deck.
 
 ## 4. Update the roadmap in the same PR
 

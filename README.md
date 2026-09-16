@@ -35,9 +35,10 @@ subscription core could not read publishes no event, so `refresh` is what update
 an interactive session — one you started in a terminal yourself — shows on the deck read-only,
 with the reason on the row. Start one from the deck to get a pane you can type into.
 
-> `npm run dev` currently renders the deck and never hydrates (RESEARCH.md G.3, open as P2-T6b).
-> Use `flightdeck.cmd`, which builds and runs the production bundle. Editing the deck means
-> rebuilding until that is fixed.
+> `npm run dev` hydrates again and is usable for editing the deck (P2-T6b, RESEARCH.md G.23) —
+> `npm run smoke:dev` runs the suite against it on every PR so it cannot regress silently a second
+> time. `flightdeck.cmd` still builds and runs the production bundle, which is what you want for
+> *using* Flightdeck rather than changing it.
 
 | Read this | For |
 |---|---|
@@ -73,8 +74,11 @@ npm run build && npm run smoke     # 87 checks, real production build, fixture c
 It starts nothing you own. A fixture core runs in-process and speaks core's HTTP surface and PTY
 protocol with an echo behind the socket, so there is no real core, no Claude session and no ConPTY —
 and the token file goes to a temp directory, never `%LOCALAPPDATA%\flightdeck` (DECISIONS.md D35).
-Everything in front of the wire is real, including the production build, because `next dev` renders
-the deck and never hydrates (RESEARCH.md G.3) — which is the failure the smoke exists to catch.
+Everything in front of the wire is real, the production build included.
+
+`npm run smoke:dev` runs the same suite against `next dev` instead (P2-T6b). That one exists
+because G.3 was silent for five days: the dev server rendered the deck and never hydrated, and
+nothing anywhere would have noticed it coming back.
 
 Branch from `main` as `feat/P1-T4-short-name`, commit with the task id
 (`feat(core): reconciler sweep [P1-T4]`), open a PR — the template carries the checklist.

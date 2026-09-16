@@ -1435,16 +1435,34 @@ phases:
           address rather than the port so a regression fails the start instead of exposing it.
       - id: P2-T6b
         title: Make `next dev` hydrate — the deck is production-build-only until it does
-        status: todo
+        status: done
+        done_on: 2026-09-16
         depends_on: [P2-T6]
+        deliverables:
+          [
+            tests/e2e/smoke/dev-checks.mjs,
+            tests/e2e/smoke.mjs,
+            .github/workflows/ci.yml,
+            RESEARCH.md G.23,
+          ]
         notes: >-
-          RESEARCH.md G.3. Under `next dev` the deck renders server-side and never hydrates: no
-          button works and no fetch is issued. The eval half is fixed (dev-only 'unsafe-eval');
-          what remains is `ws://127.0.0.1:4949/_next/hmr` failing ERR_INVALID_HTTP_RESPONSE on
-          every retry. Excluding `_next` from both the proxy matcher and next.config headers()
-          changed nothing. `next build && next start` works completely. Until this is solved,
-          editing the deck means rebuilding and `npm run dev` is misleading rather than useful —
-          note it in the README rather than letting the next person rediscover it.
+          RESEARCH.md G.23. It hydrates — measured from a cold .next and from a directory left by a
+          production build: the HMR socket opens, `[HMR] connected`, the deck's own GET /api/stream
+          is issued, seven rows render and React has attached. No page error, no CSP refusal.
+          **Nothing in this repository fixed it**, and that is recorded rather than glossed: the
+          proxy body, the proxy matcher and the CSP's dev relaxations are byte-identical to when
+          G.3 was written, and `next` was pinned at 16.3.4 throughout. The remaining symptom was
+          environmental, was never diagnosed, and now cannot be — inventing a cause would be worse
+          than saying so. Which makes the GUARD the deliverable: a fix nobody can explain is one
+          nobody can trust not to return, and this failure is silent by construction. So
+          `npm run smoke:dev` runs the whole P2-T7 suite against `next dev` on every PR — 79
+          checks, where "it hydrates" is not a special assertion but those groups passing at all.
+          Two things that mode must do which the production run cannot: prove it really was the dev
+          server (it asserts the two relaxations the dev policy carries and the production policy is
+          tested never to have, plus that the HMR UPGRADE became a socket — G.3's exact symptom as a
+          measurement), and expect StrictMode's double mount, which mints a second pane ticket that
+          is never spent. README, CLAUDE.md, flightdeck.cmd and the run and ship skills all said the
+          dev server never hydrates; all four are corrected.
       - id: P2-T7
         title: Playwright smoke against a fixture SSE stream
         status: done

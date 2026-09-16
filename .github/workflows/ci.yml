@@ -146,11 +146,18 @@ jobs:
       - name: Smoke
         run: npm run smoke
 
+      # The same suite against `next dev` — P2-T6b. G.3 was silent for five days (the deck rendered
+      # and never hydrated) and nothing would have caught it coming back. It runs after the
+      # production pass rather than instead of it: the dev policy carries 'unsafe-eval' and the HMR
+      # origin, so only the production run can assert SEC-UI-1.
+      - name: Smoke against next dev
+        run: npm run smoke:dev
+
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
-          name: smoke-screenshot
-          path: smoke.png
+          name: smoke-screenshots
+          path: smoke*.png
           if-no-files-found: ignore
           retention-days: 7
 
