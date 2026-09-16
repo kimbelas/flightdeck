@@ -44,6 +44,23 @@ describe('byAttentionThenAge', () => {
     expect([working, blocked].sort(byAttentionThenAge)[0]).toBe(blocked);
   });
 
+  // P2's gate, measured on a real deck: `runState` is the last state a session was SEEN in, so one
+  // that ended while blocked keeps `blocked` forever. Sorting on that alone put a five-day-dead
+  // session above four busy ones, at the top of the page that answers "what needs me?" (G.24).
+  it('does NOT put a session that ended while blocked first — it is not waiting on anyone', () => {
+    const dead = row({ sessionId: 'd', live: false, runState: 'blocked', startedAt: 9000 });
+    const working = row({ sessionId: 'w', live: true, runState: 'working', startedAt: 0 });
+
+    expect([dead, working].sort(byAttentionThenAge)[0]).toBe(working);
+  });
+
+  it('still puts a blocked session that is LIVE above a live one that is working', () => {
+    const blocked = row({ sessionId: 'b', live: true, runState: 'blocked', startedAt: 0 });
+    const working = row({ sessionId: 'w', live: true, runState: 'working', startedAt: 9000 });
+
+    expect([working, blocked].sort(byAttentionThenAge)[0]).toBe(blocked);
+  });
+
   it('puts a live session above one that has ended', () => {
     const ended = row({ sessionId: 'e', live: false, startedAt: 9000 });
     const live = row({ sessionId: 'l', live: true, startedAt: 0 });

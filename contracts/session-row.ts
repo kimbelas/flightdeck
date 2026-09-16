@@ -67,11 +67,27 @@ export function sessionKey(row: Pick<SessionRow, 'sessionId' | 'subscription'>):
  * make a row jump when it arrived by a different route.
  */
 export function byAttentionThenAge(left: SessionRow, right: SessionRow): number {
-  const leftBlocked = left.runState === 'blocked' ? 0 : 1;
-  const rightBlocked = right.runState === 'blocked' ? 0 : 1;
-  if (leftBlocked !== rightBlocked) return leftBlocked - rightBlocked;
+  const leftAttention = needsAttention(left) ? 0 : 1;
+  const rightAttention = needsAttention(right) ? 0 : 1;
+  if (leftAttention !== rightAttention) return leftAttention - rightAttention;
   if (left.live !== right.live) return left.live ? -1 : 1;
   return right.startedAt - left.startedAt;
+}
+
+/**
+ * Blocked **and still running** — and the second half was missing until P2's gate was measured.
+ *
+ * `runState` is the last state a session was seen in, so a session that ended while blocked keeps
+ * `blocked` forever. Sorting on that alone put a five-day-dead session at the top of a real deck,
+ * above four that were busy, under the heading the whole page exists to answer (RESEARCH.md G.24).
+ * It is not waiting on anybody: it is not waiting at all.
+ *
+ * `SessionRowViewModel.tone` already got this right — `ended` is tested before `blocked` — which is
+ * why the row was correctly dimmed while sitting in the attention slot. Two opinions about one
+ * question, and only the quiet one was wrong.
+ */
+function needsAttention(row: SessionRow): boolean {
+  return row.live && row.runState === 'blocked';
 }
 
 /**
