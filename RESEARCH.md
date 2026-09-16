@@ -1968,6 +1968,13 @@ Two things that mode has to do that the production run does not:
   the inverse of `securityChecks`, deliberately. And it asserts the HMR *socket opened*, which is
   G.3's exact symptom stated as a measurement: an upgrade answered with an HTTP response raises no
   `websocket` event at all.
+- **Leave `next-env.d.ts` alone afterwards.** Running `next dev` REWRITES that committed generated
+  file, flipping its two imports from `./.next/types/...` to `./.next/dev/types/...`; `next build`
+  flips them back. So `npm run smoke:dev` leaves the tree dirty in a file nobody edited, and
+  committing that variant would hand CI a `next-env.d.ts` pointing at a directory that does not
+  exist on a runner — the quality job type-checks with no `.next` at all. Caught here by `git
+  status` on the commit, not by any check. Build before you commit, or `git checkout` the file.
+
 - **Expect StrictMode.** `reactStrictMode: true`, so under dev React mounts every effect twice, and
   `PaneView`'s effect mints a pane ticket on each. The first is never spent — the teardown sets
   `PaneSocket.abandoned`, so the socket it was for is never opened, and a ticket is single-use and
