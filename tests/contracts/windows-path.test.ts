@@ -3,7 +3,12 @@
 // Small enough to look not worth testing, and it is the opposite: `ReadPolicy` decides what core
 // may open by comparing two strings that came out of here, so every rule below is a security rule.
 import { describe, expect, it } from 'vitest';
-import { canonicalWindowsPath, isUnder, WINDOWS_SEPARATOR } from '../../contracts/windows-path.ts';
+import {
+  canonicalWindowsPath,
+  isUnder,
+  parentDirectory,
+  WINDOWS_SEPARATOR,
+} from '../../contracts/windows-path.ts';
 
 describe('canonicalWindowsPath', () => {
   const same: readonly [string, string][] = [
@@ -44,5 +49,35 @@ describe('isUnder', () => {
 
   it('is false for an empty root, so a policy built before anything was found is closed', () => {
     expect(isUnder('c:\\anything', '')).toBe(false);
+  });
+});
+
+describe('parentDirectory', () => {
+  it('climbs one folder, keeping the casing it was given', () => {
+    // Not `canonicalWindowsPath`: the result is composed with and opened, never compared.
+    expect(parentDirectory('C:\\Users\\Belas\\Documents')).toBe('C:\\Users\\Belas');
+  });
+
+  it('treats both separators and a trailing one as decoration', () => {
+    expect(parentDirectory('C:/Users/belas/')).toBe('C:\\Users');
+  });
+
+  it('stops at a drive root rather than climbing into a drive-relative reference', () => {
+    // `C:\` is a folder and `C:` is not, which is why the separator survives the climb.
+    expect(parentDirectory('C:\\Users')).toBe('C:\\');
+    expect(parentDirectory('C:\\')).toBeUndefined();
+  });
+
+  it('stops at a UNC share, which is the top of its tree', () => {
+    expect(parentDirectory('\\\\server\\share\\repo')).toBe('\\\\server\\share');
+    expect(parentDirectory('\\\\server\\share')).toBeUndefined();
+  });
+
+  it('terminates on anything, which is what the walk that uses it depends on', () => {
+    // GitDirectoryLocator climbs until this answers `undefined`; a shape that never did would be
+    // a loop bounded only by its own guard.
+    let path: string | undefined = '\\\\?\\C:\\Users\\belas\\repo';
+    for (let steps = 0; steps < 100 && path !== undefined; steps += 1) path = parentDirectory(path);
+    expect(path).toBeUndefined();
   });
 });

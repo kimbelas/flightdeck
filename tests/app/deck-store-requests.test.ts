@@ -9,7 +9,11 @@
 // malformed everything else — a 200 carrying a Next error page, a 201 with no id. Both used to
 // land in state and render.
 import { describe, expect, it } from 'vitest';
-import { CORE_SESSIONS_PATH } from '../../contracts/deck-routes.ts';
+import {
+  CORE_PROJECT_STATUS_PATH,
+  CORE_PROJECTS_PATH,
+  CORE_SESSIONS_PATH,
+} from '../../contracts/deck-routes.ts';
 import type { SessionRow } from '../../contracts/session-row.ts';
 import {
   DeckStore,
@@ -61,8 +65,14 @@ describe('DeckStore.refresh', () => {
 
     await store.refresh();
 
-    expect(api.requests).toEqual([{ method: 'GET', path: CORE_SESSIONS_PATH, body: undefined }]);
-    expect(CORE_SESSIONS_PATH.startsWith('/api/core/')).toBe(true);
+    // The registry rides along (P3-T2): it has no stream frame, so a deliberate refresh is the
+    // only thing that can move it. Every path still goes through the rewrite.
+    expect(api.requests.map((request) => request.path)).toEqual([
+      CORE_SESSIONS_PATH,
+      CORE_PROJECTS_PATH,
+      CORE_PROJECT_STATUS_PATH,
+    ]);
+    expect(api.requests.every((request) => request.path.startsWith('/api/core/'))).toBe(true);
   });
 
   it('takes the rows and the unreadable subscriptions, and says core is up', async () => {

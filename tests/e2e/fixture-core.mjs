@@ -170,6 +170,9 @@ export class FixtureCore {
     if (request.method === 'POST' && path === '/projects/forget') {
       return this.forget(await body(request));
     }
+    if (request.method === 'GET' && path === '/projects/status') {
+      return [200, { statuses: [...this.projects.values()].map((held) => reading(held)) }];
+    }
     return [404, { error: 'not found' }];
   }
 
@@ -387,6 +390,15 @@ function validated(fixture) {
  * unchanged and only an assertion about what is on screen notices. That is why the checks name
  * values (`Waiting on approval`) and not just shapes.
  */
+function reading(project) {
+  return {
+    path: project.path,
+    at: Date.now(),
+    stack: ['Next.js', 'Node'],
+    git: { branch: 'feat/smoke', ahead: 2, behind: 0, dirty: 3, conflicts: 0 },
+  };
+}
+
 function countChecks(fixture) {
   const details = Object.entries(fixture.details).flatMap(([id, detail]) => {
     const parsed = parseSessionDetail(detail);

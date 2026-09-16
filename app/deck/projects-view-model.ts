@@ -9,6 +9,14 @@
 // **The sentences say what to do, not what happened.** "That folder is not there" is a typo the
 // owner fixes in two seconds; "that is a Claude Code config directory" is a rule they need to know
 // once. A refusal that only restated its own code would be the code, spelled longer.
+//
+// **Turning a git reading into a phrase is the same kind of decision** (P3-T2). Core answers with
+// numbers — `dirty: 3`, `ahead: 2` — because a number is something both ends can reason about, and
+// "3 changed · 2 ahead" is English that belongs where the reader is. `clean` is the case worth
+// naming: a repository with nothing in any of the four counts says so out loud rather than
+// rendering an empty space that reads as "not loaded yet".
+import type { GitStatus } from '../../contracts/git-status.ts';
+import type { ProjectStatus, StackLabel } from '../../contracts/project-status.ts';
 import type { ImportRefusal, ProjectRecord } from '../../contracts/project.ts';
 import { projectKey } from '../../contracts/project.ts';
 
@@ -33,7 +41,21 @@ export interface ProjectLine {
   readonly name: string;
   readonly path: string;
   readonly importedAt: number;
+  /** The detected stack, already in display order. Empty for a folder with no marker. */
+  readonly stack: readonly StackLabel[];
+  /**
+   * The branch, or `undefined` for a detached HEAD, a folder that is not a repository, and one
+   * whose reading has not arrived yet. A panel draws nothing for all four.
+   */
+  readonly branch: string | undefined;
+  /** `clean`, or what is outstanding — `3 changed · 2 ahead`. `undefined` when there is no git. */
+  readonly gitSummary: string | undefined;
+  /** `merging`, `rebasing` … when git is mid-operation. It changes what every other count means. */
+  readonly progress: string | undefined;
 }
+
+/** What a repository with nothing outstanding says. Named, because blank would read as unread. */
+const CLEAN = 'clean';
 
 /**
  * What to say when nothing has been imported.
@@ -51,19 +73,40 @@ export class ProjectsViewModel {
 
   private readonly projects: readonly ProjectRecord[];
   private readonly refusal: ImportRefusal | undefined;
+  private readonly statuses: Readonly<Record<string, ProjectStatus>>;
 
-  constructor(projects: readonly ProjectRecord[], refusal: ImportRefusal | undefined) {
+  constructor(
+    projects: readonly ProjectRecord[],
+    refusal: ImportRefusal | undefined,
+    statuses: Readonly<Record<string, ProjectStatus>> = {},
+  ) {
     this.projects = projects;
     this.refusal = refusal;
+    this.statuses = statuses;
   }
 
+  /**
+   * The rows, each with whatever reading has arrived for it.
+   *
+   * The registry drives the list and the readings only annotate it — a status for a folder that is
+   * no longer imported draws nothing, because there is no row to draw it on. That is the right way
+   * round: the record is the permission, and the reading is a comment on it.
+   */
   public get lines(): readonly ProjectLine[] {
-    return this.projects.map((project) => ({
-      key: projectKey(project.path),
-      name: project.name,
-      path: project.path,
-      importedAt: project.importedAt,
-    }));
+    return this.projects.map((project) => {
+      const key = projectKey(project.path);
+      const git = this.statuses[key]?.git;
+      return {
+        key,
+        name: project.name,
+        path: project.path,
+        importedAt: project.importedAt,
+        stack: this.statuses[key]?.stack ?? [],
+        branch: git?.branch,
+        gitSummary: git === undefined ? undefined : summarise(git),
+        progress: git?.progress,
+      };
+    });
   }
 
   public get isEmpty(): boolean {
@@ -74,4 +117,32 @@ export class ProjectsViewModel {
   public get problem(): string | undefined {
     return this.refusal === undefined ? undefined : SENTENCES[this.refusal];
   }
+}
+
+/**
+ * The four counts as a phrase, in the order somebody acts on them.
+ *
+ * Conflicts first because a conflict blocks everything else, then the working tree, then the two
+ * halves of the divergence. Each part is omitted when it is zero rather than printed as `0`, which
+ * is what keeps the usual case to two words instead of four zeroes.
+ */
+function summarise(git: GitStatus): string {
+  const parts = [
+    counted(git.conflicts, 'conflict', 'conflicts'),
+    counted(git.dirty, 'changed', 'changed'),
+    counted(git.ahead, 'ahead', 'ahead'),
+    counted(git.behind, 'behind', 'behind'),
+  ].filter((part): part is string => part !== undefined);
+  return parts.length === 0 ? CLEAN : parts.join(' · ');
+}
+
+/**
+ * `2 conflicts`, or nothing at all when the count is zero.
+ *
+ * Both words are given rather than an `s` appended, because three of the four do not take one —
+ * "2 changeds" is the bug that rule would write.
+ */
+function counted(count: number, one: string, many: string): string | undefined {
+  if (count <= 0) return undefined;
+  return `${String(count)} ${count === 1 ? one : many}`;
 }

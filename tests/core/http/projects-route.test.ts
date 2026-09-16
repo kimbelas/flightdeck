@@ -1,4 +1,4 @@
-// The three project routes — P3-T1, SEC-FS-1.
+// The four project routes — P3-T1 and P3-T2, SEC-FS-1.
 //
 // Each is tested against its own one-method interface rather than a `ProjectRegistry`, which is
 // what those interfaces are for: proving that a body with no `path` never reaches an importer
@@ -7,7 +7,9 @@ import { describe, expect, it } from 'vitest';
 import type { ImportRefusal, ProjectRecord } from '../../../contracts/project.ts';
 import { ForgetProjectRoute } from '../../../core/http/forget-project-route.ts';
 import { ImportProjectRoute } from '../../../core/http/import-project-route.ts';
+import { ProjectStatusRoute } from '../../../core/http/project-status-route.ts';
 import { ProjectsRoute } from '../../../core/http/projects-route.ts';
+import type { ProjectStatus } from '../../../contracts/project-status.ts';
 import type { RequestFacts } from '../../../core/http/loopback-guard.ts';
 import { err, ok, type Result } from '../../../core/shared/result.ts';
 
@@ -160,5 +162,41 @@ describe('ForgetProjectRoute', () => {
 
     expect(new ForgetProjectRoute(forgetter).handle(FACTS, '{}').status).toBe(400);
     expect(forgetter.asked).toEqual([]);
+  });
+});
+
+describe('ProjectStatusRoute', () => {
+  const READING: ProjectStatus = {
+    path: PATH,
+    at: 1_700_000_000_000,
+    stack: ['Next.js', 'Node'],
+    git: { branch: 'main', ahead: 0, behind: 0, dirty: 2, conflicts: 0, progress: undefined },
+  };
+
+  it('is a GET on its own literal path, beside the registry rather than inside it', () => {
+    // Its own path because the costs differ: listing the registry opens nothing, and this may
+    // spawn a `git` per project.
+    const route = new ProjectStatusRoute({ readAll: () => Promise.resolve([]) });
+
+    expect([route.method, route.path]).toEqual(['GET', '/projects/status']);
+  });
+
+  it('answers every reading in one reply, wrapped in an object', async () => {
+    // Wrapped for the reason `ProjectsRoute` gives: a top-level array cannot grow a field.
+    const route = new ProjectStatusRoute({ readAll: () => Promise.resolve([READING]) });
+
+    expect(await route.handle()).toEqual({ status: 200, body: { statuses: [READING] } });
+  });
+
+  it('answers an empty list on a machine that has imported nothing', async () => {
+    const route = new ProjectStatusRoute({ readAll: () => Promise.resolve([]) });
+
+    expect(await route.handle()).toEqual({ status: 200, body: { statuses: [] } });
+  });
+
+  it('spends the control budget and needs the token, like every other project route', () => {
+    const route = new ProjectStatusRoute({ readAll: () => Promise.resolve([]) });
+
+    expect([route.limit, route.credential]).toEqual(['control', 'token']);
   });
 });

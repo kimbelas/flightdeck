@@ -129,7 +129,7 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
   const audit = new AuditLog(store, clock, logger);
   // Built before the server binds, because an imported root is a security input: a route that
   // could be reached while the registry was still empty would refuse a project the owner has.
-  const projects = projectRoutes({ install, store, audit, clock, logger });
+  const projects = projectRoutes({ install, store, audit, runner, clock, logger });
   const version = readVersion();
   const http = buildHttp({
     guard: buildGuard(token, ingestKey),

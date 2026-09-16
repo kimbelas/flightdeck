@@ -9,26 +9,38 @@
 // the domain or the application layer: `realpath` is a syscall, the rule it feeds is pure string
 // work, and the seam between them is exactly here (CODING-STANDARDS §2).
 //
-// **Nothing here reads a project.** The registry ships empty (D26), and until the owner imports a
-// folder in the deck there is no root, no widened `ReadPolicy` and nothing on disk for P3-T3 to
-// open. That is the design and not a gap.
+// **P3-T2 is the first task that reads INSIDE one**, and it is still this file that says where.
+// `ProjectStatusReader` and `GitDirectoryLocator` are built here, against the same registry
+// instance the three original routes share, because a second one would hold a second copy of the
+// roots — and "which folders may be read" is not a question two objects may answer differently.
+// They are built HERE rather than handed the registry from `main.ts`, which is the same division
+// `reads.ts` made: a slice that owns a registry owns what is built on it, and `main.ts` has a line
+// limit it already reached once.
 import { ProjectRegistry } from './application/project-registry.ts';
+import { GitDirectoryLocator } from './application/git-directory-locator.ts';
+import { ProjectGitReader } from './application/project-git-reader.ts';
+import { ProjectStatusReader } from './application/project-status-reader.ts';
 import type { AuditLog } from './application/audit-log.ts';
 import { FsPathCanonicaliser } from './adapters/node/fs-path-canonicaliser.ts';
+import { FsProjectFiles } from './adapters/node/fs-project-files.ts';
 import type { ClaudeInstall } from './adapters/claude-cli/claude-install.ts';
 import { SUBSCRIPTION_IDS } from '../contracts/session.ts';
 import { ForgetProjectRoute } from './http/forget-project-route.ts';
 import { ImportProjectRoute } from './http/import-project-route.ts';
+import { ProjectStatusRoute } from './http/project-status-route.ts';
 import { ProjectsRoute } from './http/projects-route.ts';
 import type { Route } from './http/route.ts';
 import type { Clock } from './ports/clock.ts';
 import type { Logger } from './ports/logger.ts';
+import type { ProcessRunner } from './ports/process-runner.ts';
 import type { Store } from './ports/store.ts';
 
 export interface ProjectParts {
   readonly install: ClaudeInstall;
   readonly store: Store;
   readonly audit: AuditLog;
+  /** The same runner the session sweep uses — `git -C <root> status` is one more argv (P3-T2). */
+  readonly runner: ProcessRunner;
   readonly clock: Clock;
   readonly logger: Logger;
 }
@@ -54,15 +66,17 @@ export function buildProjectRegistry(parts: ProjectParts): ProjectRegistry {
 }
 
 /**
- * The three routes over one registry, as a list `main.ts` can spread into the router.
+ * The four routes over one registry, as a list `main.ts` can spread into the router.
  *
  * Here rather than in `main.ts` for a reason that is more than tidiness: the router table is the
  * one list in the composition root that grows with every phase, and `main.ts` reached its line
- * limit adding these three. A slice that owns a registry may as well own the routes onto it, which
- * is the same division `feeds.ts` made for the stream route.
+ * limit adding the first three. A slice that owns a registry may as well own the routes onto it,
+ * which is the same division `feeds.ts` made for the stream route.
  *
- * One registry for all three, deliberately: a second would hold a second copy of the roots, and
- * "which folders may be read" is not a question two objects may answer differently.
+ * One registry for all four, deliberately: a second would hold a second copy of the roots, and
+ * "which folders may be read" is not a question two objects may answer differently. That is also
+ * why `ProjectStatusReader` is assembled here — it needs `resolve`, and the only correct answer to
+ * "which resolve" is "the one the import route wrote to".
  */
 export function projectRoutes(parts: ProjectParts): readonly Route[] {
   const registry = buildProjectRegistry(parts);
@@ -70,5 +84,32 @@ export function projectRoutes(parts: ProjectParts): readonly Route[] {
     new ProjectsRoute(registry),
     new ImportProjectRoute(registry),
     new ForgetProjectRoute(registry),
+    new ProjectStatusRoute(buildStatusReader(registry, parts)),
   ];
+}
+
+/**
+ * Stack and git for every imported folder (P3-T2).
+ *
+ * The one `ProjectFiles` is shared by the locator and the two readers, which is not an
+ * optimisation — it is a stateless adapter over `node:fs`, and a second would only be a second
+ * thing to keep in step if it ever grows a cache.
+ */
+function buildStatusReader(registry: ProjectRegistry, parts: ProjectParts): ProjectStatusReader {
+  const files = new FsProjectFiles();
+  const locator = new GitDirectoryLocator(registry, files, parts.logger);
+  return new ProjectStatusReader({
+    registry,
+    git: new ProjectGitReader({
+      paths: registry,
+      locator,
+      files,
+      runner: parts.runner,
+      clock: parts.clock,
+      logger: parts.logger,
+    }),
+    files,
+    clock: parts.clock,
+    logger: parts.logger,
+  });
 }

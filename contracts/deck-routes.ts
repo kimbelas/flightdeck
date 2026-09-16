@@ -112,3 +112,18 @@ export const CORE_PROJECTS_PATH = `${CORE_PREFIX}projects`;
  * that route's header for why that trade is the right way round.
  */
 export const CORE_PROJECT_FORGET_PATH = `${CORE_PROJECTS_PATH}/forget`;
+
+/**
+ * What each imported folder looks like right now — `GET`, P3-T2.
+ *
+ * Its own path rather than a field on `CORE_PROJECTS_PATH`'s answer, because the two have
+ * different costs and different lifetimes. Listing the registry opens nothing and is read from
+ * memory; this one stats a git directory and may spawn `git`, and a panel that paid for that every
+ * time it redrew the list of folders would be the wrong trade for a list that changes when a
+ * person types in a box.
+ *
+ * All of them in one request rather than one request per project: the deck draws every row at
+ * once, core caches each project's reading separately anyway, and N round trips through the
+ * rewrite for a list of four would be three more than are needed.
+ */
+export const CORE_PROJECT_STATUS_PATH = `${CORE_PROJECTS_PATH}/status`;

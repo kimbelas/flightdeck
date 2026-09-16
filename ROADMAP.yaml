@@ -1575,7 +1575,61 @@ phases:
         security: [SEC-FS-1]
       - id: P3-T2
         title: Stack and git detection (branch, dirty, ahead/behind) lifted from statusline.py's cached approach
-        status: todo
+        status: done
+        done_on: 2026-09-16
+        deliverables:
+          [
+            contracts/git-status.ts,
+            contracts/project-status.ts,
+            contracts/windows-path.ts,
+            core/ports/project-files.ts,
+            core/adapters/node/fs-project-files.ts,
+            core/application/signature-cache.ts,
+            core/application/git-directory-locator.ts,
+            core/application/project-git-reader.ts,
+            core/application/project-status-reader.ts,
+            core/application/project-registry.ts,
+            core/http/project-status-route.ts,
+            core/projects.ts,
+            app/deck/deck-state.ts,
+            app/deck/deck-store.ts,
+            app/deck/projects-view-model.ts,
+            app/deck/projects-panel.tsx,
+            DECISIONS.md D37,
+            RESEARCH.md G.26,
+          ]
+        notes: >-
+          SPEC §5.1's last two rows, and statusline.py is the design rather than the inspiration.
+          What was lifted is the CACHE SHAPE: a value is recomputed when its signature moved OR its
+          TTL lapsed, where the signature is mtime(.git/HEAD)/mtime(.git/index) and the TTL is 4 s
+          for git and 300 s for the stack. The signature makes reuse correct — a commit, checkout,
+          stage or merge moves one of those two mtimes, so "nothing happened" is provable rather
+          than assumed — and the TTL covers the change it cannot see, which is an edit to a tracked
+          file. One spawn answers branch, ahead/behind, dirty and conflicts
+          (`git status --porcelain=v2 --branch -uno`); merge/rebase/cherry-pick/bisect state is read
+          as the presence of a file in the git directory with NO spawn, which is also what makes it
+          worktree-safe. `git -C <root>` rather than a cwd, so ProcessRunner is unchanged and
+          SEC-PROC-1 still covers the whole argv; the child gets an empty environment and still
+          finds git, because execFile resolves through the parent's PATH.
+          `GitDirectoryLocator` is statusline.py's `git_dir()` plus a screen: it climbs for `.git`,
+          handles the case where it is a FILE containing `gitdir: <path>` (a linked worktree, forward
+          slashes and all), and every candidate goes through `ProjectRegistry.resolve` — so P3-T4
+          inherits the walk rather than writing a second one.
+          DECISIONS.md D37 is what this task decided and BUILD-PLAN §3 sketched otherwise: stack and
+          git are a COMPUTED WIRE TYPE on their own route, not fields on `ProjectRecord`. A record
+          is a standing permission that survives a restart; this is a reading taken a moment ago,
+          and nothing here goes in the store.
+          RESEARCH.md G.26 is the seventh entry in that section and the reason the standing lesson
+          is standing: every imported project reported an empty stack past 1 550 green tests and 108
+          green smoke checks, because `resolve` answers "may core OPEN this file" and refuses a
+          directory outright. `ProjectRegistry.resolveRoot` is the second door — canonicalise, then
+          check MEMBERSHIP of the registry, which keeps the junction defence — and `ReadPolicy` was
+          not loosened. The fakes could not have caught it: they screened a root by containment,
+          which is true of a root against itself.
+          Shipped with the deck showing it, deliberately rather than leaving it for P3-T3: a core
+          route nobody draws is a route nobody has run. Verified live against claude-kit (no stack
+          markers, `master`, clean) and flightdeck (Next.js · Node, its own branch, 18 changed).
+        security: [SEC-FS-1, SEC-PROC-1]
       - id: P3-T3
         title: Workflow-map readers — instruction stack, agents, commands, skills, hook timeline, MCP, plugins, permissions, rules/specs/state
         status: todo
