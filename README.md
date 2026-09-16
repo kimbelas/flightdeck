@@ -64,9 +64,17 @@ Core alone, without the deck or a browser:
 node scripts/flightdeck-core.ts     # binds 127.0.0.1:4950, prints the token path
 ```
 
-`tests/e2e/deck-pane.spec.mjs` drives a real browser against a real core and is **not** part of
-`npm run check` — it needs core running and a live background session. P2-T7 replaces it with a
-Playwright smoke against a fixture stream that CI can run.
+The deck's own gate is separate, because it needs a build and a browser rather than a test runner:
+
+```
+npm run build && npm run smoke     # 87 checks, real production build, fixture core
+```
+
+It starts nothing you own. A fixture core runs in-process and speaks core's HTTP surface and PTY
+protocol with an echo behind the socket, so there is no real core, no Claude session and no ConPTY —
+and the token file goes to a temp directory, never `%LOCALAPPDATA%\flightdeck` (DECISIONS.md D35).
+Everything in front of the wire is real, including the production build, because `next dev` renders
+the deck and never hydrates (RESEARCH.md G.3) — which is the failure the smoke exists to catch.
 
 Branch from `main` as `feat/P1-T4-short-name`, commit with the task id
 (`feat(core): reconciler sweep [P1-T4]`), open a PR — the template carries the checklist.

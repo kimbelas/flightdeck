@@ -743,3 +743,52 @@ absent; `connect` exists but as a CLI whose whole point is a dry run, a diff and
 opt-in (P1-T11, SEC-ING-3), and a palette entry that performed that write on one keypress would
 defeat every control the task put around it. A palette entry that does nothing is worse than an
 absent one: the first no-op teaches you not to trust the entries beside it.
+
+## D35 — the deck's CI gate runs the real build against a fixture core, not a mocked browser (decided 2026-09-16, P2-T7)
+
+The deck had no automated check that it WORKS. 1290 unit tests and a coverage gate cover `core/`,
+`contracts/` and `scripts/`; `app/**` is deliberately not in `coverage.include`, because the store,
+the view models and the keymap are all tested without a DOM and that is what makes them testable at
+all. What none of them can observe is the failure this project keeps meeting: a page that renders,
+never hydrates, and passes everything (RESEARCH.md G.3, F.5.1). Six of the bugs in §G were found by
+running the thing, and until now "running the thing" meant a person.
+
+**The assertions were never the hard part.** PR #20 had already driven thirty of them through a
+throwaway probe against a real core. The question was what CI starts, and there were three answers.
+
+**Rejected: `page.route()` interception.** Fulfilling `/api/core/*` and `/api/stream` in the browser
+needs no server at all, and that is precisely the objection — it fakes on the far side of every
+layer that has actually broken here. `proxy.ts`'s per-request nonce, the rewrite's bearer, the
+stream route's `accept-encoding: identity` and `no-transform` legs are all upstream of the point
+where a route handler answers, so a smoke built this way would have caught none of G.3, G.6, G.7 or
+F.6.3. It also cannot stream: `route.fulfill` delivers a complete body and closes, so the "live
+feed" would arrive as one batch followed by the store's reconnect loop.
+
+**Rejected: a fixture mode inside core.** It would put a test-only branch in the process that owns
+the PTYs and writes the token — the one process where a wrong branch costs the owner a session —
+and it would drag sqlite, node-pty and `claude.exe` onto a runner that has none of them.
+
+**Decided: the real production build, served by real `next start`, against a fixture core.** The
+double speaks core's HTTP surface (`/sessions`, `/session`, `/stream`, `/pty-ticket`, `/health`) and
+core's PTY protocol, authenticates every route with a per-boot bearer exactly as core does, and has
+an echo behind the WebSocket instead of `claude attach`. Everything in front of the wire is the real
+thing. What is lost is the one thing a runner cannot have — a real Claude session painting in a real
+ConPTY — and the `run` skill is still where that is checked.
+
+Three consequences worth naming:
+
+- **It runs in the smoke's own process, not as a child.** So there is no control channel: publishing
+  a delta is a method call, and what core RECEIVED — the launch body, the bearer on each request,
+  which tickets were minted — is an array the checks read directly.
+- **The token file goes to a temp directory**, with `FD_TOKEN_FILE` pointing both processes at it.
+  A smoke run cannot disturb a live core's token, which is the cost G.12 already paid once.
+- **The runner is hand-rolled rather than `@playwright/test`.** The thing under test is one page
+  driven through a sequence — `j` moves focus, `Enter` expands what `j` focused, `/` filters what
+  `Enter` left open — so a runner whose unit is an isolated test would either re-navigate per
+  assertion or hold the shared state it exists to prevent. It also keeps a second test runner and a
+  config file that neither TypeScript project can own cleanly out of the repo. The cost is about
+  forty lines of scoreboard.
+
+**The job is advisory on the day it lands.** `main`'s ruleset has an empty bypass list (D25) and
+requires four checks; a new one is not enforced until it is added to that list, which is a
+repository-settings change and not a file in this PR.

@@ -16,6 +16,7 @@
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "test:win": "vitest run tests/win --passWithNoTests --coverage.enabled=false",
+    "smoke": "node tests/e2e/smoke.mjs",
     "roadmap": "node scripts/roadmap-cli.ts",
     "status": "node scripts/flightdeck-core.ts status",
     "doctor": "node scripts/doctor-cli.ts",

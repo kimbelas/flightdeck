@@ -1447,7 +1447,41 @@ phases:
           note it in the README rather than letting the next person rediscover it.
       - id: P2-T7
         title: Playwright smoke against a fixture SSE stream
-        status: todo
+        status: done
+        done_on: 2026-09-16
+        deliverables:
+          [
+            tests/e2e/smoke.mjs,
+            tests/e2e/fixture-core.mjs,
+            tests/e2e/fixtures/deck.json,
+            tests/e2e/smoke/deck-checks.mjs,
+            tests/e2e/smoke/keyboard-checks.mjs,
+            tests/e2e/smoke/pane-checks.mjs,
+            tests/e2e/smoke/security-checks.mjs,
+            .github/workflows/ci.yml,
+            DECISIONS.md D35,
+            RESEARCH.md G.22,
+          ]
+        notes: >-
+          DECISIONS.md D35. The hard question was never what to assert — PR #20 had already written
+          the list — it was what CI starts. `flightdeck.cmd` starts a real core, a real Claude
+          session and an Edge window, and a runner has none of those; `next dev` renders and never
+          hydrates (G.3), so the dev server was not an option either. Decided: the real PRODUCTION
+          build served by real `next start`, against a fixture core that speaks core's HTTP surface
+          and core's PTY protocol and owns no PTY. Every layer that has ever broken here — the
+          proxy's per-request nonce, the rewrite's bearer, the stream route's no-transform — is the
+          real one; only the far end of the wire is fixture. `page.route()` interception was
+          rejected because it fakes on the far side of exactly those layers and cannot stream SSE
+          at all, and a fixture mode inside core was rejected because it would put a test-only
+          branch in the process that owns the PTYs. 87 checks: hydration, the seven rows and their
+          order, both quota gauges off the replayed frame, expand/collapse, `/`, upsert and gone
+          deltas, the unreadable banner, launch, j/k/Enter/?/Ctrl+K, `jjkk//??` reaching an echo
+          shell intact through a real ticket and a real WebSocket, and the token appearing in none
+          of the 42 responses the page was served. The fixture is hand-written — a DeckSnapshot is
+          Flightdeck's own wire format, so there is nothing to capture and nothing to scrub — and
+          the fixture core refuses to boot on one the real parsers would thin (G.22). **The job is
+          advisory until it is added to main's ruleset**, which has an empty bypass list (D25) and
+          today requires four checks that do not include it.
 
   - id: P3
     name: Projects and the workflow map

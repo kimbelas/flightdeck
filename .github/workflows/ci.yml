@@ -100,6 +100,60 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: '1'
 
+  smoke:
+    name: Deck smoke (Playwright, fixture core)
+    runs-on: ubuntu-latest
+    needs: quality
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - run: npm ci
+
+      # Keyed on the resolved Playwright version, not on the range in package.json: a bump must
+      # miss the cache, because a browser build is pinned to the library that drives it.
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        id: browser-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      # `--with-deps` runs either way: the apt libraries are the runner's, not the cache's, and a
+      # cache hit only skips the ~50 MB download.
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # The production build, because `next dev` renders the deck and never hydrates (G.3) — which
+      # is precisely what this job exists to catch, so running it against dev would be circular.
+      - name: Build the deck
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+
+      # No core, no Claude Code, no ConPTY: the fixture core is in-process and the token file goes
+      # to a temp directory (tests/e2e/fixture-core.mjs, DECISIONS.md D35).
+      - name: Smoke
+        run: npm run smoke
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: smoke-screenshot
+          path: smoke.png
+          if-no-files-found: ignore
+          retention-days: 7
+
   security:
     name: Audit · signatures · secrets · dependency review
     runs-on: ubuntu-latest
