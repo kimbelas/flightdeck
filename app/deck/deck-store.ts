@@ -27,7 +27,18 @@
 // exactly that: the route handler answers 503 (RESEARCH.md F.6.7). Since core restarting is an
 // ordinary event on this machine (F.3.3), a deck that stopped retrying would be a deck that needs
 // a page reload every time. One path for both cases: close, wait, reopen.
-import { CORE_SESSION_PATH, CORE_SESSIONS_PATH } from '../../contracts/deck-routes.ts';
+import {
+  CORE_PROJECT_FORGET_PATH,
+  CORE_PROJECTS_PATH,
+  CORE_SESSION_PATH,
+  CORE_SESSIONS_PATH,
+} from '../../contracts/deck-routes.ts';
+import {
+  parseImportRefusal,
+  parseProjectList,
+  type ImportRefusal,
+  type ProjectRecord,
+} from '../../contracts/project.ts';
 import {
   parseLaunchAccepted,
   parseLaunchFailure,
@@ -65,6 +76,16 @@ export interface DeckState {
    * which is what draws the spinner; a key absent means nobody asked.
    */
   readonly details: Readonly<Record<string, SessionDetail | undefined>>;
+  /**
+   * The imported projects, newest first — P3-T1.
+   *
+   * Empty is the honest starting state and stays empty until the owner imports something: the
+   * registry ships empty and nothing scans the disk (DECISIONS.md D26). Fetched rather than
+   * streamed, because only a person sitting here can change it.
+   */
+  readonly projects: readonly ProjectRecord[];
+  /** Why the last import was refused, as core's code. `undefined` once one succeeds. */
+  readonly importRefusal: ImportRefusal | undefined;
   readonly coreUp: boolean;
   readonly loading: boolean;
   readonly error: string | undefined;
@@ -103,6 +124,8 @@ const EMPTY: DeckState = {
   unreadable: [],
   quota: undefined,
   details: {},
+  projects: [],
+  importRefusal: undefined,
   coreUp: false,
   loading: false,
   error: undefined,
@@ -249,6 +272,54 @@ export class DeckStore {
     // session id that says which row it belongs to.
     if (detail?.sessionId !== ref.sessionId) return;
     this.setDetail(key, detail);
+  }
+
+  /**
+   * Re-reads the project registry — P3-T1.
+   *
+   * Called once when the deck mounts and after every import or withdrawal, rather than polled: the
+   * registry moves only when somebody uses this page, so there is nothing to discover on a timer.
+   *
+   * A reply that cannot be read leaves the held list alone rather than emptying it. An empty
+   * registry is a real and ordinary state (D26), so rendering one because a request failed would
+   * tell the owner their projects are gone.
+   */
+  public async loadProjects(): Promise<void> {
+    const reply = await this.api.get(CORE_PROJECTS_PATH);
+    if (reply?.status !== 200) return;
+    this.set({ projects: parseProjectList(reply.body) });
+  }
+
+  /**
+   * Imports one folder by path — the owner's deliberate act (DECISIONS.md D26).
+   *
+   * @returns whether it was imported. The refusal, when there is one, goes into `importRefusal`
+   * for `ProjectsViewModel` to put into English — it is core's own closed union, not a sentence
+   * core composed, so nothing displayed here came from the request.
+   */
+  public async importProject(path: string): Promise<boolean> {
+    this.set({ importRefusal: undefined });
+    const reply = await this.api.post(CORE_PROJECTS_PATH, { path });
+    if (reply?.status === 201) {
+      await this.loadProjects();
+      return true;
+    }
+    // `undefined` for a request that reached nobody, and for a 400 carrying a code this build does
+    // not know — both render as the generic sentence rather than as silence.
+    this.set({ importRefusal: parseImportRefusal(reply?.body) ?? 'empty' });
+    return false;
+  }
+
+  /**
+   * Withdraws one folder, taking the read permission with it.
+   *
+   * The list is re-read rather than filtered locally: what the registry holds is core's answer,
+   * and a deck that removed the row itself would be guessing at the outcome of a write.
+   */
+  public async forgetProject(path: string): Promise<void> {
+    const reply = await this.api.post(CORE_PROJECT_FORGET_PATH, { path });
+    if (reply === undefined) return;
+    await this.loadProjects();
   }
 
   /** Drops one detail, on collapse. See `expand` for why nothing is kept. */

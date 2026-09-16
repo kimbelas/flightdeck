@@ -61,6 +61,27 @@ export const MIGRATIONS: readonly string[] = [
   -- Descending, because the only query is "the most recent N for this session".
   CREATE INDEX vitals_by_session ON vitals_snapshots (session_id, id DESC);
   `,
+  // 3 — the project registry: which folders the owner imported (P3-T1, D26, SEC-FS-1).
+  //
+  // **The only table here that is not a log.** Everything above is append-only observation; a row
+  // in this one is a standing permission — it is what widens `ReadPolicy`'s allowlist — so it can
+  // be removed, and removing it has to actually take the permission away. Hence a primary key
+  // rather than an autoincrementing id: the key is the folder, and importing the same folder twice
+  // is the same project rather than a second row that outlives forgetting the first.
+  //
+  // **Two columns for one path, and neither is redundant.** `path_key` is the comparison form
+  // (`projectKey`: separators folded, lowercased) and is what every lookup and every join uses;
+  // `path` is what `realpath` returned, in the filesystem's own casing, and is what goes on screen
+  // — `c:\users\belas\documents\development\app-next` is not how anybody reads a path. Deriving
+  // one from the other at read time would mean a query that cannot use the key.
+  `
+  CREATE TABLE projects (
+    path_key    TEXT PRIMARY KEY,
+    path        TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    imported_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 /**

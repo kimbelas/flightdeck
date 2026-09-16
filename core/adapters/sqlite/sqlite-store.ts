@@ -17,9 +17,10 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { AuditRow, DraftAuditRow } from '../../../contracts/audit-row.ts';
 import type { DraftEvent, FdEvent } from '../../../contracts/fd-event.ts';
+import { projectKey, type ProjectRecord } from '../../../contracts/project.ts';
 import type { DraftVitalsSnapshot, VitalsSnapshot } from '../../../contracts/vitals-snapshot.ts';
 import type { Store } from '../../ports/store.ts';
-import { asRecord, toAudit, toEvent, toSnapshot } from './rows.ts';
+import { asRecord, toAudit, toEvent, toProject, toSnapshot } from './rows.ts';
 import { MIGRATIONS, PRAGMAS } from './schema.ts';
 
 /**
@@ -37,6 +38,39 @@ export interface TruncatedPayload {
   readonly chars: number;
 }
 
+/** The project registry's statements — P3-T1. See the field they are held in. */
+interface ProjectStatements {
+  readonly upsert: StatementSync;
+  readonly selectAll: StatementSync;
+  readonly selectOne: StatementSync;
+  readonly remove: StatementSync;
+}
+
+/**
+ * The one UPSERT in the file, and three around it.
+ *
+ * The reason for `ON CONFLICT` is in the port: a project is keyed by its folder, so re-importing
+ * one has to be the same row. `DO UPDATE` rather than `DO NOTHING`, and `imported_at` deliberately
+ * left out of the update — the path and the name are re-displayed in whatever casing the
+ * filesystem now uses, while "when did I add this" survives, because a second click on the same
+ * folder is not a second decision.
+ *
+ * `selectAll` orders newest first, then by key, so two folders imported in the same millisecond
+ * still have an order: a list that reshuffles between reads is one the deck cannot key a React row
+ * from.
+ */
+function prepareProjectStatements(db: DatabaseSync): ProjectStatements {
+  return {
+    upsert: db.prepare(
+      `INSERT INTO projects (path_key, path, name, imported_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(path_key) DO UPDATE SET path = excluded.path, name = excluded.name`,
+    ),
+    selectAll: db.prepare(`SELECT * FROM projects ORDER BY imported_at DESC, path_key`),
+    selectOne: db.prepare(`SELECT * FROM projects WHERE path_key = ?`),
+    remove: db.prepare(`DELETE FROM projects WHERE path_key = ?`),
+  };
+}
+
 export class SqliteStore implements Store {
   private readonly db: DatabaseSync;
   private readonly insertEvent: StatementSync;
@@ -46,6 +80,14 @@ export class SqliteStore implements Store {
   private readonly selectAudit: StatementSync;
   private readonly insertSnapshot: StatementSync;
   private readonly selectSnapshots: StatementSync;
+  /**
+   * The registry's four, grouped — P3-T1.
+   *
+   * One field rather than four beside the others, because the constructor has a forty-line limit
+   * and because these differ in kind from everything above: the logs are append-and-page, while
+   * this table is keyed, upserted and deleted from. Grouping them says which is which.
+   */
+  private readonly projectRows: ProjectStatements;
 
   /**
    * Opens (and creates) the store, applying any migrations it is behind on.
@@ -92,6 +134,7 @@ export class SqliteStore implements Store {
     this.selectSnapshots = this.db.prepare(
       `SELECT * FROM vitals_snapshots WHERE session_id = ? ORDER BY id DESC LIMIT ?`,
     );
+    this.projectRows = prepareProjectStatements(this.db);
   }
 
   /** The schema version this file is at. `flightdeck-core status` prints it (P1-T12). */
@@ -151,6 +194,21 @@ export class SqliteStore implements Store {
 
   public snapshotsForSession(sessionId: string, limit: number): readonly VitalsSnapshot[] {
     return this.selectSnapshots.all(sessionId, capped(limit)).map(toSnapshot).reverse();
+  }
+
+  /** The row is read back rather than echoed: `imported_at` is not overwritten by a re-import. */
+  public rememberProject(project: ProjectRecord): ProjectRecord {
+    const key = projectKey(project.path);
+    this.projectRows.upsert.run(key, project.path, project.name, project.importedAt);
+    return toProject(this.projectRows.selectOne.get(key));
+  }
+
+  public projects(): readonly ProjectRecord[] {
+    return this.projectRows.selectAll.all().map(toProject);
+  }
+
+  public forgetProject(path: string): boolean {
+    return this.projectRows.remove.run(projectKey(path)).changes > 0;
   }
 
   /** Closes the handle. Idempotent, because shutdown is (main.ts `stopCore`). */

@@ -21,6 +21,8 @@ import { DeckHeader } from './deck-header.tsx';
 import { DeckStore, type DeckState } from './deck-store.ts';
 import { deckCommands, type DeckActions } from './deck-commands.ts';
 import { PaneGrid } from './pane-grid.tsx';
+import { ProjectsPanel } from './projects-panel.tsx';
+import { ProjectsViewModel } from './projects-view-model.ts';
 import { SessionList } from './session-list.tsx';
 import { SessionDetailViewModel } from './session-detail-view-model.ts';
 import { SessionRowViewModel } from './session-row-view-model.ts';
@@ -109,19 +111,27 @@ function DeckBody({
   const [search, setSearch] = useState('');
   return (
     <div className="deck-body">
-      <SessionList
-        rows={rows.filter((row) => row.matches(search))}
-        now={now}
-        loading={state.loading}
-        coreUp={state.coreUp}
-        search={search}
-        expanded={expanded}
-        details={detailViewModels(state.details)}
-        onSearch={setSearch}
-        onToggle={onToggle}
-        onLaunch={actions.onLaunch}
-        onOpen={actions.onOpenPane}
-      />
+      <div className="deck-left">
+        <ProjectsPanel
+          model={new ProjectsViewModel(state.projects, state.importRefusal)}
+          disabled={!state.coreUp}
+          onImport={actions.onImportProject}
+          onForget={actions.onForgetProject}
+        />
+        <SessionList
+          rows={rows.filter((row) => row.matches(search))}
+          now={now}
+          loading={state.loading}
+          coreUp={state.coreUp}
+          search={search}
+          expanded={expanded}
+          details={detailViewModels(state.details)}
+          onSearch={setSearch}
+          onToggle={onToggle}
+          onLaunch={actions.onLaunch}
+          onOpen={actions.onOpenPane}
+        />
+      </div>
       <PaneGrid panes={panes} onClose={onClosePane} />
     </div>
   );
@@ -171,6 +181,9 @@ function useDeckStore(): DeckStore {
 function useLiveStream(store: DeckStore): void {
   useEffect(() => {
     store.connect();
+    // The registry, once — it is not on the stream, because only somebody on this page can move it
+    // (P3-T1). Every later change re-reads it from the write that caused it.
+    void store.loadProjects();
     return () => {
       store.disconnect();
     };
@@ -230,7 +243,21 @@ function useDeckActions(store: DeckStore, openPane: (pane: OpenPane) => void): D
     void store.refresh();
   }, [store]);
 
-  return { onOpenShell, onOpenPane, onLaunch, onRefresh };
+  const onImportProject = useCallback(
+    (path: string) => {
+      void store.importProject(path);
+    },
+    [store],
+  );
+
+  const onForgetProject = useCallback(
+    (path: string) => {
+      void store.forgetProject(path);
+    },
+    [store],
+  );
+
+  return { onOpenShell, onOpenPane, onLaunch, onRefresh, onImportProject, onForgetProject };
 }
 
 interface ExpandedRows {

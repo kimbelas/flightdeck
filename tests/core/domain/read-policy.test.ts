@@ -62,10 +62,10 @@ describe('ReadPolicy — what SEC-FS-2 refuses', () => {
 });
 
 describe('ReadPolicy — everything else', () => {
-  it('refuses a path outside both config directories', () => {
+  it('refuses a path outside every root', () => {
     const refusal = policy().refusal('C:\\Users\\x\\.ssh\\id_rsa');
 
-    expect(refusal).toBe('outside both config directories');
+    expect(refusal).toBe('outside the config directories and every project');
   });
 
   it('refuses a sibling directory that merely starts like a config directory', () => {
@@ -132,5 +132,89 @@ describe('ReadPolicy — the job state file (P2-T4)', () => {
 
   it('refuses a job file under a directory that is not a config dir', () => {
     expect(policy().allows(`C:\\evil\\jobs\\cb5e8102\\state.json`)).toBe(false);
+  });
+});
+
+describe('ReadPolicy — imported project roots (P3-T1)', () => {
+  const PROJECT = 'C:\\Users\\x\\Documents\\development\\app-next';
+
+  function withProject(): ReadPolicy {
+    return new ReadPolicy([CFG, OTHER], [PROJECT]);
+  }
+
+  it('allows nothing under a project by default, because the registry ships empty (D26)', () => {
+    // The whole design in one assertion: a folder is readable because somebody imported it, and
+    // for no other reason. A policy that allowed a project nobody had named would be the bug.
+    expect(policy().allows(`${PROJECT}\\CLAUDE.md`)).toBe(false);
+  });
+
+  const allowed: readonly [string, string][] = [
+    ['CLAUDE.md', 'the instruction stack'],
+    ['.claude\\agents\\reviewer.md', 'the subagent roster'],
+    ['.claude\\settings.json', 'the hook timeline — a `.json`, deliberately'],
+    ['.mcp.json', 'the MCP servers — the other `.json`'],
+    ['package.json', 'the detected stack'],
+    ['.claude\\skills\\ship\\SKILL.md', 'a skill, however deep'],
+  ];
+
+  for (const [relative, what] of allowed) {
+    it(`allows ${relative} — ${what}`, () => {
+      expect(withProject().refusal(`${PROJECT}\\${relative}`)).toBeUndefined();
+    });
+  }
+
+  it('allows a `.json` under a project although SEC-FS-2 refuses one under a config dir', () => {
+    // The asymmetry is the design, not an oversight: the unlisted-`.json` rule guards a shape
+    // nobody has named yet, which is right for a program's private state and wrong for a
+    // repository whose `.mcp.json` is the reason it was imported at all.
+    expect(withProject().allows(`${PROJECT}\\.mcp.json`)).toBe(true);
+    expect(withProject().allows(`${CFG}\\statsig\\x.json`)).toBe(false);
+  });
+
+  const refused: readonly [string, string][] = [
+    ['secrets.key', 'a .key is never read, wherever it lives'],
+    ['.credentials.json', 'nor are credentials'],
+    ['deep\\nested\\id.key', 'and not by being buried'],
+  ];
+
+  for (const [relative, why] of refused) {
+    it(`refuses ${relative} under a project — ${why}`, () => {
+      expect(withProject().refusal(`${PROJECT}\\${relative}`)).toContain('SEC-FS-2');
+    });
+  }
+
+  it('refuses the project directory itself, which is not a file', () => {
+    expect(withProject().allows(PROJECT)).toBe(false);
+  });
+
+  it('refuses traversal out of a project root', () => {
+    const escape = `${PROJECT}\\..\\..\\..\\.claude-365\\daemon\\control.key`;
+
+    expect(withProject().refusal(escape)).toBe('contains .. after normalisation');
+  });
+
+  it('refuses a sibling directory that merely starts like the project', () => {
+    expect(withProject().allows(`${PROJECT}-old\\CLAUDE.md`)).toBe(false);
+  });
+
+  it('screens a config directory by the config rules even when a project root contains it', () => {
+    // The ordering that is doing security work. `ProjectImport` refuses this folder at import
+    // time; this asserts the second lock, so swapping the two branches for readability fails here.
+    const wide = new ReadPolicy([CFG, OTHER], ['C:\\Users\\x']);
+
+    expect(wide.allows(`${CFG}\\daemon\\control.key`)).toBe(false);
+    expect(wide.allows(`${CFG}\\statsig\\x.json`)).toBe(false);
+    expect(wide.allows(`${CFG}\\.credentials.json`)).toBe(false);
+    expect(wide.allows(`${CFG}\\CLAUDE.md`)).toBe(false);
+    // And the rest of the wide root is still a project, which is the other half of the ordering.
+    expect(wide.allows('C:\\Users\\x\\Documents\\notes.md')).toBe(true);
+  });
+
+  it('ignores an empty project root rather than opening the machine', () => {
+    expect(new ReadPolicy([CFG], ['']).allows('C:\\anything\\at\\all.md')).toBe(false);
+  });
+
+  it('does not care about separators or case here either', () => {
+    expect(withProject().allows('c:/USERS/x/Documents/development/APP-NEXT/CLAUDE.md')).toBe(true);
   });
 });

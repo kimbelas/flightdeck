@@ -18,9 +18,23 @@
 // adapter that owns it, and a policy that resolved paths itself would be a second opinion about
 // `realpath`.
 //
-// **Only the config directories.** SEC-FS-1 also allowlists imported project folders; nothing
-// reads one yet, and a rule for a caller that does not exist is a rule nobody can test. P3-T1 is
-// the task that adds them.
+// **Imported project folders are the second kind of root** (P3-T1, DECISIONS.md D26). They arrive
+// exactly as the config directories do — as canonical strings, from the composition that owns
+// `realpath` — and they carry a DIFFERENT rule set, which is the whole reason they are a separate
+// list rather than more entries in the first. Under a config directory everything is refused
+// unless it is named; under a project root everything is allowed unless the deny-list takes it.
+// That asymmetry is the point: `~/.claude-365` is a program's private state, while a project is
+// the owner's own repository, where `CLAUDE.md`, `.claude/agents/*.md` and `.mcp.json` are
+// precisely what P3-T3 is being built to read. What survives into project roots is the half of
+// SEC-FS-2 that is about secrets rather than about shape — `.key` and `.credentials*` — because a
+// repository can hold one of those too and nothing here should be the reason it is opened.
+//
+// **Config-directory rules are applied FIRST, whatever else contains the path.** Were a project
+// root ever to sit above a config directory, paths under that config directory would still be
+// screened as config-directory paths: a wider root cannot loosen a narrower rule. That is belt and
+// braces — `ProjectImport` refuses such a folder at import time — and it is spelled out because
+// the ordering is doing security work, and a later reader swapping these two branches for
+// readability would quietly open every transcript on the machine.
 //
 // **P2-T4 is the first task to need a `.json` whose path carries an id**, and it is worth saying
 // what did NOT happen. `jobs\<shortId>\state.json` answers "what does this session want from
@@ -29,6 +43,8 @@
 // SEC-FS-2 with value, since it is what makes the settings file of the NEXT Claude Code release
 // unreadable until a person decides otherwise, and widening it to a whole directory would have
 // traded that away for one filename's worth of convenience.
+
+import { canonicalWindowsPath, WINDOWS_SEPARATOR } from '../../contracts/windows-path.ts';
 
 /** Files allowlisted by name, relative to a config directory (SEC-FS-1). */
 const ALLOWED_FILES: readonly string[] = [
@@ -62,18 +78,21 @@ const ALLOWED_JSON: readonly string[] = ['settings.json', 'daemon\\roster.json']
  */
 const ALLOWED_JSON_PATTERNS: readonly string[] = ['jobs\\*\\state.json'];
 
-const SEPARATOR = '\\';
-
 export class ReadPolicy {
   private readonly roots: readonly string[];
+  private readonly projects: readonly string[];
 
   /**
    * @param configDirs the subscriptions' config directories, from `ClaudeInstall.configDirFor`.
    * Passed as data rather than as the adapter, for the reason `SubscriptionPaths` is: this stays
    * inward-pointing and testable without a filesystem.
+   * @param projectRoots the imported project folders, already canonicalised by `realpath` (P3-T1).
+   * Defaulted to none, so every construction that predates the registry keeps exactly the answers
+   * it had — and so a policy built before anything was imported is closed rather than open.
    */
-  constructor(configDirs: readonly string[]) {
-    this.roots = configDirs.filter((directory) => directory !== '').map(canonical);
+  constructor(configDirs: readonly string[], projectRoots: readonly string[] = []) {
+    this.roots = present(configDirs);
+    this.projects = present(projectRoots);
   }
 
   /** Whether core may open this path. */
@@ -87,37 +106,81 @@ export class ReadPolicy {
    * A reason rather than a boolean because both callers need one: the log line that says a payload
    * was ignored, and `doctor`, whose whole output is reasons. Deny rules are evaluated before
    * allow rules — fail closed (SECURITY.md §11 rule 6).
+   *
+   * @param path canonical already, where it names a real file. This class compares strings and
+   * cannot see a junction; resolving one is `ProjectRegistry.resolve`'s job (SEC-FS-1).
    */
   public refusal(path: string): string | undefined {
-    const relative = this.relativeTo(canonical(path));
-    if (relative === undefined) return 'outside both config directories';
-    if (relative === '') return 'the config directory itself is not a file';
-    if (relative.split(SEPARATOR).includes('..')) return 'contains .. after normalisation';
-    const denial = denied(relative);
-    if (denial !== undefined) return denial;
-    if (ALLOWED_FILES.includes(relative)) return undefined;
-    return allowedByDirectory(relative) ? undefined : 'not on the read allowlist (SEC-FS-1)';
+    const candidate = canonicalWindowsPath(path);
+    const relative = this.relativeTo(candidate, this.roots);
+    // The config-directory branch runs first whatever else contains the path — see the header.
+    if (relative !== undefined) return underConfigDir(relative);
+    const inProject = this.relativeTo(candidate, this.projects);
+    if (inProject === undefined) return 'outside the config directories and every project';
+    return underProject(inProject);
   }
 
-  /** The path with its config directory removed, or `undefined` if it is under neither. */
-  private relativeTo(candidate: string): string | undefined {
-    for (const root of this.roots) {
+  /** The path with its root removed, or `undefined` if it is under none of them. */
+  private relativeTo(candidate: string, roots: readonly string[]): string | undefined {
+    for (const root of roots) {
       if (candidate === root) return '';
-      if (candidate.startsWith(root + SEPARATOR)) return candidate.slice(root.length + 1);
+      if (candidate.startsWith(root + WINDOWS_SEPARATOR)) return candidate.slice(root.length + 1);
     }
     return undefined;
   }
 }
 
+/** The named-or-nothing half: everything under a config directory is refused unless listed. */
+function underConfigDir(relative: string): string | undefined {
+  if (relative === '') return 'the config directory itself is not a file';
+  if (relative.split(WINDOWS_SEPARATOR).includes('..')) return 'contains .. after normalisation';
+  const denial = denied(relative);
+  if (denial !== undefined) return denial;
+  if (ALLOWED_FILES.includes(relative)) return undefined;
+  return allowedByDirectory(relative) ? undefined : 'not on the read allowlist (SEC-FS-1)';
+}
+
+/**
+ * The deny-or-nothing half: everything under an imported project is allowed unless it is a secret.
+ *
+ * The `..` check is here as well as there, and is not redundant with `ProjectImport`: that one
+ * screens the ROOT being imported, and this one screens a path composed underneath an already
+ * imported root — `<project>\..\..\.claude-365\daemon\control.key` is exactly what it refuses.
+ */
+function underProject(relative: string): string | undefined {
+  if (relative === '') return 'the project directory itself is not a file';
+  if (relative.split(WINDOWS_SEPARATOR).includes('..')) return 'contains .. after normalisation';
+  return secret(relative);
+}
+
 /** SEC-FS-2, in the order of how badly a hit would end. */
 function denied(relative: string): string | undefined {
-  const name = basename(relative);
-  if (relative.endsWith('.key')) return 'a .key file is never read (SEC-FS-2)';
-  if (name.startsWith('.credentials')) return 'credentials are never read (SEC-FS-2)';
+  const secrecy = secret(relative);
+  if (secrecy !== undefined) return secrecy;
   if (relative.endsWith('.json') && !allowedJson(relative)) {
     return 'an unlisted .json under the config directory (SEC-FS-2)';
   }
   return undefined;
+}
+
+/**
+ * The half of SEC-FS-2 that holds wherever the file is — see the header on project roots.
+ *
+ * The `.json` rule deliberately does not: it is about a SHAPE nobody has named yet, which is the
+ * right default for a program's private state and the wrong one for a repository whose `.mcp.json`
+ * and `.claude/settings.json` are the point of importing it.
+ */
+function secret(relative: string): string | undefined {
+  if (relative.endsWith('.key')) return 'a .key file is never read (SEC-FS-2)';
+  if (basename(relative).startsWith('.credentials')) {
+    return 'credentials are never read (SEC-FS-2)';
+  }
+  return undefined;
+}
+
+/** An empty root is dropped rather than matching everything — see the constructor. */
+function present(roots: readonly string[]): readonly string[] {
+  return roots.filter((root) => root !== '').map(canonicalWindowsPath);
 }
 
 /** By exact name, or by one of the narrow id-bearing patterns. See `ALLOWED_JSON_PATTERNS`. */
@@ -128,24 +191,19 @@ function allowedJson(relative: string): boolean {
 
 /** `*` matches exactly one path segment. No `**`, deliberately — see `ALLOWED_JSON_PATTERNS`. */
 function matches(pattern: string, relative: string): boolean {
-  const wanted = pattern.split(SEPARATOR);
-  const actual = relative.split(SEPARATOR);
+  const wanted = pattern.split(WINDOWS_SEPARATOR);
+  const actual = relative.split(WINDOWS_SEPARATOR);
   if (wanted.length !== actual.length) return false;
   return wanted.every((segment, index) => segment === '*' || segment === actual[index]);
 }
 
 /** A file inside an allowlisted directory — a transcript under `projects\<slug>\` and the like. */
 function allowedByDirectory(relative: string): boolean {
-  const segments = relative.split(SEPARATOR);
+  const segments = relative.split(WINDOWS_SEPARATOR);
   const first = segments[0];
   return segments.length > 1 && first !== undefined && ALLOWED_DIRECTORIES.includes(first);
 }
 
 function basename(relative: string): string {
-  return relative.split(SEPARATOR).at(-1) ?? relative;
-}
-
-/** Windows, so both separators appear and case does not matter (as in `SubscriptionPaths`). */
-function canonical(path: string): string {
-  return path.replaceAll('/', SEPARATOR).toLowerCase().replace(/\\+$/, '');
+  return relative.split(WINDOWS_SEPARATOR).at(-1) ?? relative;
 }

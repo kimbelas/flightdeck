@@ -93,3 +93,22 @@ export const CORE_SESSIONS_PATH = `${CORE_PREFIX}sessions`;
  * SEC-UI-2 material nobody is looking at.
  */
 export const CORE_SESSION_PATH = `${CORE_PREFIX}session`;
+
+/**
+ * The project registry — `GET` to list it, `POST` to import a folder (P3-T1, DECISIONS.md D26).
+ *
+ * A request rather than a stream frame, like the session detail and for a related reason: the
+ * registry changes only when a person imports something, and that is the same person looking at
+ * the answer. Nothing else on the machine can move it, so there is nothing to push.
+ */
+export const CORE_PROJECTS_PATH = `${CORE_PREFIX}projects`;
+
+/**
+ * Withdrawing one — `POST`, at its own literal path.
+ *
+ * Spelled here rather than composed from `CORE_PROJECTS_PATH` at the call site so that the deck and
+ * `ForgetProjectRoute` cannot drift apart, which is this file's whole job. It is a verb in a URL
+ * because `RequestRouter` matches paths literally and has no `DELETE` handling to reach for — see
+ * that route's header for why that trade is the right way round.
+ */
+export const CORE_PROJECT_FORGET_PATH = `${CORE_PROJECTS_PATH}/forget`;

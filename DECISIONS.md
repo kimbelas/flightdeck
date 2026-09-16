@@ -792,3 +792,42 @@ Three consequences worth naming:
 **The job is advisory on the day it lands.** `main`'s ruleset has an empty bypass list (D25) and
 requires four checks; a new one is not enforced until it is added to that list, which is a
 repository-settings change and not a file in this PR.
+
+## D36 — a project root is deny-listed, a config directory is allow-listed (decided 2026-09-16, P3-T1)
+
+**Question:** D26 settled that folders are *imported by path* and that the registry ships empty.
+It did not settle what core may then read inside one. `ReadPolicy` (P1-T12) had exactly one rule
+set — *nothing under a config directory is readable unless it is named* — and the obvious move was
+to add imported roots to the same list.
+
+**Verdict: two rule sets, not one.** Under a config directory everything stays refused unless it
+is named. Under an imported project root everything is allowed unless the deny-list takes it, and
+the deny-list that survives is the half of SEC-FS-2 that is about secrets — `*.key` and
+`.credentials*` — not the half that is about shape.
+
+**Why the asymmetry is the right way round.** `~/.claude-365` is another program's private state:
+its contents change with every Claude Code release, and the value of the allow-list is precisely
+that a settings file the *next* release invents is unreadable until a person names it here. A
+project is the owner's own repository, and what P3-T3 exists to read is `CLAUDE.md`,
+`.claude/agents/*.md`, `.claude/settings.json` and `.mcp.json` — two of which are `.json` files
+that SEC-FS-2's unlisted-`.json` rule would have refused. Applying the config-directory rule there
+would mean naming every file a repository is allowed to contain, which is a list nobody can finish
+and which would silently drop whatever a project does that this build has not seen.
+
+**What makes that safe is the ORDER, and it is load-bearing.** A path under a config directory is
+screened by the config-directory rules *first*, whatever else contains it — so a wider root cannot
+loosen a narrower rule. `ProjectImport` also refuses to import a folder that is, is under, or
+contains a config directory, which means the ordering is a second lock rather than the only one.
+Both are asserted; `read-policy.test.ts` has the case where a project root sits above both config
+directories and `control.key`, `statsig/x.json` and `.credentials.json` are still refused.
+
+**And a project is its path, so there is no id.** BUILD-PLAN §3 sketches `Project.id`; it is
+dropped. Importing the same folder twice has to be the same project, which makes the canonical path
+the natural key — a second identifier derived from it could disagree with the thing it identifies,
+and one derived from nothing would make a re-import a duplicate row. `projectKey` is the comparison
+form, `path` is what `realpath` returned and what goes on screen, and both are stored.
+
+**Forgetting is part of the control, not a convenience.** An allowlist that only grows makes the
+first mistyped import permanent, and D26's "one deliberate act at a time" reads very differently if
+the acts cannot be undone. `POST /projects/forget` withdraws a root and takes the read permission
+with it, and both halves write an audit row (SEC-PROC-3). Same argument as Disconnect (SEC-OPS-2).

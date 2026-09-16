@@ -11,6 +11,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DraftEvent } from '../../../contracts/fd-event.ts';
 import type { DraftAuditRow } from '../../../contracts/audit-row.ts';
+import type { ProjectRecord } from '../../../contracts/project.ts';
 import type { DraftVitalsSnapshot } from '../../../contracts/vitals-snapshot.ts';
 import type { Store } from '../../../core/ports/store.ts';
 
@@ -215,6 +216,82 @@ export function describeStoreContract(name: string, make: () => Store): void {
 
       expect(store.snapshotsForSession(SESSION, 10)).toHaveLength(1);
       expect(store.snapshotsForSession('nobody', 10)).toEqual([]);
+    });
+  });
+  describe(`${name} — the project registry (P3-T1)`, () => {
+    const APP_NEXT = String.raw`C:\Users\belas\Documents\development\app-next`;
+    const DOCS_TOOL = String.raw`C:\Users\belas\Documents\development\docs-tool`;
+
+    function project(over: Partial<ProjectRecord> = {}): ProjectRecord {
+      return { path: APP_NEXT, name: 'app-next', importedAt: 1_700_000_000_000, ...over };
+    }
+
+    it('starts empty, on both implementations (D26)', () => {
+      expect(make().projects()).toEqual([]);
+    });
+
+    it('round-trips a record', () => {
+      const store = make();
+
+      store.rememberProject(project());
+
+      expect(store.projects()).toEqual([project()]);
+    });
+
+    it('keys by the folder, so re-importing replaces rather than duplicates', () => {
+      const store = make();
+
+      store.rememberProject(project());
+      store.rememberProject(project({ path: APP_NEXT.toLowerCase(), importedAt: 9 }));
+
+      expect(store.projects()).toHaveLength(1);
+    });
+
+    it('keeps the FIRST importedAt through a re-import', () => {
+      const store = make();
+
+      store.rememberProject(project());
+      const again = store.rememberProject(project({ importedAt: 9 }));
+
+      // "When did I add this" is a fact about the decision, and the second click is not one.
+      expect(again.importedAt).toBe(1_700_000_000_000);
+      expect(store.projects()[0]?.importedAt).toBe(1_700_000_000_000);
+    });
+
+    it('re-displays the path in the casing the filesystem now uses', () => {
+      const store = make();
+
+      store.rememberProject(project());
+      store.rememberProject(project({ path: APP_NEXT.toUpperCase(), name: 'APP-NEXT' }));
+
+      expect(store.projects()[0]?.path).toBe(APP_NEXT.toUpperCase());
+    });
+
+    it('hands back the newest first', () => {
+      const store = make();
+
+      store.rememberProject(project({ importedAt: 1 }));
+      store.rememberProject(project({ path: DOCS_TOOL, name: 'docs-tool', importedAt: 2 }));
+
+      expect(store.projects().map((held) => held.name)).toEqual(['docs-tool', 'app-next']);
+    });
+
+    it('removes one by any spelling of its path, and says whether it did', () => {
+      const store = make();
+      store.rememberProject(project());
+
+      expect(store.forgetProject(APP_NEXT.replaceAll('\\', '/').toUpperCase())).toBe(true);
+      expect(store.projects()).toEqual([]);
+      expect(store.forgetProject(APP_NEXT)).toBe(false);
+    });
+
+    it('does not mix the registry into the logs beside it', () => {
+      const store = make();
+
+      store.rememberProject(project());
+
+      expect(store.eventsSince(0, 10)).toEqual([]);
+      expect(store.auditSince(0, 10)).toEqual([]);
     });
   });
 }
