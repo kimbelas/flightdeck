@@ -1882,3 +1882,38 @@ also returns 200 — the proxy replaced it; `/api/stream` answers `text/event-st
 `cache-control: no-store, no-transform`; both ports listen on `127.0.0.1` only. Driven headless, the
 deck hydrates, the chip reads `live`, thirteen rows render attention-first and `refresh` round-trips
 through `BrowserDeckApi` to a `GET 200` with no console error and no failed request.
+
+### G.22 Two ways the deck's own smoke could have passed vacuously (P2-T7, 2026-09-16)
+
+The gate for `app/**` is the one place a vacuous pass costs the most, because it is the only
+evidence the deck works at all. Both of these were measured while building it, and only one of them
+was caught by the guard written to catch it.
+
+**1. `innerText` returns RENDERED text, so a CSS rule can answer a content assertion.** The recap
+check read `.detail` with `innerText()` and asserted it contained `while you were away`. It failed
+against a recap that was completely correct: `.detail-recap h3` is `text-transform: uppercase`, and
+`innerText` applies that, so the page returned `WHILE YOU WERE AWAY`. `textContent` would have
+returned the source string. The failure was the harmless direction — the dangerous one is the same
+mechanism inverted: an assertion on a HEADING passes as long as the heading is rendered, whether or
+not the list under it has anything in it, so the check would have gone green on an empty recap for
+as long as the `<h3>` was there. The fix was not to lowercase the comparison but to stop asserting
+on the heading: the check now counts `.detail-recap li` and names a value out of the fixture
+(`Waiting on approval`). **Assert on the content, not on its label, and reach for `textContent`
+when the label is what you want.**
+
+**2. Every parser in `contracts/` drops rather than refuses, so "the fixture parses" is not "the
+fixture is intact".** The fixture core proves its hand-written fixtures against the real parsers at
+boot, which is what replaces the guarantee a capture would have given. That check was written as
+`parse(...) !== undefined` and is worth very little on its own: `parseDeckSnapshot` drops a row it
+cannot read so that one bad row does not cost the deck the other nine, and every field below a
+detail's id is an enrichment that comes back absent. Measured — deleting one row's `shortId` from
+`tests/e2e/fixtures/deck.json`: the snapshot still parses, and the smoke starts, renders six rows
+and reports `every fixture row rendered — 6 rows`. A fixture typo presenting as "the deck is
+dropping a session" is a bug hunt in the wrong layer of the repo. Counting what survives refuses
+the boot instead, with `rows 6/7`.
+
+There is a residue that counting cannot reach, and it is stated in the code rather than left to be
+discovered: a field misspelled INSIDE an entry that still parses is invisible to a count. Renaming a
+timeline entry's `state` to `runState` leaves three entries, each with `state: undefined`, and the
+boot guard is silent. Only an assertion about what is on screen sees it — which is the argument for
+checks that name values rather than shapes.

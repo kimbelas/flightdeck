@@ -1,0 +1,227 @@
+{
+  "//": "The machine the smoke pretends to be looking at. HAND-WRITTEN, and the one file under a fixtures/ directory in this repo that is — see tests/e2e/fixture-core.mjs for why, and why that is safe. Every timestamp is relative to baseAt and is shifted to the present when the fixture core boots, the way the scrubber shifts a captured instant: a fixture is about sequence and gaps, and pinned epochs would make every gauge permanently stale and every row two years old.",
+  "baseAt": 1789000000000,
+
+  "snapshot": {
+    "rows": [
+      {
+        "sessionId": "a1b2c3d4-0000-4000-8000-000000000001",
+        "shortId": "a1b2c3d4",
+        "subscription": "365",
+        "kind": "background",
+        "name": "fixture-alpha",
+        "cwd": "C:\\Users\\owner\\Documents\\ledger",
+        "startedAt": 1788997300000,
+        "live": true,
+        "runState": "blocked",
+        "status": "waiting",
+        "attachable": true
+      },
+      {
+        "sessionId": "b2c3d4e5-0000-4000-8000-000000000002",
+        "shortId": "b2c3d4e5",
+        "subscription": "365",
+        "kind": "background",
+        "name": "fixture-bravo",
+        "cwd": "C:\\Users\\owner\\Documents\\ledger",
+        "startedAt": 1788999100000,
+        "live": true,
+        "runState": "working",
+        "status": "busy",
+        "attachable": true
+      },
+      {
+        "sessionId": "c3d4e5f6-0000-4000-8000-000000000003",
+        "shortId": "c3d4e5f6",
+        "subscription": "isg",
+        "kind": "background",
+        "name": "fixture-charlie",
+        "cwd": "C:\\Users\\owner\\Documents\\atlas",
+        "startedAt": 1788999400000,
+        "live": true,
+        "runState": "working",
+        "status": "busy",
+        "attachable": true
+      },
+      {
+        "sessionId": "d4e5f6a7-0000-4000-8000-000000000004",
+        "shortId": "d4e5f6a7",
+        "subscription": "365",
+        "kind": "interactive",
+        "name": "fixture-delta",
+        "cwd": "C:\\Users\\owner\\Documents\\ledger",
+        "startedAt": 1788992800000,
+        "live": true,
+        "status": "busy",
+        "attachable": false,
+        "notAttachableBecause": "Interactive session — already bound to its own terminal. Only background sessions can be attached."
+      },
+      {
+        "sessionId": "e5f6a7b8-0000-4000-8000-000000000005",
+        "shortId": "e5f6a7b8",
+        "subscription": "isg",
+        "kind": "interactive",
+        "name": "fixture-echo",
+        "cwd": "C:\\Users\\owner\\Documents\\atlas",
+        "startedAt": 1788999700000,
+        "live": true,
+        "status": "idle",
+        "attachable": false,
+        "notAttachableBecause": "Interactive session — already bound to its own terminal. Only background sessions can be attached."
+      },
+      {
+        "sessionId": "f6a7b8c9-0000-4000-8000-000000000006",
+        "shortId": "f6a7b8c9",
+        "subscription": "365",
+        "kind": "background",
+        "name": "fixture-foxtrot",
+        "cwd": "C:\\Users\\owner\\Documents\\ledger",
+        "startedAt": 1788913600000,
+        "live": false,
+        "runState": "done",
+        "attachable": false,
+        "notAttachableBecause": "Not running. Resume it to attach."
+      },
+      {
+        "sessionId": "07b8c9da-0000-4000-8000-000000000007",
+        "shortId": "07b8c9da",
+        "subscription": "isg",
+        "kind": "background",
+        "name": "fixture-golf",
+        "cwd": "C:\\Users\\owner\\Documents\\atlas",
+        "startedAt": 1788999880000,
+        "live": true,
+        "runState": "working",
+        "status": "idle",
+        "attachable": true
+      }
+    ],
+    "unreadable": [],
+    "takenAt": 1789000000000
+  },
+
+  "quota": {
+    "at": 1788999970000,
+    "subscriptions": [
+      {
+        "subscription": "isg",
+        "at": 1788999970000,
+        "fiveHour": {
+          "usedPercentage": 42,
+          "resetsAt": 1789007200000,
+          "at": 1788999970000
+        },
+        "sevenDay": {
+          "usedPercentage": 17,
+          "resetsAt": 1789259200000,
+          "at": 1788999970000
+        },
+        "claudeVersion": "2.1.268",
+        "spendUsd": 3.42,
+        "spendingSessions": 2
+      },
+      {
+        "subscription": "365",
+        "at": 1788999955000,
+        "fiveHour": {
+          "usedPercentage": 88,
+          "resetsAt": 1789004500000,
+          "at": 1788999955000
+        },
+        "sevenDay": {
+          "usedPercentage": 64,
+          "resetsAt": 1789345600000,
+          "at": 1788999955000
+        },
+        "claudeVersion": "2.1.268",
+        "spendUsd": 12.5,
+        "spendingSessions": 5
+      }
+    ]
+  },
+
+  "details": {
+    "a1b2c3d4-0000-4000-8000-000000000001": {
+      "sessionId": "a1b2c3d4-0000-4000-8000-000000000001",
+      "at": 1789000000000,
+      "job": {
+        "state": "blocked",
+        "detail": "Drafted the migration and stopped before running it",
+        "needs": "Approve the audit column rename before the migration runs",
+        "tempo": "blocked",
+        "tokens": 48211,
+        "inFlightTasks": 0,
+        "intent": "Rename the audit column and migrate the ledger table",
+        "updatedAt": 1788999940000
+      },
+      "timeline": [
+        {
+          "at": 1788997300000,
+          "state": "working",
+          "detail": "Reading the schema",
+          "text": "Starting on the ledger table."
+        },
+        {
+          "at": 1788998800000,
+          "state": "working",
+          "detail": "Drafted the migration",
+          "text": "The rename needs a backfill; writing it now."
+        },
+        {
+          "at": 1788999940000,
+          "state": "blocked",
+          "detail": "Waiting on approval",
+          "text": "This drops a column after the backfill, so I stopped."
+        }
+      ],
+      "vitals": {
+        "at": 1788999970000,
+        "modelName": "opus",
+        "usedPercentage": 37,
+        "costUsd": 1.83,
+        "contextWindowSize": 200000
+      },
+      "extras": {
+        "title": "Ledger audit column rename",
+        "titleIsCustom": true,
+        "lastPrompt": "Rename the audit column and migrate the ledger table",
+        "awaySummary": "Wrote the migration, stopped before the destructive step",
+        "awaySummaryAt": 1788999940000,
+        "lastTool": "Edit",
+        "lastToolAt": 1788999910000,
+        "files": [
+          "C:\\Users\\owner\\Documents\\ledger\\migrations\\0007-rename-audit.sql",
+          "C:\\Users\\owner\\Documents\\ledger\\src\\audit\\columns.ts"
+        ],
+        "costUsd": 1.83,
+        "linesAdded": 42,
+        "linesRemoved": 7
+      },
+      "tokenTrail": [
+        { "at": 1788997300000, "tokens": 9100 },
+        { "at": 1788998200000, "tokens": 21400 },
+        { "at": 1788998800000, "tokens": 35800 },
+        { "at": 1788999940000, "tokens": 48211 }
+      ]
+    }
+  },
+
+  "arriving": {
+    "sessionId": "18c9dae0-0000-4000-8000-000000000008",
+    "shortId": "18c9dae0",
+    "subscription": "365",
+    "kind": "background",
+    "name": "fixture-hotel",
+    "cwd": "C:\\Users\\owner\\Documents\\ledger",
+    "startedAt": 1788999995000,
+    "live": true,
+    "runState": "working",
+    "status": "busy",
+    "attachable": true
+  },
+
+  "leaving": {
+    "sessionId": "07b8c9da-0000-4000-8000-000000000007",
+    "subscription": "isg"
+  }
+}
