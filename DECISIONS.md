@@ -876,3 +876,52 @@ containment, so a root replaced by a junction since it was imported resolves som
 a project and is refused; `ReadPolicy` was not loosened to make this work. It shipped without that
 distinction, past a green unit suite and a green deck smoke, and was found by running it — the
 fakes screened a root the way a subdirectory is screened (RESEARCH.md G.26).
+
+## D38 — The user `CLAUDE.md` joins the config-directory allowlist, by name and by argument (P3-T3)
+
+SPEC §5.1's first row is "`CLAUDE.md`, `AGENTS.md`, `.claude/soul.md`, **user `CLAUDE.md` of both
+configs**". Three of those four live under a project root and were already readable — D36 made a
+project root deny-listed, so everything but `*.key` and `.credentials*` is open. The fourth lives
+under `~/.claude-365` and `~/.claude-isg`, where the rule is the opposite: a config directory is
+**allow-listed**, and `ReadPolicy.ALLOWED_FILES` was exactly `history.jsonl`, `settings.json`,
+`daemon.log` and `daemon\roster.json`. The instruction stack could not be read, and the row could
+not be built.
+
+**One named entry, which is the only shape this list takes.** `'claude.md'` joins those four. The
+two wrong fixes were available and are worth naming, because both would have looked like less work:
+allow-listing the config directory's **top level**, or allow-listing `*.md` **under** it. Either
+would make the markdown file the next Claude Code release invents readable by default, which is the
+whole thing the allow-list is for — it is what makes P1-T12's "a deny-list check runs before every
+open" mean something when the program on the other side of it ships every few weeks. The narrow
+entry is SEC-FS-1's own pattern and is the same trade P2-T4 made for `jobs\*\state.json`.
+
+**What it exposes, stated rather than assumed.** A few hundred bytes of the owner's own prose,
+addressed to Claude, on a machine-local page only they can reach. That is a different class of thing
+from `history.jsonl` — every prompt they have typed — and from `daemon.log`, both of which are
+already on this list. On this machine both files are 683 bytes and hold an `@~/.claude/CLAUDE.md`
+import rather than the text itself; core never follows that import, and the instruction stack takes
+only a `stat`, because the row is **byte sizes in resolution order**. Reading the contents is what
+a later row would need, and this entry is what a later row would use.
+
+**It is entered lower-case, and that is not cosmetic.** `ReadPolicy` compares against
+`canonicalWindowsPath`, which lower-cases. The four existing entries happen to be written that way,
+so nothing in the file said so — and the first entry with a capital letter in it was allow-listed in
+the source and refused at runtime, silently. It was caught by a unit test that asked the real
+`ReadPolicy` rather than a fake of it (RESEARCH.md G.27), which is G.26's lesson arriving one task
+early enough to be cheap.
+
+**The project side needed no new rule at all**, which is D36 paying off exactly as argued: a task
+later, `CLAUDE.md`, `AGENTS.md`, `.claude/settings.json`, `.mcp.json`, `.claude/agents/*.md` and
+`.claude/skills/*/SKILL.md` were all readable as they stood, and `.claude/settings.json` and
+`.mcp.json` would both have been refused by SEC-FS-2's unlisted-`.json` rule had a project root been
+allow-listed the way a config directory is.
+
+**One route, seven readings, one cache.** The map is `GET /projects/map`, a third project route
+beside the registry and the status, because the three cost different things: listing the registry
+opens nothing, a status may spawn `git`, and a map is a directory listing per asset kind, a head
+read per asset and two JSON parses. It is signed on `mtime(.claude)` and `mtime(.claude/settings.json)`
+with `statusline.py`'s 300 s config TTL — adding, renaming or deleting an agent, a command, a skill
+or a convention folder moves the directory's mtime, editing the hooks or the permissions moves the
+file's, and the TTL covers the one neither can see, which is a description rewritten inside an
+existing `agents/*.md`. Two stats against roughly thirty reads. Nothing it produces is stored: D37's
+line holds, and a workflow map is a reading rather than an observation.

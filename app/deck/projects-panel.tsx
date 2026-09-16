@@ -17,6 +17,7 @@
 import { useState, type JSX, type SyntheticEvent } from 'react';
 import { PROJECT_PATH_ID } from './deck-keyboard.ts';
 import type { ProjectLine, ProjectsViewModel } from './projects-view-model.ts';
+import { WorkflowMapPanel } from './workflow-map-panel.tsx';
 
 interface ProjectsPanelProps {
   readonly model: ProjectsViewModel;
@@ -119,6 +120,7 @@ function ProjectRow({ line, onForget }: ProjectRowProps): JSX.Element {
         forget
       </button>
       <ProjectMeta line={line} />
+      <WorkflowMapPanel model={line.map} project={line.name} />
     </li>
   );
 }

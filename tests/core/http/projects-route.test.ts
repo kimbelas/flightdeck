@@ -8,8 +8,10 @@ import type { ImportRefusal, ProjectRecord } from '../../../contracts/project.ts
 import { ForgetProjectRoute } from '../../../core/http/forget-project-route.ts';
 import { ImportProjectRoute } from '../../../core/http/import-project-route.ts';
 import { ProjectStatusRoute } from '../../../core/http/project-status-route.ts';
+import { WorkflowMapRoute } from '../../../core/http/workflow-map-route.ts';
 import { ProjectsRoute } from '../../../core/http/projects-route.ts';
 import type { ProjectStatus } from '../../../contracts/project-status.ts';
+import type { WorkflowMap } from '../../../contracts/workflow-map.ts';
 import type { RequestFacts } from '../../../core/http/loopback-guard.ts';
 import { err, ok, type Result } from '../../../core/shared/result.ts';
 
@@ -196,6 +198,46 @@ describe('ProjectStatusRoute', () => {
 
   it('spends the control budget and needs the token, like every other project route', () => {
     const route = new ProjectStatusRoute({ readAll: () => Promise.resolve([]) });
+
+    expect([route.limit, route.credential]).toEqual(['control', 'token']);
+  });
+});
+
+describe('WorkflowMapRoute', () => {
+  const MAP: WorkflowMap = {
+    path: PATH,
+    at: 1_700_000_000_000,
+    instructions: [{ source: 'claude-md', bytes: 3482 }],
+    assets: [],
+    hooks: [],
+    servers: [],
+    plugins: [],
+    marketplaces: [],
+    permissions: { allow: [], deny: [], ask: [], defaultMode: undefined },
+    conventions: [],
+    configured: false,
+  };
+
+  it('is a GET on its own literal path — a third cost beside the other two', () => {
+    const route = new WorkflowMapRoute({ readAll: () => Promise.resolve([]) });
+
+    expect([route.method, route.path]).toEqual(['GET', '/projects/map']);
+  });
+
+  it('answers every map in one reply, wrapped in an object', async () => {
+    const route = new WorkflowMapRoute({ readAll: () => Promise.resolve([MAP]) });
+
+    expect(await route.handle()).toEqual({ status: 200, body: { maps: [MAP] } });
+  });
+
+  it('answers an empty list on a machine that has imported nothing', async () => {
+    const route = new WorkflowMapRoute({ readAll: () => Promise.resolve([]) });
+
+    expect(await route.handle()).toEqual({ status: 200, body: { maps: [] } });
+  });
+
+  it('spends the control budget and needs the token, like every other project route', () => {
+    const route = new WorkflowMapRoute({ readAll: () => Promise.resolve([]) });
 
     expect([route.limit, route.credential]).toEqual(['control', 'token']);
   });

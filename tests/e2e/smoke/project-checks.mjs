@@ -20,6 +20,7 @@ export async function projectChecks(page, report, core) {
   await emptyChecks(page, report, core);
   await importChecks(page, report, core);
   await statusChecks(page, report, core);
+  await mapChecks(page, report, core);
   await refusalChecks(page, report);
   await forgetChecks(page, report, core);
 }
@@ -108,6 +109,93 @@ async function statusChecks(page, report, core) {
     !summary.includes('0') && !summary.includes('behind'),
     summary,
   );
+}
+
+/**
+ * The workflow map on the row — P3-T3, SPEC §5.1(a).
+ *
+ * The hop no unit test can see: a THIRD request goes out after the list, its answer lands on the
+ * right row by `projectKey`, and seven readings come out of `WorkflowMapViewModel` as counts and
+ * English. The last check is the one that would break first if somebody "tidied" the panel —
+ * opening it must not be required to learn the shape of the config, because the summary IS the
+ * panel.
+ */
+async function mapChecks(page, report, core) {
+  const asked = await waitFor(() =>
+    core.requests.some((request) => request.path === '/projects/map'),
+  );
+  report.check('the deck asks core for the workflow map after the list (P3-T3)', asked);
+
+  const drew = await waitFor(async () => (await page.locator('.project-map').count()) === 1);
+  report.check('the row grows a workflow-map section once its map arrives', drew);
+
+  const counts = await page.locator('.map-count').allTextContents();
+  // Counts closed, detail open. Nothing that is zero is printed — six sections saying "0 commands"
+  // is six rows of nothing.
+  report.check(
+    'the closed summary is the shape of the config, in counts',
+    counts.join(' · ') ===
+      '1 agent · 1 command · 1 skill · 3 hooks · 1 MCP server · 1 plugin · 2 allow rules · 1 deny rule',
+    counts.join(' · '),
+  );
+
+  // Closed by default: a repository with 17 hooks does not fit on a row. Asserted on VISIBILITY
+  // rather than on a node count, because `<details>` keeps its children in the DOM either way —
+  // a count check here passes for a panel that is always open, which is the thing being ruled out.
+  report.check(
+    'the detail is behind the marker rather than on the row',
+    !(await page.locator('.map-section').first().isVisible()),
+  );
+
+  await page.locator('.project-map > summary').click();
+  const opened = await waitFor(() => page.locator('.map-section').first().isVisible());
+  report.check('opening it draws the sections', opened);
+
+  const stack = await page.locator('.map-stack li .map-file').allTextContents();
+  report.check(
+    'the instruction stack is in resolution order, gaps and all',
+    stack.join(' | ') ===
+      'user CLAUDE.md (365) | user CLAUDE.md (isg) | CLAUDE.md | AGENTS.md | .claude/soul.md',
+    stack.join(' | '),
+  );
+  const sizes = await page.locator('.map-stack li .map-size').allTextContents();
+  report.check(
+    'each file says how much of the context window it spends, and an absent one says so',
+    sizes.join(' ') === '683 B — 3.5 kB — —',
+    sizes.join(' '),
+  );
+
+  const events = await page.locator('.map-event').allTextContents();
+  // Grouped under headings and never re-sorted — Claude Code runs a group's commands as written.
+  report.check(
+    'the hook timeline is grouped by event, in run order',
+    events.join(' ') === 'PostToolUse PreCompact',
+    events.join(' '),
+  );
+  const commands = await page.locator('.map-hooks li .map-command').allTextContents();
+  report.check(
+    'and the commands under one event keep the order the file wrote them',
+    commands.join(' | ') === 'node fast-lint.mjs | node check-symbols.mjs | node state-dump.mjs',
+    commands.join(' | '),
+  );
+
+  const permissions = (await page.locator('.map-permissions > summary').textContent()) ?? '';
+  report.check(
+    'permissions are counted closed, with `defaultMode` first when there is one',
+    permissions === '2 allow · 1 deny',
+    permissions,
+  );
+
+  const names = await page.locator('.map-names .map-badge').allTextContents();
+  // A server's name and transport, never its command line (SEC-FS-2's habit).
+  report.check(
+    'servers, plugins, marketplaces and conventions are drawn as labels',
+    names.join(' | ') ===
+      'chrome-devtools (stdio) | context-hygiene@claude-kit | claude-kit | rules 6 | specs 9',
+    names.join(' | '),
+  );
+
+  await page.locator('.project-map > summary').click();
 }
 
 async function refusalChecks(page, report) {

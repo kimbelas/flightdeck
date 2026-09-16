@@ -52,6 +52,7 @@ import {
 } from '../../contracts/session-row.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
 import type { DeckApi, JsonReply } from './deck-api.ts';
+import { WorkflowMapSlice } from './workflow-map-slice.ts';
 import {
   EMPTY,
   type DeckState,
@@ -81,6 +82,8 @@ export class DeckStore {
   private readonly subscribers = new Set<() => void>();
   private readonly transport: StreamTransport;
   private readonly api: DeckApi;
+  /** The third fetch path, in a class of its own — see `workflow-map-slice.ts` on why (P3-T3). */
+  private readonly workflowMaps: WorkflowMapSlice;
   private state: DeckState = EMPTY;
   private source: EventStreamSource | undefined;
   private cancelRetry: (() => void) | undefined;
@@ -88,6 +91,9 @@ export class DeckStore {
   constructor(transport: StreamTransport, api: DeckApi) {
     this.transport = transport;
     this.api = api;
+    this.workflowMaps = new WorkflowMapSlice(api, (maps) => {
+      this.set({ maps });
+    });
   }
 
   public subscribe = (listener: () => void): (() => void) => {
@@ -242,7 +248,9 @@ export class DeckStore {
     const reply = await this.api.get(CORE_PROJECTS_PATH);
     if (reply?.status !== 200) return;
     this.set({ projects: parseProjectList(reply.body) });
-    await this.loadProjectStatuses();
+    // In parallel: two independent reads of the same list, and the map is by far the slower of the
+    // two. Neither throws, so neither can lose the other's result.
+    await Promise.all([this.loadProjectStatuses(), this.workflowMaps.load()]);
   }
 
   /**

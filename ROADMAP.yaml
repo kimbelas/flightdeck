@@ -1632,7 +1632,72 @@ phases:
         security: [SEC-FS-1, SEC-PROC-1]
       - id: P3-T3
         title: Workflow-map readers — instruction stack, agents, commands, skills, hook timeline, MCP, plugins, permissions, rules/specs/state
-        status: todo
+        status: done
+        done_on: 2026-09-16
+        deliverables:
+          [
+            contracts/workflow-map.ts,
+            contracts/instruction-stack.ts,
+            contracts/claude-assets.ts,
+            contracts/claude-settings.ts,
+            contracts/hook-timeline.ts,
+            contracts/deck-routes.ts,
+            core/domain/read-policy.ts,
+            core/ports/project-files.ts,
+            core/adapters/node/fs-project-files.ts,
+            core/application/instruction-stack-reader.ts,
+            core/application/claude-asset-reader.ts,
+            core/application/workflow-map-reader.ts,
+            core/http/workflow-map-route.ts,
+            core/projects.ts,
+            app/deck/workflow-map-slice.ts,
+            app/deck/workflow-map-view-model.ts,
+            app/deck/workflow-map-panel.tsx,
+            app/deck/deck-state.ts,
+            app/deck/deck-store.ts,
+            app/deck/projects-view-model.ts,
+            app/deck/projects-panel.tsx,
+            app/globals.css,
+            DECISIONS.md D38,
+            RESEARCH.md G.27,
+          ]
+        notes: >-
+          SPEC §5.1(a)'s table, all of it except the two rows P3-T2 shipped and the two that belong
+          to P3-T4 and P3-T6. Seven readings behind one route — `GET /projects/map` — because they
+          come out of one directory, share one cache signature and are drawn on one panel; seven
+          routes would be seven round trips for a panel that opens once. `WorkflowMap` is a computed
+          wire type keyed by path and nothing in it is stored, which is D37 applied rather than
+          re-argued: a map is a reading taken a moment ago, and the `projects` row it annotates is a
+          standing permission.
+          The cache is `SignatureCache`'s third user and the signature is `mtime(.claude)` plus
+          `mtime(.claude/settings.json)`: adding, renaming or deleting an agent, a command, a skill
+          or a convention folder moves the directory, editing the hooks, permissions or plugins
+          moves the file, and `statusline.py`'s 300 s config TTL covers the one neither can see —
+          a description rewritten inside an existing `agents/*.md`. Two stats against roughly
+          thirty reads.
+          DECISIONS.md D38 is what this task decided: the user `CLAUDE.md` of both config dirs is
+          in SPEC's instruction stack and a config directory is ALLOW-listed, so it took one narrow
+          named entry in `ReadPolicy.ALLOWED_FILES` — not the directory's top level and not `*.md`
+          under it, either of which would make the next Claude Code release's new markdown file
+          readable by default. The project side needed no new rule, which is D36 paying off a task
+          later. The stack is five stats and opens nothing: the row is byte sizes in resolution
+          order, and the largest file in it would be the most expensive to read.
+          The frontmatter parser is a line reader by decision rather than a YAML dependency — every
+          block measured across the acceptance targets is `key: value` with an inline scalar
+          (16 `name`, 19 `description`, 12 `allowed-tools`), and a general parser over a file an
+          imported repository controls would buy the ability to read a file nobody writes. The hook
+          timeline is flattened into run order and never sorted: Claude Code runs a matcher group's
+          commands as written, so re-ordering them would answer a different question. An MCP server
+          yields its name and transport and never its command line, `env` or headers.
+          RESEARCH.md G.27 is the bug this one shipped and caught: `'CLAUDE.md'` was allowlisted in
+          the source and refused at runtime, because `ReadPolicy` compares against
+          `canonicalWindowsPath`, which lower-cases — and the four existing entries were already
+          lower-case, so nothing said so. Caught by a unit test that asked the real `ReadPolicy`
+          rather than a fake of it, which is G.26's lesson arriving one task early enough to be
+          cheap. Verified live against `xpert-new` (`app-next`: 3 agents, 3 commands, 10 skills,
+          17 hooks, 6 rules, chrome-devtools, soul.md) and `pdf-editor` (`docs-tool`: no `.claude`,
+          degrades to CLAUDE.md + stack + git) — the P3 gate, both halves.
+        security: [SEC-FS-1, SEC-FS-2]
       - id: P3-T4
         title: Worktree discovery with the lib/tree.mjs rules (main vs linked, never touch 4200/4201)
         status: todo

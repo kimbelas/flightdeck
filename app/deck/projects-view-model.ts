@@ -19,6 +19,8 @@ import type { GitStatus } from '../../contracts/git-status.ts';
 import type { ProjectStatus, StackLabel } from '../../contracts/project-status.ts';
 import type { ImportRefusal, ProjectRecord } from '../../contracts/project.ts';
 import { projectKey } from '../../contracts/project.ts';
+import type { WorkflowMap } from '../../contracts/workflow-map.ts';
+import { WorkflowMapViewModel } from './workflow-map-view-model.ts';
 
 /**
  * One line per refusal. Exhaustive over `ImportRefusal` by construction — a `Record` of the union,
@@ -52,6 +54,15 @@ export interface ProjectLine {
   readonly gitSummary: string | undefined;
   /** `merging`, `rebasing` … when git is mid-operation. It changes what every other count means. */
   readonly progress: string | undefined;
+  /**
+   * What Claude is configured to do in this folder — P3-T3.
+   *
+   * A view model rather than the reading, and it is always here rather than sometimes: a map that
+   * has not arrived is one that answers `isKnown: false`, and the panel draws no section for it.
+   * Nesting it means the workflow map is the project row's own detail rather than a second list
+   * the panel has to keep aligned with this one by key.
+   */
+  readonly map: WorkflowMapViewModel;
 }
 
 /** What a repository with nothing outstanding says. Named, because blank would read as unread. */
@@ -74,15 +85,18 @@ export class ProjectsViewModel {
   private readonly projects: readonly ProjectRecord[];
   private readonly refusal: ImportRefusal | undefined;
   private readonly statuses: Readonly<Record<string, ProjectStatus>>;
+  private readonly maps: Readonly<Record<string, WorkflowMap>>;
 
   constructor(
     projects: readonly ProjectRecord[],
     refusal: ImportRefusal | undefined,
     statuses: Readonly<Record<string, ProjectStatus>> = {},
+    maps: Readonly<Record<string, WorkflowMap>> = {},
   ) {
     this.projects = projects;
     this.refusal = refusal;
     this.statuses = statuses;
+    this.maps = maps;
   }
 
   /**
@@ -105,6 +119,7 @@ export class ProjectsViewModel {
         branch: git?.branch,
         gitSummary: git === undefined ? undefined : summarise(git),
         progress: git?.progress,
+        map: new WorkflowMapViewModel(this.maps[key]),
       };
     });
   }

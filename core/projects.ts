@@ -17,9 +17,12 @@
 // `reads.ts` made: a slice that owns a registry owns what is built on it, and `main.ts` has a line
 // limit it already reached once.
 import { ProjectRegistry } from './application/project-registry.ts';
+import { ClaudeAssetReader } from './application/claude-asset-reader.ts';
 import { GitDirectoryLocator } from './application/git-directory-locator.ts';
+import { InstructionStackReader } from './application/instruction-stack-reader.ts';
 import { ProjectGitReader } from './application/project-git-reader.ts';
 import { ProjectStatusReader } from './application/project-status-reader.ts';
+import { WorkflowMapReader } from './application/workflow-map-reader.ts';
 import type { AuditLog } from './application/audit-log.ts';
 import { FsPathCanonicaliser } from './adapters/node/fs-path-canonicaliser.ts';
 import { FsProjectFiles } from './adapters/node/fs-project-files.ts';
@@ -29,6 +32,7 @@ import { ForgetProjectRoute } from './http/forget-project-route.ts';
 import { ImportProjectRoute } from './http/import-project-route.ts';
 import { ProjectStatusRoute } from './http/project-status-route.ts';
 import { ProjectsRoute } from './http/projects-route.ts';
+import { WorkflowMapRoute } from './http/workflow-map-route.ts';
 import type { Route } from './http/route.ts';
 import type { Clock } from './ports/clock.ts';
 import type { Logger } from './ports/logger.ts';
@@ -80,23 +84,29 @@ export function buildProjectRegistry(parts: ProjectParts): ProjectRegistry {
  */
 export function projectRoutes(parts: ProjectParts): readonly Route[] {
   const registry = buildProjectRegistry(parts);
+  const files = new FsProjectFiles();
   return [
     new ProjectsRoute(registry),
     new ImportProjectRoute(registry),
     new ForgetProjectRoute(registry),
-    new ProjectStatusRoute(buildStatusReader(registry, parts)),
+    new ProjectStatusRoute(buildStatusReader(registry, files, parts)),
+    new WorkflowMapRoute(buildMapReader(registry, files, parts)),
   ];
 }
 
 /**
  * Stack and git for every imported folder (P3-T2).
  *
- * The one `ProjectFiles` is shared by the locator and the two readers, which is not an
- * optimisation — it is a stateless adapter over `node:fs`, and a second would only be a second
- * thing to keep in step if it ever grows a cache.
+ * The one `ProjectFiles` is shared by the locator, the two readers and P3-T3's three, which is not
+ * an optimisation — it is a stateless adapter over `node:fs`, and a second would only be a second
+ * thing to keep in step if it ever grows a cache. It is constructed by the caller for that reason:
+ * both readers want the same one.
  */
-function buildStatusReader(registry: ProjectRegistry, parts: ProjectParts): ProjectStatusReader {
-  const files = new FsProjectFiles();
+function buildStatusReader(
+  registry: ProjectRegistry,
+  files: FsProjectFiles,
+  parts: ProjectParts,
+): ProjectStatusReader {
   const locator = new GitDirectoryLocator(registry, files, parts.logger);
   return new ProjectStatusReader({
     registry,
@@ -108,6 +118,42 @@ function buildStatusReader(registry: ProjectRegistry, parts: ProjectParts): Proj
       clock: parts.clock,
       logger: parts.logger,
     }),
+    files,
+    clock: parts.clock,
+    logger: parts.logger,
+  });
+}
+
+/**
+ * The workflow map for every imported folder (P3-T3, SPEC §5.1(a)).
+ *
+ * Built on the same registry as everything else here, which is this file's standing rule: the map
+ * reads more of a project than anything before it — agents, commands, skills, hooks, MCP,
+ * permissions and six convention folders — and every one of those paths goes through
+ * `registry.resolve`. A second registry would be a second answer to "which folders may be read".
+ *
+ * The config directories arrive as data for the instruction stack, and only for it: SPEC §5.1's
+ * first row includes the user `CLAUDE.md` of both configs, which is the one thing in the map that
+ * is not under the project. `ReadPolicy` allowlists that file by name and nothing else about a
+ * config directory changed (DECISIONS.md D38).
+ */
+function buildMapReader(
+  registry: ProjectRegistry,
+  files: FsProjectFiles,
+  parts: ProjectParts,
+): WorkflowMapReader {
+  return new WorkflowMapReader({
+    registry,
+    paths: registry,
+    instructions: new InstructionStackReader({
+      paths: registry,
+      files,
+      configDirs: {
+        '365': parts.install.configDirFor('365'),
+        isg: parts.install.configDirFor('isg'),
+      },
+    }),
+    assets: new ClaudeAssetReader({ paths: registry, files }),
     files,
     clock: parts.clock,
     logger: parts.logger,

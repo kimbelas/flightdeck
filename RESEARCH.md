@@ -2139,3 +2139,90 @@ no `next.config.*`, no `angular.json`, no `.csproj` and no `Dockerfile` — whic
 importing one project and calling it verified would have shipped this. It is also a useful second
 measurement: a branch with no upstream prints no `# branch.ab` line at all, so the parser reads
 0/0 rather than leaving the divergence unknown.
+
+### G.27 An allowlist entry that was never reachable, and a smoke that never drew the panel (P3-T3, 2026-09-16)
+
+Four measurements from building the workflow map. The first two are bugs a green suite could not
+see; the third and fourth are facts that only running it produces.
+
+**1. `'CLAUDE.md'` was allowlisted in the source and refused at runtime.** D38 adds the user-scope
+instruction file to `ReadPolicy.ALLOWED_FILES`. It was written as `'CLAUDE.md'`, which is how the
+file is spelled on disk — and every screen goes through `canonicalWindowsPath`, which lower-cases:
+
+```
+refusal('C:\Users\belas\.claude-365\CLAUDE.md')
+  → relative = 'claude.md'
+  → ALLOWED_FILES.includes('claude.md')  // false: the entry reads 'CLAUDE.md'
+  → 'not on the read allowlist (SEC-FS-1)'
+```
+
+The four entries that were already there — `history.jsonl`, `settings.json`, `daemon.log`,
+`daemon\roster.json` — happen to be lower-case, so nothing in the file said the list was
+case-folded, and the first entry with a capital letter in it was silently unreachable. Nothing
+crashed and nothing logged: the instruction stack simply reported both user files absent, which is
+a legitimate answer for a machine that does not have them.
+
+It was caught by a **unit** test, which is the part worth recording, because six entries in this
+section say a unit test could not have. `tests/core/application/instruction-stack-reader.test.ts`
+builds its fake `ProjectPaths` around a real `new ReadPolicy(...)` rather than around its own
+notion of what is allowed — G.26's lesson ("a fake can only be as strict as its author remembered
+the collaborator's rule to be") applied one task later, deliberately, to the collaborator this task
+leans on hardest. The cost of the lesson the first time was an hour; this time it was a red test
+before the first run.
+
+**2. The deck smoke went green with the entire panel undrawn.** 108 checks passed against a fixture
+core that had no `/projects/map` route at all. The deck asked, got a 404, and `WorkflowMapSlice`
+did what it is supposed to do on a reply it cannot read — leave the held maps alone — so `maps`
+stayed `{}`, every row answered `isKnown: false`, and `WorkflowMapPanel` returned `null`. Nothing
+failed, because nothing asserted the panel existed.
+
+This is G.22's shape again ("two ways the deck's own smoke could have passed vacuously") and the
+rule it produced holds: **a smoke check that passes when the feature is absent is not a check.**
+The fixture core grew the route and `project-checks.mjs` grew eleven checks; the suite is 119 and
+111 (`smoke:dev`).
+
+One of those eleven was wrong on the first run in a way worth naming. `<details>` keeps its
+children in the DOM when it is closed, so
+
+```js
+(await page.locator('.map-section').count()) === 0   // FAILS when closed — nodes are there
+```
+
+asserts nothing about whether the detail is hidden, and its inverse would pass for a panel that is
+always open. The check is on `isVisible()` instead.
+
+**3. SPEC §2.4's "17 hook scripts" is 15 today, and the parser is right.** The first live read of
+`app-next` reported 15, which looked like two dropped rows. Counted straight out of the file:
+
+```
+SessionStart 2 · PreCompact 1 · PreToolUse 3 · PostToolUse 7 · Stop 2  = 15 entries, 14 distinct commands
+```
+
+The repository has drifted since SPEC rev 3 was written — `specs/` is 9 where SPEC says 8, and
+`worktrees/` is 1 where it says 2. So the number in SPEC is a measurement with a date on it, not a
+contract, and a parser tuned to reproduce it would have been tuned to reproduce a stale reading.
+Worth saying because the temptation on seeing 15 against a documented 17 is to go looking for the
+bug.
+
+**4. Both halves of the P3 gate, live.** `xpert-new` (the gate's `app-next`) and `pdf-editor` (its
+`docs-tool`), imported by hand into the running registry:
+
+```
+xpert-new  : 3 agents · 3 commands · 10 skills · 15 hooks · 1 MCP server · 16 allow rules
+             stack: user 683 B, user 683 B, CLAUDE.md 5.9 kB, AGENTS.md —, soul.md 10.2 kB
+             hooks: SessionStart PreCompact PreToolUse PostToolUse Stop  (file order, ungrouped-sorted)
+             conventions: rules 6 · specs 9 · state 35 · maps 4 · reference 5
+pdf-editor : "No .claude here — Claude runs with the instruction stack above and nothing else."
+             stack: user 683 B, user 683 B, CLAUDE.md 42.4 kB, AGENTS.md —, soul.md —
+```
+
+`claude-kit` was already imported and is the third useful reading: no `.claude` **and** no
+`CLAUDE.md`, so every one of the five stack rows is a dash. Three repositories, three different
+answers, none of them an error state.
+
+**And one layout fault that only the screenshot showed.** `.project-list` is capped at
+`max-height: 20vh` with `overflow-y: auto`, which is right for a list of one-line rows and squeezes
+an open 15-hook timeline into a scroll strip a few rows tall. Neither suite can see it — both
+assert on text content, which is present either way. The cap now lifts to `60vh` only while
+something is open (`.project-list:has(details[open])`), so the closed panel and the launcher
+beneath it are exactly where they were.
