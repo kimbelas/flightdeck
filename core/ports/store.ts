@@ -19,8 +19,15 @@
 //
 // This is what P1 needs. The FTS5 index and transcript excerpts are P7 and widen this interface
 // then, against a task that knows what it is searching for.
+// **The project registry is the one thing in here that is not an observation** (P3-T1). Everything
+// above is append-only: what happened, in the order it happened. A project row is a standing
+// permission — it is what widens `ReadPolicy`'s allowlist — so it is keyed, it is replaceable and
+// it can be taken away, and `forgetProject` really has to remove it rather than write a tombstone
+// the next reader might miss. That is a different kind of state, and it is admitted here rather
+// than smuggled in as an event whose absence somebody has to compute.
 import type { AuditRow, DraftAuditRow } from '../../contracts/audit-row.ts';
 import type { DraftEvent, FdEvent } from '../../contracts/fd-event.ts';
+import type { ProjectRecord } from '../../contracts/project.ts';
 import type { DraftVitalsSnapshot, VitalsSnapshot } from '../../contracts/vitals-snapshot.ts';
 
 export interface Store {
@@ -59,4 +66,29 @@ export interface Store {
    * rather than in every caller keeps the `ORDER BY` off the hot path of the deck.
    */
   snapshotsForSession(sessionId: string, limit: number): readonly VitalsSnapshot[];
+
+  /**
+   * Records an imported project, keyed by `projectKey(project.path)` — P3-T1, SEC-FS-1.
+   *
+   * Idempotent by construction: importing a folder that is already held replaces its row rather
+   * than adding a second one, because the folder is the identity. The stored record is returned,
+   * which is not always the one passed in — see `ProjectRegistry.import` for why the original
+   * `importedAt` is the one that survives.
+   *
+   * @throws if the store cannot be written. A permission that was reported as granted and was not
+   * recorded is worse silent than loud.
+   */
+  rememberProject(project: ProjectRecord): ProjectRecord;
+
+  /** Every imported project, newest first. Empty until the owner imports one (D26). */
+  projects(): readonly ProjectRecord[];
+
+  /**
+   * Removes one project by path, canonical or not.
+   *
+   * @returns whether a row was actually removed, so the caller can tell "withdrawn" from "was
+   * never there" — they are different audit rows and different things to say in the deck.
+   * @throws as `rememberProject`.
+   */
+  forgetProject(path: string): boolean;
 }

@@ -15,7 +15,6 @@ import { type Reconciler } from './application/reconciler.ts';
 import { SessionLauncher } from './application/session-launcher.ts';
 import { AuditLog } from './application/audit-log.ts';
 import { StatusReport } from './application/status-report.ts';
-import { SubscriptionPaths } from './application/subscription-paths.ts';
 import { type TranscriptReader } from './application/transcript-reader.ts';
 import { type VitalsRegistry } from './application/vitals-registry.ts';
 import { TicketOffice } from './application/ticket-office.ts';
@@ -30,22 +29,16 @@ import { WindowsPtyCommands } from './adapters/windows/windows-pty-commands.ts';
 import { WindowsFileAcl } from './adapters/windows/windows-file-acl.ts';
 import { WindowsTokenFile } from './adapters/windows/windows-token-file.ts';
 import { CoreServer } from './http/core-server.ts';
-import { HealthRoute } from './http/health-route.ts';
-import { HooksRoute } from './http/hooks-route.ts';
-import { LaunchRoute } from './http/launch-route.ts';
 import { BUDGETS } from './http/limits.ts';
 import { LoopbackGuard } from './http/loopback-guard.ts';
 import { RateLimiter } from './http/rate-limiter.ts';
 import { PtySocketServer } from './http/pty-socket-server.ts';
 import { RequestRouter } from './http/request-router.ts';
 import type { Route, StreamRoute } from './http/route.ts';
-import { SessionDetailRoute, type DetailSource } from './http/session-detail-route.ts';
-import { SessionsRoute } from './http/sessions-route.ts';
-import { StatusRoute } from './http/status-route.ts';
-import { StatuslineRoute } from './http/statusline-route.ts';
-import { TicketRoute } from './http/ticket-route.ts';
 import { warmUp } from './http/warm-up.ts';
 import { buildFeeds, type Feeds } from './feeds.ts';
+import { buildRouter } from './routes.ts';
+import { projectRoutes } from './projects.ts';
 import { buildDetailReader } from './reads.ts';
 import { stopCore, type Running } from './shutdown.ts';
 import { SystemClock } from './ports/clock.ts';
@@ -134,11 +127,15 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
   const feeds = buildFeeds({ install, sessions, store, clock, logger });
   // SEC-PROC-3: every mutating action writes a row, and `POST /launch` is the only one today.
   const audit = new AuditLog(store, clock, logger);
+  // Built before the server binds, because an imported root is a security input: a route that
+  // could be reached while the registry was still empty would refuse a project the owner has.
+  const projects = projectRoutes({ install, store, audit, clock, logger });
   const version = readVersion();
   const http = buildHttp({
     guard: buildGuard(token, ingestKey),
     feeds,
     audit,
+    projects,
     // Read once and handed to both routes that print it, rather than read twice: `/health` and
     // `/status` disagreeing about which build is running would be a very silly bug to have.
     version,
@@ -230,6 +227,8 @@ interface HttpParts {
   readonly guard: LoopbackGuard;
   readonly feeds: Feeds;
   readonly audit: AuditLog;
+  /** Routes a slice of its own already built — `projectRoutes` today (P3-T1). See `buildRouter`. */
+  readonly projects: readonly Route[];
   readonly version: string;
   readonly report: StatusReport;
   readonly sessions: ClaudeCliSessionSource;
@@ -254,23 +253,26 @@ function buildHttp(parts: HttpParts): HttpSide {
   const limiter = new RateLimiter(clock);
   const server = new CoreServer({
     guard,
-    router: buildRouter({
-      feeds,
-      version: parts.version,
-      report: parts.report,
-      detail: buildDetailReader({ ...feeds, install, clock, logger }),
-      deck: new DeckQuery(parts.sessions, clock),
-      launcher: new SessionLauncher({
+    router: buildRouter(
+      {
+        feeds,
+        version: parts.version,
+        report: parts.report,
+        detail: buildDetailReader({ ...feeds, install, clock, logger }),
+        deck: new DeckQuery(parts.sessions, clock),
+        launcher: new SessionLauncher({
+          install,
+          runner: parts.runner,
+          audit: parts.audit,
+          logger,
+        }),
+        tickets,
+        limiter,
         install,
-        runner: parts.runner,
-        audit: parts.audit,
         logger,
-      }),
-      tickets,
-      limiter,
-      install,
-      logger,
-    }),
+      },
+      parts.projects,
+    ),
     streams: new RequestRouter<StreamRoute>([feeds.stream]),
     limiter,
     logger,
@@ -295,54 +297,6 @@ function buildGuard(token: string, ingestKey: string): LoopbackGuard {
     token,
     ingestKey,
     bodyLimitBytes: BUDGETS.control.bodyBytes,
-  });
-}
-
-interface RouterParts {
-  readonly feeds: Feeds;
-  readonly version: string;
-  readonly report: StatusReport;
-  readonly detail: DetailSource;
-  readonly deck: DeckQuery;
-  readonly launcher: SessionLauncher;
-  readonly tickets: TicketOffice;
-  readonly limiter: RateLimiter;
-  readonly install: ClaudeInstall;
-  readonly logger: Logger;
-}
-
-/** Every path core answers, in one list. There are no patterns and no prefixes (RequestRouter). */
-function buildRouter(parts: RouterParts): RequestRouter<Route> {
-  return new RequestRouter<Route>([
-    new HealthRoute(parts.version),
-    new SessionsRoute(parts.deck),
-    new SessionDetailRoute(parts.detail),
-    new StatusRoute(parts.report),
-    new LaunchRoute(parts.launcher),
-    new TicketRoute(parts.tickets),
-    new HooksRoute({
-      queue: parts.feeds.hooks,
-      paths: subscriptionPaths(parts.install),
-      limiter: parts.limiter,
-      logger: parts.logger,
-    }),
-    new StatuslineRoute({
-      queue: parts.feeds.statusline,
-      paths: subscriptionPaths(parts.install),
-      limiter: parts.limiter,
-      logger: parts.logger,
-    }),
-  ]);
-}
-
-/**
- * The two config dirs as data, so an ingested payload is attributed to the subscription whose
- * directory its transcript lives under rather than to one it claims (SEC-FS-1, SEC-ING-1).
- */
-function subscriptionPaths(install: ClaudeInstall): SubscriptionPaths {
-  return new SubscriptionPaths({
-    '365': install.configDirFor('365'),
-    isg: install.configDirFor('isg'),
   });
 }
 

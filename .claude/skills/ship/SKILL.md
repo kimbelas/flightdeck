@@ -33,7 +33,7 @@ there genuinely is not one.
 `app/`. Six real bugs shipped past a green unit suite and were only found by running the thing
 (RESEARCH.md §G).
 
-For anything touching the deck: `npm run build && npm run smoke` — 87 checks against a fixture
+For anything touching the deck: `npm run build && npm run smoke` — 101 checks against a fixture
 core — and `npm run smoke:dev` as well if you touched the CSP, `proxy.ts` or `next.config.ts`.
 That pair is what G.3 cost a fortnight for. Then use the `run` skill and actually look at the deck.
 

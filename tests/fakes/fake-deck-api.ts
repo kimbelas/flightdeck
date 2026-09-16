@@ -14,6 +14,15 @@ export interface RecordedRequest {
 
 export class FakeDeckApi implements DeckApi {
   public readonly requests: RecordedRequest[] = [];
+  /**
+   * Answers for one path, which the default below cannot express — P3-T1.
+   *
+   * One store call now makes two requests: `importProject` POSTs and then re-reads the registry,
+   * and a single queued reply would answer both, so a 201 for the import would arrive as a 201 for
+   * the list and be dropped. A path is enough to tell them apart; a general request matcher would
+   * be a mocking library, which §10.1 does not use.
+   */
+  private readonly byPath = new Map<string, JsonReply>();
   /** `undefined` means the request could not be made — a core that is not listening. */
   private next: JsonReply | undefined = undefined;
 
@@ -21,17 +30,27 @@ export class FakeDeckApi implements DeckApi {
     this.next = { status, body };
   }
 
+  /** Queued for this path only, and consulted before the default. Survives repeated calls. */
+  public willAnswerPath(path: string, status: number, body: unknown): void {
+    this.byPath.set(path, { status, body });
+  }
+
   public willNotAnswer(): void {
     this.next = undefined;
+    this.byPath.clear();
   }
 
   public get(path: string): Promise<JsonReply | undefined> {
     this.requests.push({ method: 'GET', path, body: undefined });
-    return Promise.resolve(this.next);
+    return Promise.resolve(this.answerFor(path));
   }
 
   public post(path: string, body: unknown): Promise<JsonReply | undefined> {
     this.requests.push({ method: 'POST', path, body });
-    return Promise.resolve(this.next);
+    return Promise.resolve(this.answerFor(path));
+  }
+
+  private answerFor(path: string): JsonReply | undefined {
+    return this.byPath.get(path) ?? this.next;
   }
 }

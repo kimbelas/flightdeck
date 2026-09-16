@@ -30,6 +30,7 @@ import { deckChecks } from './smoke/deck-checks.mjs';
 import { devChecks } from './smoke/dev-checks.mjs';
 import { keyboardChecks } from './smoke/keyboard-checks.mjs';
 import { paneChecks } from './smoke/pane-checks.mjs';
+import { projectChecks } from './smoke/project-checks.mjs';
 import { securityChecks } from './smoke/security-checks.mjs';
 import { LOOPBACK_ADDRESS, UI_PORT } from '../../contracts/origins.ts';
 
@@ -70,6 +71,7 @@ try {
 
   await page.goto(DECK, { waitUntil: 'domcontentloaded' });
   await deckChecks(page, report, core);
+  await projectChecks(page, report, core);
   await keyboardChecks(page, report);
   await paneChecks(page, report, core, { dev: DEV });
   if (DEV) devChecks(report, seen);

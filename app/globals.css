@@ -117,9 +117,75 @@ button.ghost {
   min-height: 0;
 }
 
-.rows {
-  overflow-y: auto;
+/* The left column: the projects panel is fixed at the top, the session list scrolls under it. */
+.deck-left {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
   border-right: 1px solid var(--line);
+}
+
+.rows {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Imported projects (P3-T1). Compact, because an empty registry is the ordinary state. */
+.projects {
+  border-bottom: 1px solid var(--line);
+  padding: 10px 12px;
+}
+
+.project-add {
+  display: flex;
+  gap: 6px;
+}
+
+.project-add input {
+  flex: 1;
+  min-width: 0;
+}
+
+.project-problem {
+  margin: 6px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.project-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 20vh;
+  overflow-y: auto;
+}
+
+.project {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  column-gap: 6px;
+  padding: 3px 0;
+}
+
+.project-name {
+  font-weight: 600;
+}
+
+/* The path under the name, clipped rather than wrapped — `title` carries the whole of it. */
+.project-path {
+  grid-column: 1;
+  color: var(--dim);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 
 .row {

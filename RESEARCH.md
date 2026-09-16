@@ -2029,3 +2029,47 @@ manufacturing one.
 Also observed, and the reason the version chip earns its place: **the two subscriptions are running
 different Claude Code builds** — `isg` on 2.1.272, `365` on 2.1.273 — visible on the header without
 asking either of them.
+
+### G.25 `realpath` on NTFS, and the junction check that has to rest on it (P3-T1, 2026-09-16)
+
+SEC-FS-1's fourth check — *"reject a path that resolves through a junction outside the root"* —
+was a sentence in `SECURITY.md` with nothing under it, because until the project registry nothing
+in core opened a path that came from outside. Two things had to be measured before it could be
+code, and both were, on this machine, Node 26.3.0, NTFS.
+
+**1. `fsPromises.realpath.native` does not exist.** `.native` is on the callback and sync APIs
+(`fs.realpath.native`, `fs.realpathSync.native`); on the promises API it is `undefined`. So the
+choice was a synchronous native call inside an async adapter, or the async JS implementation — and
+the reason to want `.native` at all is that it asks Windows for the final path by handle while the
+JS one walks the components itself.
+
+**2. It makes no difference here.** Against a real `mklink /J` junction:
+
+```
+promises.realpath       : ...\fd-junction-probe\outside\secret.txt
+sync.realpathSync       : ...\fd-junction-probe\outside\secret.txt
+sync.realpathSync.native: ...\fd-junction-probe\outside\secret.txt
+case folded dir         : ...\fd-junction-probe\root        (asked for \ROOT)
+lstat isSymbolicLink    : true
+```
+
+All three resolve the junction to its target, and all three fold `…\ROOT` back to the casing on
+disk. Both guarantees are what SEC-FS-1 needs, so `FsPathCanonicaliser` uses the async JS call and
+pays no synchronous syscall on the request path.
+
+**A junction is not a symbolic link, and that is why this lives in `tests/win/`.** It needs no
+privilege to create, Explorer shows it as an ordinary folder, and it is the shape a Windows
+developer's tree actually grows — `node_modules` redirections, `.claude\worktrees`, a "shortcut"
+to a config directory. `tests/win/project-junction.test.ts` makes one and asserts the whole
+composition: an ordinary file inside the root resolves and is allowed, a path that leaves through
+a junction is refused, a junction landing in a config directory is refused as SEC-FS-2, importing
+a root that is itself a junction stores the *target*, and importing a junction that points at a
+config directory is refused. The lesson is G.11's, arriving again: `ReadPolicy` compares strings
+and the fake resolves links because it was told to, so neither of them establishes that Windows
+behaves this way. Only the filesystem can.
+
+**What it also settled about ordering.** `node:path.join(project, '..', 'elsewhere', 'x')`
+collapses the `..` before anything sees it, so the refusal in that case comes from the resolved
+path being outside the root rather than from the segment being spotted. Both halves of the rule are
+therefore load-bearing, and the lexical `..` check earns its place at IMPORT time — where there is
+no `realpath` yet and refusing is cheaper than resolving (`ProjectImport.refuseRequested`).

@@ -9,7 +9,7 @@
 
 version: 1
 project: flightdeck
-updated: 2026-09-14
+updated: 2026-09-16
 
 docs:
   spec: SPEC.md
@@ -1518,14 +1518,36 @@ phases:
 
   - id: P3
     name: Projects and the workflow map
-    status: todo
+    status: doing
     goal: Imported folders show what Claude is configured to do there and what it actually did.
     gate: Importing app-next renders its agents, commands, skills, hook timeline, worktrees and MCP server correctly; importing docs-tool (no .claude) degrades gracefully to CLAUDE.md + stack + git.
     depends_on: [P2]
     tasks:
       - id: P3-T1
         title: Project registry — import by path with realpath canonicalisation and allowlist checks
-        status: todo
+        status: done
+        done_on: 2026-09-16
+        deliverables:
+          [
+            contracts/project.ts,
+            contracts/windows-path.ts,
+            core/domain/project-import.ts,
+            core/domain/read-policy.ts,
+            core/ports/path-canonicaliser.ts,
+            core/adapters/node/fs-path-canonicaliser.ts,
+            core/application/project-registry.ts,
+            core/http/projects-route.ts,
+            core/http/import-project-route.ts,
+            core/http/forget-project-route.ts,
+            core/projects.ts,
+            core/routes.ts,
+            app/deck/projects-panel.tsx,
+            app/deck/projects-view-model.ts,
+            tests/win/project-junction.test.ts,
+            tests/e2e/smoke/project-checks.mjs,
+            DECISIONS.md D36,
+            RESEARCH.md G.25,
+          ]
         notes: >-
           DECISIONS.md D26. This is the task that answers "everything in one place" — by importing
           paths, never by moving anything. The registry ships EMPTY and importing is the owner's action
@@ -1537,6 +1559,19 @@ phases:
           by the gate itself; claude-kit (a marketplace registered in both config dirs) and
           multi-business-system (its own product and remote) are the two D26 was argued over, so
           importing them is what proves the argument.
+          SHIPPED as that, and the four targets are still unimported on purpose — the registry a
+          fresh machine boots with is empty, and the smoke asserts it. What the import path answers
+          with is a closed union of refusal codes and the deck turns one into a sentence, so nothing
+          on screen was composed by core from the request. DECISIONS.md D36 is the decision this
+          task made and D26 did not: a project root is DENY-listed (everything but `*.key` and
+          `.credentials*`) where a config directory is ALLOW-listed, because `.mcp.json` and
+          `.claude/settings.json` are what P3-T3 exists to read and SEC-FS-2's unlisted-`.json`
+          rule would have refused both. Config-directory paths are screened by the config rules
+          first whatever contains them, which is what makes that safe, and `ProjectImport` refuses
+          to import a folder that is, is under, or contains a config directory as the second lock.
+          SEC-FS-1's junction check is the half no string rule can make and is measured against a
+          real `mklink /J` in tests/win (RESEARCH.md G.25). Forgetting is shipped with importing:
+          an allowlist that only grows makes the first typo permanent.
         security: [SEC-FS-1]
       - id: P3-T2
         title: Stack and git detection (branch, dirty, ahead/behind) lifted from statusline.py's cached approach

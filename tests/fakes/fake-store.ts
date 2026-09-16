@@ -8,6 +8,7 @@
 // the test that the port is the right shape.
 import type { AuditOutcome, AuditRow, DraftAuditRow } from '../../contracts/audit-row.ts';
 import type { DraftEvent, FdEvent } from '../../contracts/fd-event.ts';
+import { projectKey, type ProjectRecord } from '../../contracts/project.ts';
 import type { DraftVitalsSnapshot, VitalsSnapshot } from '../../contracts/vitals-snapshot.ts';
 import type { Store } from '../../core/ports/store.ts';
 
@@ -15,6 +16,8 @@ export class FakeStore implements Store {
   private readonly events: FdEvent[] = [];
   private readonly audit: AuditRow[] = [];
   private readonly snapshots: VitalsSnapshot[] = [];
+  /** Keyed by `projectKey`, exactly as the sqlite table is — re-import is a replace, not a row. */
+  private readonly imported = new Map<string, ProjectRecord>();
   private nextEventId = 1;
   private nextAuditId = 1;
   private nextSnapshotId = 1;
@@ -86,5 +89,34 @@ export class FakeStore implements Store {
   public snapshotsForSession(sessionId: string, limit: number): readonly VitalsSnapshot[] {
     const mine = this.snapshots.filter((row) => row.sessionId === sessionId);
     return mine.slice(Math.max(mine.length - Math.max(limit, 0), 0));
+  }
+
+  /** `importedAt` survives a re-import, as the adapter's `ON CONFLICT DO UPDATE` leaves it alone. */
+  public rememberProject(project: ProjectRecord): ProjectRecord {
+    if (!this.writable) throw new Error('store is not writable');
+    const key = projectKey(project.path);
+    const held = this.imported.get(key);
+    const stored: ProjectRecord = {
+      ...project,
+      importedAt: held?.importedAt ?? project.importedAt,
+    };
+    this.imported.set(key, stored);
+    return stored;
+  }
+
+  /** Newest first, then by key — the adapter's `ORDER BY imported_at DESC, path_key`. */
+  public projects(): readonly ProjectRecord[] {
+    return [...this.imported.entries()]
+      .sort(([leftKey, left], [rightKey, right]) =>
+        left.importedAt === right.importedAt
+          ? leftKey.localeCompare(rightKey)
+          : right.importedAt - left.importedAt,
+      )
+      .map(([, project]) => project);
+  }
+
+  public forgetProject(path: string): boolean {
+    if (!this.writable) throw new Error('store is not writable');
+    return this.imported.delete(projectKey(path));
   }
 }

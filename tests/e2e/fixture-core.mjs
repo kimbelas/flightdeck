@@ -34,6 +34,7 @@ import { writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { WebSocketServer } from 'ws';
 import { CORE_PORT, LOOPBACK_ADDRESS } from '../../contracts/origins.ts';
+import { parseProjectPathBody, projectKey, projectName } from '../../contracts/project.ts';
 import { parseQuotaSummary } from '../../contracts/quota-summary.ts';
 import { parseSessionRef } from '../../contracts/session-ref.ts';
 import { parseDeckSnapshot, parseSessionRow } from '../../contracts/session-row.ts';
@@ -91,6 +92,15 @@ export class FixtureCore {
     this.requests = [];
     /** The bodies of every `POST /sessions`. The launch form's real destination. */
     this.launches = [];
+    /**
+     * The project registry, as a real core would hold it — P3-T1.
+     *
+     * A map keyed the way the sqlite table is, so re-importing is a replace rather than a second
+     * row, and it starts EMPTY because that is what ships (DECISIONS.md D26). The refusal rules
+     * are core's, not this file's: only the shapes the deck can actually produce from a text box
+     * are answered here, and the four SEC-FS-1 checks are unit-tested where they live.
+     */
+    this.projects = new Map();
     this.server = createServer((request, response) => {
       void this.route(request, response);
     });
@@ -153,7 +163,38 @@ export class FixtureCore {
     if (request.method === 'GET' && path === '/session') return [200, this.detailFor(url)];
     if (request.method === 'POST' && path === '/sessions') return this.launch(await body(request));
     if (request.method === 'POST' && path === '/pty-ticket') return this.mint(await body(request));
+    if (request.method === 'GET' && path === '/projects') {
+      return [200, { projects: [...this.projects.values()] }];
+    }
+    if (request.method === 'POST' && path === '/projects') return this.import(await body(request));
+    if (request.method === 'POST' && path === '/projects/forget') {
+      return this.forget(await body(request));
+    }
     return [404, { error: 'not found' }];
+  }
+
+  /**
+   * `POST /projects` — P3-T1.
+   *
+   * It screens the way core screens, through the SAME parser (`parseProjectPathBody`), because the
+   * deck is the thing being tested: if the panel and that parser ever stop agreeing about the
+   * field name, the import has to fail in the smoke rather than be papered over by a double that
+   * accepts anything. `C:\nope` is refused as `missing` so the panel's refusal path is reachable
+   * without a real folder on the runner.
+   */
+  import(raw) {
+    const path = parseProjectPathBody(raw);
+    if (path === undefined) return [400, { error: 'empty' }];
+    if (path.trim().toLowerCase().startsWith('c:\\nope')) return [400, { error: 'missing' }];
+    const project = { path, name: projectName(path), importedAt: Date.now() };
+    this.projects.set(projectKey(path), project);
+    return [201, { project }];
+  }
+
+  forget(raw) {
+    const path = parseProjectPathBody(raw);
+    if (path === undefined) return [400, { error: 'empty' }];
+    return [200, { forgotten: this.projects.delete(projectKey(path)) }];
   }
 
   /**

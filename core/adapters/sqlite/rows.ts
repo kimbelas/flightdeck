@@ -7,6 +7,7 @@
 // one unreadable row must not take out the page of rows around it.
 import type { AuditOutcome, AuditRow } from '../../../contracts/audit-row.ts';
 import { EVENT_SOURCES, type EventSource, type FdEvent } from '../../../contracts/fd-event.ts';
+import { projectName, type ProjectRecord } from '../../../contracts/project.ts';
 import type { SubscriptionId } from '../../../contracts/session.ts';
 import type { VitalsSnapshot } from '../../../contracts/vitals-snapshot.ts';
 
@@ -59,6 +60,24 @@ export function toSnapshot(row: unknown): VitalsSnapshot {
     contextWindowSize: optionalNumber(fields['context_window']),
     costUsd: optionalNumber(fields['cost_usd']),
     modelId: typeof fields['model_id'] === 'string' ? fields['model_id'] : undefined,
+  };
+}
+
+/**
+ * One imported project — P3-T1.
+ *
+ * `name` is re-derived when the column is empty rather than handed back blank: a project row is a
+ * standing permission and must survive a label that did not, and an unnamed entry in the deck's
+ * list is a row nobody can identify well enough to forget.
+ */
+export function toProject(row: unknown): ProjectRecord {
+  const fields = asRecord(row) ?? {};
+  const path = stringAt(fields, 'path');
+  const name = stringAt(fields, 'name');
+  return {
+    path,
+    name: name === '' ? projectName(path) : name,
+    importedAt: numberAt(fields, 'imported_at'),
   };
 }
 

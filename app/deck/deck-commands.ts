@@ -4,7 +4,8 @@
 // change layout, connect. Three of them exist today and are below. The other three are listed here
 // so the next person does not have to work out whether they were forgotten:
 //
-//   - **switch project** — P3. There is no project concept on the deck yet, only a `cwd` per row.
+//   - **switch project** — P3-T6. Importing one is here since P3-T1, and switching to one needs
+//     the by-project view to switch to.
 //   - **run Ask** — P4. Nothing in the deck can ask a question of a session.
 //   - **connect** — exists, but as `npm run connect`, and it writes under `~/.claude*` behind a dry
 //     run, a diff and a `--apply` opt-in (P1-T11, SEC-ING-3). A palette entry that performed that
@@ -20,7 +21,13 @@
 // A palette entry that does nothing is worse than an absent one: the first no-op teaches you not to
 // trust the entries beside it. So the list grows when those tasks land, and not before.
 import type { SubscriptionId } from '../../contracts/session.ts';
-import { focusControl, focusRow, LAUNCH_PROMPT_ID, SEARCH_INPUT_ID } from './deck-keyboard.ts';
+import {
+  focusControl,
+  focusRow,
+  LAUNCH_PROMPT_ID,
+  PROJECT_PATH_ID,
+  SEARCH_INPUT_ID,
+} from './deck-keyboard.ts';
 import type { DeckCommand } from './command-palette-view-model.ts';
 import type { SessionRowViewModel } from './session-row-view-model.ts';
 
@@ -36,13 +43,15 @@ export interface DeckActions {
   readonly onRefresh: () => void;
   readonly onOpenPane: (row: SessionRowViewModel) => void;
   readonly onLaunch: (subscription: SubscriptionId, prompt: string, name: string) => void;
+  readonly onImportProject: (path: string) => void;
+  readonly onForgetProject: (path: string) => void;
 }
 
 export interface CommandTargets extends DeckActions {
   readonly rows: readonly SessionRowViewModel[];
 }
 
-/** The deck's commands: the four that are always there, then two per session that can be. */
+/** The deck's commands: the five that are always there, then two per session that can be. */
 export function deckCommands(targets: CommandTargets): readonly DeckCommand[] {
   return [...globalCommands(targets), ...targets.rows.flatMap((row) => rowCommands(row, targets))];
 }
@@ -75,6 +84,16 @@ function globalCommands(targets: CommandTargets): readonly DeckCommand[] {
       hint: 'deck · /',
       run: () => {
         focusControl(SEARCH_INPUT_ID);
+      },
+    },
+    {
+      id: 'import-project',
+      label: 'Import a project',
+      // It says what importing does, because the answer is not obvious and is the whole of D26:
+      // the folder stays where it is and core is allowed to read it.
+      hint: 'projects · by path — nothing is scanned or copied',
+      run: () => {
+        focusControl(PROJECT_PATH_ID);
       },
     },
   ];

@@ -26,9 +26,11 @@ import {
   type KeyStroke,
 } from '../../contracts/keymap.ts';
 
-/** The two controls the keyboard puts focus in by name. Owned here because focusing them is. */
+/** The controls the keyboard puts focus in by name. Owned here because focusing them is. */
 export const SEARCH_INPUT_ID = 'deck-search';
 export const LAUNCH_PROMPT_ID = 'launch-prompt';
+/** Where a project path is typed — the palette's "Import a project" focuses this (P3-T1). */
+export const PROJECT_PATH_ID = 'project-path';
 
 /** The session rows' expand buttons, in the order they are on screen. Filtering changes this. */
 const ROW_SELECTOR = '[data-deck-row]';
