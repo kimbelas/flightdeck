@@ -25,11 +25,15 @@ That is the only supported way to start it. The script builds the deck, starts c
 specifically**, then opens an Edge `--app` window on `/deck`. It exits once everything is up, so
 it does not need a background shell.
 
-**Never use `npm run dev`.** Under the SEC-UI-1 policy `next dev` serves a page that renders and
-then does nothing at all — no button works, no fetch is issued, and the deck sits on "core down"
-forever, because Turbopack's dev runtime needs `eval` and the CSP does not grant it (RESEARCH.md
-G.3, open as P2-T6b). It fails silently and looks like a broken feature. `flightdeck.cmd` runs the
-production build for exactly this reason.
+**`npm run dev` works again — but `flightdeck.cmd` is still how you RUN Flightdeck.** The dev
+server hydrates (P2-T6b, RESEARCH.md G.23) and is the right tool for editing the deck; the launcher
+runs the production bundle, which is what the owner actually uses and what every measurement in §G
+was taken against. Use `npm run dev` to iterate, `flightdeck.cmd` to check the real thing.
+
+This was open for five days as G.3 — under the SEC-UI-1 policy `next dev` served a page that
+rendered and then did nothing at all: no button worked, no fetch was issued, and the deck sat on
+"core down" forever. **It failed silently and looked like a broken feature**, which is why
+`npm run smoke:dev` now runs the whole suite against the dev server on every PR.
 
 **Any change under `app/` needs a rebuild.** The deck is served from `.next`, not from source, so
 editing a component and refreshing shows the old bundle. Re-run `flightdeck.cmd` — it rebuilds

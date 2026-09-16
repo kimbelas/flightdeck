@@ -18,15 +18,23 @@ import { waitFor } from './report.mjs';
 /** Every single-character deck binding, typed at a shell. None of them may reach the deck. */
 const AT_THE_SHELL = 'jjkk//??';
 
-export async function paneChecks(page, report, core) {
+export async function paneChecks(page, report, core, { dev = false } = {}) {
   report.group('A pane, and the keys that must and must not escape it');
 
-  const minted = core.minted.length;
+  const before = core.minted.length;
   await openShellPane(page, report);
+  const minted = core.minted.length - before;
+  // One in production. Under `next dev` React StrictMode mounts the effect twice — mount, clean up,
+  // mount — so the first ticket is minted and never spent, and `PaneSocket.close` marks the pane
+  // abandoned so the socket it was for is never opened. That is the designed behaviour rather than
+  // a leak (a ticket is single-use and expires in seconds), but it IS two mints, and a check that
+  // said "exactly one" in both modes would be asserting that StrictMode does not do what it is for.
   report.check(
-    'the pane minted exactly one ticket for a shell',
-    core.minted.length === minted + 1 && core.minted.at(-1)?.kind === 'shell',
-    JSON.stringify(core.minted.at(-1) ?? {}),
+    dev
+      ? 'the pane minted a ticket per StrictMode mount, and spent one'
+      : 'the pane minted exactly one ticket for a shell',
+    minted === (dev ? 2 : 1) && core.minted.at(-1)?.kind === 'shell',
+    `${String(minted)} mint(s), last ${JSON.stringify(core.minted.at(-1) ?? {})}`,
   );
 
   const input = page.locator('.xterm-helper-textarea').first();

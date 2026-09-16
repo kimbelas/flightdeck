@@ -28,8 +28,8 @@ fixture pipeline). The rules below are the summary; the skills are the procedure
 
 ## Rules that are easy to get wrong
 
-- **Run it with `flightdeck.cmd`, not `npm run dev`.** Dev mode renders the deck and never
-  hydrates (P2-T6b, RESEARCH.md G.3). Editing the deck means rebuilding.
+- **Run it with `flightdeck.cmd`.** That is the production bundle, which is what the owner uses.
+  `npm run dev` hydrates again (P2-T6b) and is fine for editing — just never measure against it.
 - **`main` is protected with an empty bypass list** (D25). Everything lands by PR, including
   one-line fixes. Branch `feat/P1-T4-short-name`, commit `feat(core): summary [P1-T4]`.
 - **`npm run check` must be green before the PR** — lint, typecheck, format, roadmap, tests.
