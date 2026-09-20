@@ -100,9 +100,20 @@ function DeckOverlays({ keys }: { readonly keys: DeckKeys }): JSX.Element | null
       />
     );
   }
-  if (keys.sheetOpen) return <ShortcutSheet keymap={keys.keymap} onClose={keys.onCloseSheet} />;
+  if (keys.sheetOpen) {
+    return <ShortcutSheet keymap={keys.keymap} api={SHEET_API} onClose={keys.onCloseSheet} />;
+  }
   return null;
 }
+
+/**
+ * The sheet's own client, module-level because it is stateless and the sheet is not always mounted.
+ *
+ * Not the store's: nothing the helper does belongs in a session snapshot, and threading the store
+ * through the sheet to reach the `fetch` inside it would make every keyboard question a deck-state
+ * question (P5a-T7).
+ */
+const SHEET_API = new BrowserDeckApi();
 
 /**
  * One store for the life of the page, with the browser's two adapters in it.

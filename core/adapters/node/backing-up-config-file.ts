@@ -31,6 +31,11 @@ export class BackingUpConfigFile implements ConfigFile {
     }
   }
 
+  /** @throws if the write fails. Temp-then-rename anyway: a reader may be watching the directory. */
+  public create(path: string, contents: string): void {
+    this.writeThenRename(path, contents);
+  }
+
   /**
    * @throws if the backup or the temp write fails. The original is untouched in both cases.
    */
@@ -38,6 +43,11 @@ export class BackingUpConfigFile implements ConfigFile {
     const backup = `${path}.bak-${stamp(this.now())}`;
     copyFileSync(path, backup);
 
+    this.writeThenRename(path, contents);
+    return backup;
+  }
+
+  private writeThenRename(path: string, contents: string): void {
     const temp = join(dirname(path), `.${basename(path)}.flightdeck-tmp`);
     try {
       // No `encoding: utf8` surprises: the caller hands over the exact bytes it showed in the
@@ -48,7 +58,6 @@ export class BackingUpConfigFile implements ConfigFile {
       rmSync(temp, { force: true });
       throw cause;
     }
-    return backup;
   }
 }
 

@@ -860,6 +860,36 @@ button.ghost {
   font-size: 12px;
 }
 
+/* P5a-T7. The keyboard helper's two buttons and the diff it shows before either is pressed. */
+.sheet-actions {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.sheet-diff {
+  margin: 6px 0;
+}
+
+.sheet-diff summary {
+  cursor: pointer;
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.sheet-diff pre {
+  margin: 4px 0 0;
+  padding: 8px;
+  background: var(--bg-raised, #0d0d0d);
+  border: 1px solid var(--line, #262626);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre;
+}
+
 /* P5a-T8. A pasted image's progress or refusal. Its own line rather than .pane-detail's, because
    that one belongs to the pane's STATUS and a paste must not overwrite "evicted". */
 .pane-note {

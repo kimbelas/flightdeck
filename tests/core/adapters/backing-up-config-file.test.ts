@@ -65,6 +65,35 @@ describe('BackingUpConfigFile', () => {
     expect(readdirSync(dir)).toEqual(['settings.json']);
   });
 
+  // P5a-T7. `create` is the branch the keyboard helper needs: neither config dir has a
+  // keybindings.json until somebody asks for one, and `replace` would throw copying an original
+  // that is not there.
+  it('creates a file that is not there, with no backup beside it', () => {
+    const fresh = join(dir, 'keybindings.json');
+
+    new BackingUpConfigFile(at).create(fresh, '{"bindings":[]}');
+
+    expect(readFileSync(fresh, 'utf8')).toBe('{"bindings":[]}');
+    expect(readdirSync(dir).sort()).toEqual(['keybindings.json', 'settings.json']);
+  });
+
+  it('leaves no temp file behind when it creates one', () => {
+    new BackingUpConfigFile(at).create(join(dir, 'keybindings.json'), 'x');
+    expect(readdirSync(dir).some((name) => name.includes('flightdeck-tmp'))).toBe(false);
+  });
+
+  it('create overwrites rather than failing, so a retry after a crash works', () => {
+    const fresh = join(dir, 'keybindings.json');
+    const file = new BackingUpConfigFile(at);
+
+    file.create(fresh, 'one');
+    file.create(fresh, 'two');
+
+    expect(readFileSync(fresh, 'utf8')).toBe('two');
+    // And still no backup: `create` never claims to have kept anything.
+    expect(readdirSync(dir).some((name) => name.includes('.bak-'))).toBe(false);
+  });
+
   it('two replaces in the same second do not lose the first backup', () => {
     const file = new BackingUpConfigFile(at);
 

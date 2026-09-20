@@ -37,6 +37,7 @@ import { WebSocketServer } from 'ws';
 import { CORE_PORT, LOOPBACK_ADDRESS } from '../../contracts/origins.ts';
 import { PASTED_IMAGE_PATH } from '../../contracts/pasted-image.ts';
 import { PastedImage } from '../../core/domain/pasted-image.ts';
+import { KeybindingPlanner } from '../../core/application/keybinding-planner.ts';
 import { parseProjectPathBody, projectKey, projectName } from '../../contracts/project.ts';
 import { parseQuotaSummary } from '../../contracts/quota-summary.ts';
 import { parseSessionRef } from '../../contracts/session-ref.ts';
@@ -125,6 +126,17 @@ export class FixtureCore {
     this.stops = [];
     /** Every image accepted by `POST /pasted-images` — kind and decoded size (P5a-T8). */
     this.pasted = [];
+    /**
+     * The two keybindings.json files, in memory — P5a-T7.
+     *
+     * `undefined` means "not there", which is the state that matters: the helper's first write
+     * CREATES both, and creating is the branch that must not ask for a backup. Nothing here
+     * touches a disk, so a smoke run cannot rewrite the owner's real config.
+     */
+    this.keybindings = new Map([
+      [String.raw`C:\cfg\.claude-365\keybindings.json`, undefined],
+      [String.raw`C:\cfg\.claude-isg\keybindings.json`, undefined],
+    ]);
     /** Every `input` frame the PTY socket received, so a check can ask what the pane SENT. */
     this.typed = [];
     /**
@@ -211,6 +223,12 @@ export class FixtureCore {
     if (request.method === 'POST' && path === PASTED_IMAGE_PATH) {
       return this.pasteImage(await body(request));
     }
+    if (request.method === 'GET' && path === '/keybindings') {
+      return this.keybindingPlan(url.searchParams.get('direction') ?? 'apply');
+    }
+    if (request.method === 'POST' && path === '/keybindings') {
+      return this.keybindingWrite(await body(request));
+    }
     if (request.method === 'GET' && path === '/projects') {
       return [200, { projects: [...this.projects.values()] }];
     }
@@ -295,6 +313,51 @@ export class FixtureCore {
     this.pasted.push({ kind: image.value.kind, bytes: image.value.bytes.length });
     const name = `paste-20260920-143355-123-000${this.pasted.length}${image.value.extension}`;
     return [201, { path: win32.join(PASTE_DIRECTORY, name) }];
+  }
+
+  /**
+   * `GET /keybindings` — P5a-T7, planned with core's OWN planner against in-memory files.
+   *
+   * The same argument as `import` and `pasteImage`: the deck is what is under test, so the plan it
+   * renders has to be the plan core would produce. What is fixture is only WHERE the files are —
+   * `this.keybindings` is a Map, so a smoke run never goes near `~/.claude*`, which is the one
+   * thing a test on this machine must not do.
+   */
+  keybindingPlan(direction) {
+    if (direction !== 'apply' && direction !== 'restore') return [400, { error: 'bad request' }];
+    const planner = new KeybindingPlanner(this.keybindingSources());
+    return [200, { direction, plan: direction === 'apply' ? planner.apply() : planner.restore() }];
+  }
+
+  keybindingWrite(raw) {
+    const direction = parseJson(raw)?.direction;
+    if (direction !== 'apply' && direction !== 'restore') return [400, { error: 'bad request' }];
+
+    const planner = new KeybindingPlanner(this.keybindingSources());
+    const plan = direction === 'apply' ? planner.apply() : planner.restore();
+    if (!plan.ok) return [409, { error: 'refused', refusals: plan.refusals }];
+
+    const backups = [];
+    for (const change of plan.changes) {
+      if (change.before !== '') backups.push(`${change.path}.bak-fixture`);
+      this.keybindings.set(change.path, change.after);
+    }
+    return [
+      200,
+      {
+        written: plan.changes.map((change) => change.path),
+        backups,
+        alreadyDone: plan.alreadyDone,
+      },
+    ];
+  }
+
+  keybindingSources() {
+    return [...this.keybindings].map(([path, contents]) => ({
+      subscription: path.includes('365') ? '365' : 'isg',
+      path,
+      contents,
+    }));
   }
 
   mint(raw) {

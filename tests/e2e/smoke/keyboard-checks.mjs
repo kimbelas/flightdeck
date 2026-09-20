@@ -169,3 +169,72 @@ function focused(page) {
 }
 
 export { focused, press };
+
+/**
+ * The `?` sheet's keyboard helper — P5a-T7, SPEC §5.3.
+ *
+ * Every assertion is about what the SHEET SHOWS and what CORE WAS ASKED, never about the model's
+ * own state. The load-bearing one is the order: the button that writes must not exist until a plan
+ * has been rendered, because that is D13 — the owner reads the diff before their Claude Code
+ * config changes — expressed as something a check can fail.
+ */
+export async function keyboardHelperChecks(page, report, core) {
+  await page.locator('h1').click();
+  await press(page, '?');
+  await waitFor(async () => (await page.locator('.sheet').count()) > 0);
+
+  const helper = page.locator('[data-keyboard-helper]');
+  report.check(
+    'the sheet offers to move the keys Claude Code binds under the browser',
+    await helper.isVisible(),
+  );
+
+  // The honest half of the panel: Ctrl+W is not remappable and the sheet says so (G.33).
+  report.check(
+    'and says plainly that Ctrl+W cannot be moved',
+    ((await helper.innerText()) ?? '').includes('Ctrl+W cannot be moved'),
+  );
+
+  report.check(
+    'no way to write anything before a plan has been shown',
+    (await page.locator('[data-helper-write]').count()) === 0,
+  );
+
+  await helper.getByRole('button', { name: 'show what it would write' }).click();
+  const planned = await waitFor(async () => (await page.locator('[data-helper-plan]').count()) > 0);
+  report.check('the plan arrives from core', planned);
+
+  const diff = (await page.locator('[data-helper-after]').first().textContent()) ?? '';
+  report.check(
+    'and the diff shows the file that would be written, chord and unbind together',
+    diff.includes('"ctrl+t": null') && diff.includes('"ctrl+x ctrl+t": "app:toggleTodos"'),
+    diff.replaceAll(/\s+/gu, ' ').slice(0, 90),
+  );
+  report.check(
+    'for both config directories',
+    (await page.locator('[data-helper-after]').count()) === 2,
+  );
+
+  await page.locator('[data-helper-write]').click();
+  const wrote = await waitFor(async () => (await page.locator('[data-helper-wrote]').count()) > 0);
+  report.check('writing it says which files went where', wrote);
+
+  // What core HOLDS, not what the page drew: the page could say anything.
+  const held = [...core.keybindings.values()];
+  report.check(
+    'and core now holds a keybindings.json for each subscription',
+    held.length === 2 && held.every((text) => (text ?? '').includes('ctrl+x ctrl+t')),
+    String(held.filter((text) => text !== undefined).length),
+  );
+
+  // Reversible, which is the claim SEC-FS-3 and D13 both rest on.
+  await helper.getByRole('button', { name: 'show how to put it back' }).click();
+  await waitFor(async () => (await page.locator('[data-helper-write]').count()) > 0);
+  await page.locator('[data-helper-write]').click();
+  const restored = await waitFor(async () =>
+    [...core.keybindings.values()].every((text) => !(text ?? '').includes('ctrl+x ctrl+t')),
+  );
+  report.check('and putting it back removes every key it added', restored);
+
+  await press(page, 'Escape');
+}

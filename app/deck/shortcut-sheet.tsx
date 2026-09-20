@@ -2,6 +2,10 @@
 
 // The `?` sheet — SPEC §5.4's "shortcut sheet with the browser-owned keys called out".
 //
+// Four tables and, since P5a-T7, one thing that acts: the helper that moves the two keys Claude
+// Code binds under a browser-owned shortcut. It lives here because this is the sheet somebody
+// opens when a key did not do what they expected, which is the moment the offer is worth making.
+//
 // Four tables, and the point of the sheet is that they are four rather than one. A key can be
 // bound by the deck, handled by the browser in a way the deck is happy with, claimed by the deck
 // *away from* a terminal pane, or owned by the browser and unreclaimable — and someone hunting for
@@ -12,6 +16,8 @@
 // carries the findings, and this renders them.
 import type { JSX } from 'react';
 import type { DeckKeymap, KeyBinding, KeySection } from '../../contracts/keymap.ts';
+import type { DeckApi } from './deck-api.ts';
+import { KeyboardHelper } from './keyboard-helper.tsx';
 import {
   BROWSER_OWNED_KEYS,
   NATIVE_KEYS,
@@ -21,6 +27,8 @@ import {
 
 interface ShortcutSheetProps {
   readonly keymap: DeckKeymap;
+  /** For the helper, which is the one thing on this sheet that talks to core (P5a-T7). */
+  readonly api: DeckApi;
   readonly onClose: () => void;
 }
 
@@ -31,7 +39,7 @@ const SECTIONS: readonly (readonly [KeySection, string])[] = [
   ['palette', 'In the palette'],
 ];
 
-export function ShortcutSheet({ keymap, onClose }: ShortcutSheetProps): JSX.Element {
+export function ShortcutSheet({ keymap, api, onClose }: ShortcutSheetProps): JSX.Element {
   return (
     <div className="scrim" role="presentation" onMouseDown={onClose}>
       <div
@@ -56,6 +64,7 @@ export function ShortcutSheet({ keymap, onClose }: ShortcutSheetProps): JSX.Elem
           <KeyTable title="The browser already does these" rows={NATIVE_KEYS} />
           <KeyTable title="Taken from a terminal pane" rows={TERMINAL_CLAIMED} />
           <BrowserOwned />
+          <KeyboardHelper api={api} />
         </div>
       </div>
     </div>
