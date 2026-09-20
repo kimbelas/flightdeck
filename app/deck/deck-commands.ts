@@ -44,6 +44,7 @@ export interface DeckActions {
   readonly onLaunch: (subscription: SubscriptionId, prompt: string, name: string) => void;
   readonly onImportProject: (path: string) => void;
   readonly onForgetProject: (path: string) => void;
+  readonly onResume: (row: SessionRowViewModel) => void;
 }
 
 export interface CommandTargets extends DeckActions {
@@ -138,16 +139,34 @@ function rowCommands(row: SessionRowViewModel, targets: CommandTargets): readonl
       focusRow(row.key);
     },
   };
-  if (!row.canOpenPane) return [jump];
-  return [
-    jump,
-    {
-      id: `pane:${row.key}`,
-      label: `Open a pane for ${row.title}`,
-      hint,
-      run: () => {
-        targets.onOpenPane(row);
+  // The two are mutually exclusive by construction: a row is attachable only while it is live,
+  // and resumable only while it is not. Neither is offered for an interactive session, which is
+  // permanently neither (SPEC §5.2).
+  if (row.canOpenPane) {
+    return [
+      jump,
+      {
+        id: `pane:${row.key}`,
+        label: `Open a pane for ${row.title}`,
+        hint,
+        run: () => {
+          targets.onOpenPane(row);
+        },
       },
-    },
-  ];
+    ];
+  }
+  if (row.canResume) {
+    return [
+      jump,
+      {
+        id: `resume:${row.key}`,
+        label: `Resume ${row.title}`,
+        hint: `${hint} · wakes it under its own id`,
+        run: () => {
+          targets.onResume(row);
+        },
+      },
+    ];
+  }
+  return [jump];
 }

@@ -1,0 +1,76 @@
+// What core's answers to the two session verbs mean — P4-T2a.
+//
+// Out of `deck-store.ts` for its 250-line limit, and the seam holds: the store owns STATE, and
+// these four functions own the reading of one reply. Neither touches the network — `DeckApi` does
+// that — so this file is pure and the store keeps its subject.
+//
+// The shared rule, which is the reason both `whyNot` functions exist rather than one `describe`:
+// **prefer core's own code to the status it came under.** `no_claude` is a 503, and reading a 503
+// as "core is not running" is exactly wrong — core is running, it answered, and it cannot find
+// claude.exe. That is the operator's to fix and is the one code worth repeating verbatim.
+import {
+  parseLaunchAccepted,
+  parseLaunchFailure,
+  parseResumeFailure,
+  type LaunchAccepted,
+} from '../../contracts/launch-reply.ts';
+import type { JsonReply } from './deck-api.ts';
+
+export const UNREACHABLE = 'Could not reach flightdeck-core.';
+
+/** Said out loud rather than swallowed: a reply nobody can parse is not an empty session list. */
+export const UNREADABLE = 'flightdeck-core answered something the deck could not read.';
+
+/**
+ * The session a launch actually started, or `undefined` for a reply that did not start one.
+ *
+ * 201 exactly: core answers `created` for a session that now exists, and anything else — a 200
+ * included — is not one (LaunchRoute).
+ */
+export function whatStarted(reply: JsonReply): LaunchAccepted | undefined {
+  return reply.status === 201 ? parseLaunchAccepted(reply.body) : undefined;
+}
+
+/**
+ * Why it did not, preferring core's own code to the status it came under.
+ *
+ * The status alone lies here. `no_claude` is a 503, and `describe` reads a 503 as "core is not
+ * running" — which is exactly wrong: core is running, it answered, and it cannot find claude.exe.
+ * That is the operator's to fix and the only one of the three codes worth repeating; the other two
+ * describe the request, which the owner cannot act on.
+ */
+export function whyNotLaunched(reply: JsonReply | undefined): string {
+  if (reply === undefined) return UNREACHABLE;
+  const failure = parseLaunchFailure(reply.body);
+  if (failure === 'no_claude') {
+    return 'Core is running but cannot find claude.exe — run `npm run doctor`.';
+  }
+  if (failure !== undefined) return 'Core would not start that session.';
+  // A 201 that got this far carried something other than a session id.
+  return reply.status === 201 ? UNREADABLE : describeStatus(reply.status);
+}
+
+/**
+ * Why a session would not wake, preferring core's code to the status, exactly as `whyNotLaunched`.
+ *
+ * `bad_session` gets a sentence of its own rather than being folded in with the rest, because it is
+ * the one that means the DECK sent something wrong — a row carrying an id that is not a full
+ * lowercase uuid — and it is worth being able to tell that apart from the CLI refusing.
+ */
+export function whyNotResumed(reply: JsonReply | undefined): string {
+  if (reply === undefined) return UNREACHABLE;
+  const failure = parseResumeFailure(reply.body);
+  if (failure === 'no_claude') {
+    return 'Core is running but cannot find claude.exe — run `npm run doctor`.';
+  }
+  if (failure === 'bad_session') return 'That row does not carry a full session id.';
+  if (failure !== undefined) return 'Core could not wake that session.';
+  return describeStatus(reply.status);
+}
+
+export function describeStatus(status: number): string {
+  if (status === 503) return 'flightdeck-core is not running.';
+  if (status === 401 || status === 403)
+    return 'Core refused the request — restart it to reissue the token.';
+  return `Core answered ${String(status)}.`;
+}

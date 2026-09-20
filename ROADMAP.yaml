@@ -1785,9 +1785,75 @@ phases:
       - id: P4-T1
         title: Presets — per project, encoding the five profile functions and the plan-first ticket prompt; preset groups
         status: todo
+      - id: P4-T2a
+        title: Resume — wake a stopped background session, with the one argv that does not fork it
+        status: done
+        done_on: 2026-09-20
+        deliverables:
+          [
+            contracts/launch-reply.ts,
+            contracts/pty-protocol.ts,
+            contracts/deck-routes.ts,
+            core/application/session-resumer.ts,
+            core/http/resume-route.ts,
+            core/routes.ts,
+            core/main.ts,
+            app/deck/deck-store.ts,
+            app/deck/deck-replies.ts,
+            app/deck/session-row-view-model.ts,
+            app/deck/session-row-card.tsx,
+            app/deck/session-list.tsx,
+            app/deck/deck-commands.ts,
+            tests/core/application/session-resumer.test.ts,
+            tests/core/http/resume-route.test.ts,
+            tests/e2e/fixture-core.mjs,
+            tests/e2e/smoke/deck-checks.mjs,
+            RESEARCH.md F.2.8b,
+          ]
+        notes: >-
+          Pulled out of P4-T2 and shipped ahead of it because it is the dead end the deck actually
+          has. Most rows on screen are background sessions that have finished, and every one of them
+          read "Not running. Resume it to attach." with nothing to press — the deck could SEE the
+          session and could not do the one thing the sentence told you to. Waking one needs none of
+          P4-T2's apparatus: no presets, no PowerShell profile functions, no quota routing, because
+          it is one argv with one argument in it.
+          **That argv is the whole task.** RESEARCH.md F.2.7 measured that `--bg --resume` forks a
+          copy unless it is called in exactly one way: a SHORT id forks, and ANY extra flag forks,
+          including `-n`. A fork succeeds — there is no error to observe — so the owner ends up with
+          a duplicate session under a new id with its name lost, and nothing says so. The full
+          lowercase uuid is therefore checked in `SessionResumer` as a CONTROL rather than as input
+          hygiene, and `isFullSessionId` is exported from `contracts/pty-protocol.ts` rather than
+          copied, so the pane socket's rule and this one cannot drift. There is no prompt argument
+          on purpose: F.2.7 says the prompt goes in after the wake, which here means the owner types
+          it into the pane.
+          `SessionResumer` is its own class rather than a method on `SessionLauncher`. They share
+          four ports and nothing else — launch builds a session out of a prompt and has to find the
+          new id in stdout, resume names a session that already exists and answers the id it was
+          GIVEN, deliberately, because reading a different one back out of stdout would be reporting
+          on a fork it had just made. `POST /sessions/resume` is its own literal path for the reason
+          routes.ts gives: a body field choosing between "start a new session" and "wake this one"
+          would put two verbs behind one entry in the table that says what is reachable.
+          The row offers resume only for a background session that is not live. An interactive one
+          is not a `--bg` job and never becomes one (SPEC §5.2), so offering it there would be
+          offering the one thing that is permanently impossible; a live one needs no waking. The
+          sentence stays under the button rather than being replaced by it — it is what makes the
+          button make sense.
+          The smoke check is not vacuous: sending `row.ref.shortId` instead of the uuid fails it, and
+          fails it because the FIXTURE CORE refuses the short id with `bad_session`, the same shape
+          rule core applies. That is F.2.7's protection observed end to end rather than asserted.
+          Still owed to P4-T2 and named here so it is not lost: `stop` and `rm`. `rm` deletes a live
+          session with no confirmation (F.2.8) and is the most destructive verb Flightdeck will
+          expose, so it gets its own confirm step — it is deliberately not in this task, where it
+          would have ridden in behind a one-line button.
+          One measurement came out of verifying this live and is RESEARCH.md F.2.8b: `stop` takes
+          the SHORT id and refuses the full uuid, which is the exact mirror of `--resume`. The two
+          verbs disagree in opposite directions and fail differently — `--resume` with a short id
+          succeeds and forks, `stop` with a full uuid fails loudly — so P4-T2 must not share one id
+          helper between them.
       - id: P4-T2
         title: Launcher adapter — PowerShell -EncodedCommand, profile-function allowlist, prompt via environment variable, --bg, name required
         status: todo
+        depends_on: [P4-T2a]
         notes: >-
           RESEARCH.md F.2.7–F.2.8. Resume is `--bg --resume <full lowercase uuid>` and nothing else —
           a short id, or any extra flag including -n, silently forks a copy under a new id and loses
@@ -2015,9 +2081,10 @@ phases:
           what G.5 said it was — see RESEARCH.md G.29 before reading G.5 on the subject. "Held
           elsewhere" and the evicted state went with them, because a pane that cannot say why it
           stopped is the defect rather than a missing control.
-          What is left is the controls that need something core does not have yet: stop, respawn,
-          resume and rename are all the launcher (P4-T2), and `--bg --resume <full lowercase uuid>`
-          with nothing else is the shape F.2.7 measured. Interrupt is deliberately NOT on this list
+          What is left is the controls that need something core does not have yet: stop, respawn and
+          rename are the launcher (P4-T2). RESUME is SHIPPED — P4-T2a put it on the session row,
+          which is where a stopped session is, rather than on a pane, which a stopped session does
+          not have. Interrupt is deliberately NOT on this list
           any more — Ctrl+C already reaches the PTY through xterm, since `BROWSER_OWNED` claims only
           ctrl+w/t/n, so a button for it would be a second way to do a thing that works.
       - id: P5a-T7

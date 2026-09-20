@@ -13,6 +13,7 @@ import { IngestKeyIssuer } from './application/ingest-key-issuer.ts';
 import { PaneRegistry } from './application/pane-registry.ts';
 import { type Reconciler } from './application/reconciler.ts';
 import { SessionLauncher } from './application/session-launcher.ts';
+import { SessionResumer } from './application/session-resumer.ts';
 import { AuditLog } from './application/audit-log.ts';
 import { StatusReport } from './application/status-report.ts';
 import { type TranscriptReader } from './application/transcript-reader.ts';
@@ -251,6 +252,7 @@ function buildHttp(parts: HttpParts): HttpSide {
   // SEC-HTTP-6, shared: the server spends the control budget per token, the hooks route spends the
   // ingest budget per session id, and one limiter means one place the windows live.
   const limiter = new RateLimiter(clock);
+  const sessionParts = { install, runner: parts.runner, audit: parts.audit, logger };
   const server = new CoreServer({
     guard,
     router: buildRouter(
@@ -260,12 +262,10 @@ function buildHttp(parts: HttpParts): HttpSide {
         report: parts.report,
         detail: buildDetailReader({ ...feeds, install, clock, logger }),
         deck: new DeckQuery(parts.sessions, clock),
-        launcher: new SessionLauncher({
-          install,
-          runner: parts.runner,
-          audit: parts.audit,
-          logger,
-        }),
+        // One bag of ports for both session verbs: they differ in their argv, not in what they
+        // need to run one (SessionResumer's header says why they are two classes at all).
+        launcher: new SessionLauncher(sessionParts),
+        resumer: new SessionResumer(sessionParts),
         tickets,
         limiter,
         install,

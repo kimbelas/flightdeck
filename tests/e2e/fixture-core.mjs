@@ -74,6 +74,9 @@ const STREAM_HEADERS = {
   connection: 'keep-alive',
 };
 
+/** Core's own shape check, repeated so the fixture refuses exactly what core refuses. */
+const FULL_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+
 export class FixtureCore {
   /**
    * @param tokenFile where to write the per-boot token. The smoke points both this and the deck's
@@ -102,6 +105,8 @@ export class FixtureCore {
     this.requests = [];
     /** The bodies of every `POST /sessions`. The launch form's real destination. */
     this.launches = [];
+    /** The bodies of every `POST /sessions/resume` — P4-T2a. */
+    this.resumes = [];
     /**
      * The project registry, as a real core would hold it — P3-T1.
      *
@@ -172,6 +177,9 @@ export class FixtureCore {
     if (request.method === 'GET' && path === '/sessions') return [200, this.fixture.snapshot];
     if (request.method === 'GET' && path === '/session') return [200, this.detailFor(url)];
     if (request.method === 'POST' && path === '/sessions') return this.launch(await body(request));
+    if (request.method === 'POST' && path === '/sessions/resume') {
+      return this.resume(await body(request));
+    }
     if (request.method === 'POST' && path === '/pty-ticket') {
       const raw = await body(request);
       if (this.mintDelayMs > 0) await new Promise((done) => setTimeout(done, this.mintDelayMs));
@@ -248,6 +256,23 @@ export class FixtureCore {
     this.tickets.set(ticket, target);
     this.minted.push(target);
     return [201, { ticket }];
+  }
+
+  /**
+   * Waking a session, with core's own refusals — P4-T2a.
+   *
+   * The id rule is repeated here rather than waved through, because it is the rule that matters:
+   * a short id does not fail at the CLI, it forks a copy (RESEARCH.md F.2.7). A fixture that
+   * accepted one would let a deck bug through that core would have caught.
+   */
+  resume(raw) {
+    const fields = parseJson(raw) ?? {};
+    const { subscription, sessionId } = fields;
+    const known = subscription === '365' || subscription === 'isg';
+    const full = typeof sessionId === 'string' && FULL_SESSION_ID.test(sessionId);
+    if (!known || !full) return [400, { error: 'bad_session' }];
+    this.resumes.push({ subscription, sessionId });
+    return [200, { sessionId }];
   }
 
   /** The replay, then nothing until `publish` — exactly core's contract (stream-event.ts). */

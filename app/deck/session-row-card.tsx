@@ -23,6 +23,7 @@ interface SessionRowCardProps {
   readonly detail: SessionDetailViewModel | undefined;
   readonly onToggle: () => void;
   readonly onOpen: () => void;
+  readonly onResume: () => void;
 }
 
 export function SessionRowCard({
@@ -32,6 +33,7 @@ export function SessionRowCard({
   detail,
   onToggle,
   onOpen,
+  onResume,
 }: SessionRowCardProps): JSX.Element {
   return (
     <article className={`row tone-${row.tone}${expanded ? ' row-open' : ''}`}>
@@ -45,15 +47,43 @@ export function SessionRowCard({
         <span>{row.stateLabel}</span>
         <span>{row.startedAgo(now)}</span>
       </div>
-      {row.canOpenPane ? (
-        <button type="button" onClick={onOpen}>
-          open pane
-        </button>
-      ) : (
-        <p className="row-blocked">{row.blockedReason}</p>
-      )}
+      <RowAction row={row} onOpen={onOpen} onResume={onResume} />
       {expanded && <SessionDetailView detail={detail} now={now} />}
     </article>
+  );
+}
+
+interface RowActionProps {
+  readonly row: SessionRowViewModel;
+  readonly onOpen: () => void;
+  readonly onResume: () => void;
+}
+
+/**
+ * What this row lets you do, which is at most one thing — P4-T2a.
+ *
+ * A live background session offers a pane; a stopped one offers `resume`; an interactive session
+ * offers neither and says why, permanently (SPEC §5.2). The sentence stays under the resume
+ * button rather than being replaced by it: it is the explanation P2 put there on purpose, and
+ * "Not running. Resume it to attach." is what makes the button make sense.
+ */
+function RowAction({ row, onOpen, onResume }: RowActionProps): JSX.Element {
+  if (row.canOpenPane) {
+    return (
+      <button type="button" onClick={onOpen}>
+        open pane
+      </button>
+    );
+  }
+  return (
+    <div className="row-blocked-line">
+      <p className="row-blocked">{row.blockedReason}</p>
+      {row.canResume && (
+        <button type="button" className="ghost" onClick={onResume}>
+          resume
+        </button>
+      )}
+    </div>
   );
 }
 

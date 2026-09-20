@@ -98,6 +98,7 @@ function DeckLeft({ rows, state, now, expanded, actions, onToggle }: DeckLeftPro
         onToggle={onToggle}
         onLaunch={actions.onLaunch}
         onOpen={actions.onOpenPane}
+        onResume={actions.onResume}
       />
     </div>
   );
