@@ -48,11 +48,11 @@ let mounts = 0;
  * Builds the pane and its socket, and returns the teardown.
  *
  * Separate from the component so the lifecycle is readable in one piece: open, connect, focus —
- * and on the way out, close the socket before disposing the terminal, because disposing first
- * leaves the WebGL addon holding a context Chromium still counts.
+ * and on the way out, close the socket before disposing the terminal, so the last thing the socket
+ * does cannot be a write into a disposed one.
  */
 function mountPane(host: HTMLElement, target: PtyTarget, report: Report): () => void {
-  const pane = new TerminalPane(0);
+  const pane = new TerminalPane();
   pane.open(host);
   const socket = new PaneSocket(pane, { onStatus: report });
   // Mints a ticket before it opens the socket (D32), so this no longer completes synchronously.
