@@ -213,7 +213,8 @@ degrades gracefully to CLAUDE.md + stack + git.
 Presets per project (encode the five profile functions), subscription picker pre-selecting the
 most headroom, `--bg` dispatch appearing as a row within a second (hook `SessionStart`), Ask panel
 with streamed result and `--max-budget-usd`, Refresh, version/update chip with `claude update` and
-`respawn --all`, forced naming at launch (D7 `unnamed`). Fix the bash alias drift first (D4).
+`respawn --all`, forced naming at launch (D7 `unnamed`). The bash alias drift is fixed — P4-T0
+deleted it (D4, D20).
 
 **Gate:** a new ticket session for app-next starts from the deck on the subscription with more
 headroom, named, in the right worktree, and the owner never typed a terminal command.
