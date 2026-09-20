@@ -54,3 +54,29 @@ export function parseLaunchFailure(value: unknown): LaunchFailure | undefined {
   const code: unknown = fields['error'];
   return LAUNCH_FAILURES.find((failure) => failure === code);
 }
+
+/**
+ * Why core would not wake a stopped session — P4-T2a.
+ *
+ * A separate union from `LaunchFailure` even though two codes read alike, because the deck says
+ * different things about them: a launch that fails leaves nothing behind, and a resume that fails
+ * leaves a row still sitting there saying "not running". `bad_session` is the one that is neither
+ * the operator's nor a transient failure — the id was not a full lowercase uuid, and RESEARCH.md
+ * F.2.7 is why that is refused here rather than passed to the CLI: a SHORT id does not fail, it
+ * forks a copy of the session under a new id and loses its name.
+ */
+export type ResumeFailure = 'no_claude' | 'bad_session' | 'resume_failed';
+
+export const RESUME_FAILURES: readonly ResumeFailure[] = [
+  'no_claude',
+  'bad_session',
+  'resume_failed',
+];
+
+/** The code off a refused resume, or `undefined` for a body that carries none. */
+export function parseResumeFailure(value: unknown): ResumeFailure | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const fields: Readonly<Record<string, unknown>> = Object.fromEntries(Object.entries(value));
+  const code: unknown = fields['error'];
+  return RESUME_FAILURES.find((failure) => failure === code);
+}

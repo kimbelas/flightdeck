@@ -66,6 +66,19 @@ export class SessionRowViewModel {
   }
 
   /**
+   * Whether this row can be woken — P4-T2a.
+   *
+   * A BACKGROUND session that is not live, and nothing else. An interactive session is not a
+   * `--bg` job and never becomes one, so offering it here would be offering the one thing
+   * SPEC §5.2 says is permanently impossible; and a live session needs no waking. This is the
+   * other half of `canOpenPane`: between them, every row that says "not running" now has a button,
+   * and the rows that say "already bound to its own terminal" still, correctly, do not.
+   */
+  public get canResume(): boolean {
+    return this.row.kind === 'background' && !this.row.live;
+  }
+
+  /**
    * Which session to ask about when this row is expanded — P2-T4.
    *
    * `shortId` is sent rather than derived from `sessionId`, even though it is the first block of

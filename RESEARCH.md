@@ -602,6 +602,21 @@ Flightdeck will expose and needs its own confirmation step and audit row (SEC-PR
 Exit codes are inconsistent: `rm` and `stop` on a missing id exit **1**, but `logs` exits **0**
 while printing "No job matching". Parse the output; do not trust the status alone.
 
+**F.2.8b `stop` wants the SHORT id, and refuses the full uuid — the mirror of `--resume`**
+(measured in P4-T2a, 2026-09-20). Restoring a session this task had woken for a live check:
+
+```
+claude stop efea5f67-0e8d-48fb-95c7-203876a920ce
+  No job matching 'efea5f67-0e8d-48fb-95c7-203876a920ce'.       exit 1
+claude stop efea5f67
+  stopped efea5f67                                              exit 0
+```
+
+So the two verbs disagree about which form of the id they take, in opposite directions, and each
+one's wrong form fails differently: `--resume` with a short id succeeds and forks a copy, `stop`
+with a full uuid fails loudly. **P4-T2 must not share one id helper between them.** The loud half
+is the safe half; the quiet half is F.2.7's, and is why `SessionResumer` checks the shape itself.
+
 **F.2.9 Timings** (this machine, warm unless stated):
 
 | Verb | Wall |

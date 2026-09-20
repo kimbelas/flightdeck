@@ -15,6 +15,7 @@ import { HealthRoute } from './http/health-route.ts';
 import { HooksRoute } from './http/hooks-route.ts';
 import { LaunchRoute } from './http/launch-route.ts';
 import { RequestRouter } from './http/request-router.ts';
+import { ResumeRoute } from './http/resume-route.ts';
 import type { Route } from './http/route.ts';
 import { SessionDetailRoute, type DetailSource } from './http/session-detail-route.ts';
 import { SessionsRoute } from './http/sessions-route.ts';
@@ -24,6 +25,7 @@ import { TicketRoute } from './http/ticket-route.ts';
 import type { RateLimiter } from './http/rate-limiter.ts';
 import type { DeckQuery } from './application/deck-query.ts';
 import type { SessionLauncher } from './application/session-launcher.ts';
+import type { SessionResumer } from './application/session-resumer.ts';
 import type { StatusReport } from './application/status-report.ts';
 import { SubscriptionPaths } from './application/subscription-paths.ts';
 import type { TicketOffice } from './application/ticket-office.ts';
@@ -38,6 +40,7 @@ export interface RouterParts {
   readonly detail: DetailSource;
   readonly deck: DeckQuery;
   readonly launcher: SessionLauncher;
+  readonly resumer: SessionResumer;
   readonly tickets: TicketOffice;
   readonly limiter: RateLimiter;
   readonly install: ClaudeInstall;
@@ -59,6 +62,7 @@ export function buildRouter(parts: RouterParts, extra: readonly Route[]): Reques
     new SessionDetailRoute(parts.detail),
     new StatusRoute(parts.report),
     new LaunchRoute(parts.launcher),
+    new ResumeRoute(parts.resumer),
     new TicketRoute(parts.tickets),
     ...extra,
     new HooksRoute({

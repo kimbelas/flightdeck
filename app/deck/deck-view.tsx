@@ -166,21 +166,28 @@ function useDeckActions(store: DeckStore, openPane: (pane: OpenPane) => void): D
     void store.refresh();
   }, [store]);
 
-  const onImportProject = useCallback(
-    (path: string) => {
+  const onResume = useCallback(
+    (row: SessionRowViewModel) => {
+      void store.resume(row.ref.subscription, row.ref.sessionId);
+    },
+    [store],
+  );
+
+  return { onOpenShell, onOpenPane, onLaunch, onRefresh, onResume, ...projectActions(store) };
+}
+
+/** The registry's two, which no other part of the deck touches (P3-T1). */
+function projectActions(
+  store: DeckStore,
+): Pick<DeckActions, 'onImportProject' | 'onForgetProject'> {
+  return {
+    onImportProject: (path: string) => {
       void store.importProject(path);
     },
-    [store],
-  );
-
-  const onForgetProject = useCallback(
-    (path: string) => {
+    onForgetProject: (path: string) => {
       void store.forgetProject(path);
     },
-    [store],
-  );
-
-  return { onOpenShell, onOpenPane, onLaunch, onRefresh, onImportProject, onForgetProject };
+  };
 }
 
 interface ExpandedRows {

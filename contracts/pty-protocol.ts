@@ -93,7 +93,7 @@ export function parsePtyTarget(url: string | undefined): PtyTarget | undefined {
   if (sessionId === null) return query.get('shell') === '1' ? { kind: 'shell' } : undefined;
 
   const subscription = query.get('subscription');
-  if (!isSessionId(sessionId) || !isSubscriptionId(subscription)) return undefined;
+  if (!isFullSessionId(sessionId) || !isSubscriptionId(subscription)) return undefined;
   return { kind: 'session', sessionId, subscription };
 }
 
@@ -113,7 +113,7 @@ export function parseTargetPayload(value: unknown): PtyTarget | undefined {
 
   const sessionId = fields['sessionId'];
   const subscription = fields['subscription'];
-  if (typeof sessionId !== 'string' || !isSessionId(sessionId)) return undefined;
+  if (typeof sessionId !== 'string' || !isFullSessionId(sessionId)) return undefined;
   if (typeof subscription !== 'string' || !isSubscriptionId(subscription)) return undefined;
   return { kind: 'session', sessionId, subscription };
 }
@@ -139,13 +139,17 @@ function isSubscriptionId(value: string | null): value is SubscriptionId {
 /**
  * A session id reaches a command line, so it is checked against the shape, not merely escaped.
  *
+ * Exported since P4-T2a, because `--bg --resume` needs exactly the same rule for a stronger
+ * reason: a SHORT id there does not fail, it silently forks a copy of the session under a new id
+ * and loses its name (RESEARCH.md F.2.7). One definition, so the two cannot drift.
+ *
  * The FULL lowercase uuid, not the short form, even though `attach` wants the short one. The deck
  * has the uuid from `/sessions` and it is the stable identity; narrowing it to the eight characters
  * the CLI happens to take is the adapter's job (WindowsPtyCommands), not the wire's. Lowercase
  * specifically, matching SessionId.parse — F.2.7 measured that an id `--resume` does not recognise
  * silently forks a copy rather than failing.
  */
-function isSessionId(value: string): boolean {
+export function isFullSessionId(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
 }
 

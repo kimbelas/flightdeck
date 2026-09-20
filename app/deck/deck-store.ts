@@ -32,15 +32,11 @@ import {
   CORE_PROJECT_STATUS_PATH,
   CORE_PROJECTS_PATH,
   CORE_SESSION_PATH,
+  CORE_RESUME_PATH,
   CORE_SESSIONS_PATH,
 } from '../../contracts/deck-routes.ts';
 import { parseImportRefusal, parseProjectList, projectKey } from '../../contracts/project.ts';
 import { parseProjectStatusList, type ProjectStatus } from '../../contracts/project-status.ts';
-import {
-  parseLaunchAccepted,
-  parseLaunchFailure,
-  type LaunchAccepted,
-} from '../../contracts/launch-reply.ts';
 import { parseSessionDetail, type SessionDetail } from '../../contracts/session-detail.ts';
 import { sessionRefQuery, type SessionRef } from '../../contracts/session-ref.ts';
 import {
@@ -51,7 +47,15 @@ import {
   type SessionRow,
 } from '../../contracts/session-row.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
-import type { DeckApi, JsonReply } from './deck-api.ts';
+import type { DeckApi } from './deck-api.ts';
+import {
+  describeStatus,
+  UNREACHABLE,
+  UNREADABLE,
+  whatStarted,
+  whyNotLaunched,
+  whyNotResumed,
+} from './deck-replies.ts';
 import { WorkflowMapSlice } from './workflow-map-slice.ts';
 import {
   EMPTY,
@@ -72,11 +76,6 @@ export type { DeckState, EventStreamSource, StreamTransport } from './deck-state
 
 /** Matches core's own `retry:` hint (SseStream). Loopback; there is nothing to back off from. */
 const RECONNECT_MS = 2000;
-
-const UNREACHABLE = 'Could not reach flightdeck-core.';
-
-/** Said out loud rather than swallowed: a reply nobody can parse is not an empty session list. */
-const UNREADABLE = 'flightdeck-core answered something the deck could not read.';
 
 export class DeckStore {
   private readonly subscribers = new Set<() => void>();
@@ -162,7 +161,7 @@ export class DeckStore {
       return;
     }
     if (reply.status !== 200) {
-      this.fail(describe(reply.status));
+      this.fail(describeStatus(reply.status));
       return;
     }
     // A 200 that is not a snapshot is core answering with something else, or Next answering with
@@ -200,6 +199,26 @@ export class DeckStore {
     // about whether core is there — it usually means it answered.
     this.set({ loading: false, error: whyNotLaunched(reply) });
     return undefined;
+  }
+
+  /**
+   * Wakes a stopped background session so a pane can attach to it — P4-T2a.
+   *
+   * Nothing is fetched afterwards, for `launch`'s reason: the reconciler's next sweep publishes the
+   * woken session as a `session.upsert` and it arrives on the stream. So the row goes on saying
+   * "not running" for a sweep, which is honest — it is not running until core has seen that it is.
+   *
+   * @returns whether core woke it.
+   */
+  public async resume(subscription: SubscriptionId, sessionId: string): Promise<boolean> {
+    this.set({ loading: true, error: undefined });
+    const reply = await this.api.post(CORE_RESUME_PATH, { subscription, sessionId });
+    if (reply?.status === 200) {
+      this.set({ loading: false });
+      return true;
+    }
+    this.set({ loading: false, error: whyNotResumed(reply) });
+    return false;
   }
 
   /**
@@ -390,40 +409,4 @@ function upsert(rows: readonly SessionRow[], row: SessionRow): readonly SessionR
 
 function without(rows: readonly SessionRow[], key: string): readonly SessionRow[] {
   return rows.filter((row) => sessionKey(row) !== key);
-}
-
-/**
- * The session a launch actually started, or `undefined` for a reply that did not start one.
- *
- * 201 exactly: core answers `created` for a session that now exists, and anything else — a 200
- * included — is not one (LaunchRoute).
- */
-function whatStarted(reply: JsonReply): LaunchAccepted | undefined {
-  return reply.status === 201 ? parseLaunchAccepted(reply.body) : undefined;
-}
-
-/**
- * Why it did not, preferring core's own code to the status it came under.
- *
- * The status alone lies here. `no_claude` is a 503, and `describe` reads a 503 as "core is not
- * running" — which is exactly wrong: core is running, it answered, and it cannot find claude.exe.
- * That is the operator's to fix and the only one of the three codes worth repeating; the other two
- * describe the request, which the owner cannot act on.
- */
-function whyNotLaunched(reply: JsonReply | undefined): string {
-  if (reply === undefined) return UNREACHABLE;
-  const failure = parseLaunchFailure(reply.body);
-  if (failure === 'no_claude') {
-    return 'Core is running but cannot find claude.exe — run `npm run doctor`.';
-  }
-  if (failure !== undefined) return 'Core would not start that session.';
-  // A 201 that got this far carried something other than a session id.
-  return reply.status === 201 ? UNREADABLE : describe(reply.status);
-}
-
-function describe(status: number): string {
-  if (status === 503) return 'flightdeck-core is not running.';
-  if (status === 401 || status === 403)
-    return 'Core refused the request — restart it to reissue the token.';
-  return `Core answered ${String(status)}.`;
 }

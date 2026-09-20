@@ -79,6 +79,8 @@ export const CORE_REWRITE = {
  * a route handler in the deck rather than forwarded to core (D27).
  */
 export const CORE_SESSIONS_PATH = `${CORE_PREFIX}sessions`;
+/** Waking a stopped background session — P4-T2a. Its own path, matching core's route table. */
+export const CORE_RESUME_PATH = `${CORE_PREFIX}sessions/resume`;
 
 /**
  * One session's detail, for an expanded row — P2-T4.

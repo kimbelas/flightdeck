@@ -18,6 +18,57 @@ export async function deckChecks(page, report, core) {
   await filterChecks(page, report);
   await streamChecks(page, report, core);
   await launchChecks(page, report, core);
+  await resumeChecks(page, report, core);
+}
+
+/**
+ * The row that says "not running" now has a button - P4-T2a.
+ *
+ * `fixture-foxtrot` is the only background row in the fixture that is not live, which makes it the
+ * only resumable one. The three assertions are the three halves of the feature that can be got
+ * wrong independently: that the button is offered on exactly the right rows, that it sends the FULL
+ * uuid (a short one forks a copy of the session - RESEARCH.md F.2.7), and that the sentence
+ * explaining why there is no pane is still there beside it.
+ */
+async function resumeChecks(page, report, core) {
+  const resumable = page.locator('article.row', { hasText: 'fixture-foxtrot' });
+  const button = resumable.locator('button', { hasText: 'resume' });
+  report.check(
+    'the stopped background row offers resume',
+    (await button.count()) === 1,
+    `${String(await button.count())} button(s)`,
+  );
+
+  // A live background row has a pane instead, and an interactive one has neither - the sentence
+  // it carries is permanent (SPEC 5.2). Offering resume on either would be the bug.
+  const live = page.locator('article.row', { hasText: 'fixture-alpha' });
+  const interactive = page.locator('article.row', { hasText: 'fixture-delta' });
+  report.check(
+    'and no live or interactive row does',
+    (await live.locator('button', { hasText: 'resume' }).count()) === 0 &&
+      (await interactive.locator('button', { hasText: 'resume' }).count()) === 0,
+  );
+
+  report.check(
+    'the row still says why it has no pane',
+    (await resumable.locator('.row-blocked').innerText()).includes('Resume it to attach'),
+    await resumable.locator('.row-blocked').innerText(),
+  );
+
+  const before = core.resumes.length;
+  await button.click();
+  const sent = await waitFor(async () => core.resumes.length > before);
+  const last = core.resumes.at(-1);
+  report.check('clicking it reaches core', sent, JSON.stringify(last ?? {}));
+  report.check(
+    'with the FULL lowercase session uuid, which is what stops it forking a copy (F.2.7)',
+    last?.sessionId === 'f6a7b8c9-0000-4000-8000-000000000006' && last.subscription === '365',
+    JSON.stringify(last ?? {}),
+  );
+  report.check(
+    'and the deck showed no error for a resume core accepted',
+    (await page.locator('.banner-bad').count()) === 0,
+  );
 }
 
 async function renderChecks(page, report) {
