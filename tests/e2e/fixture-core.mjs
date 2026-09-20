@@ -43,6 +43,7 @@ import { parseQuotaSummary } from '../../contracts/quota-summary.ts';
 import { parseSessionRef } from '../../contracts/session-ref.ts';
 import { parseDeckSnapshot, parseSessionRow } from '../../contracts/session-row.ts';
 import { parseSessionDetail } from '../../contracts/session-detail.ts';
+import { condense, parseSessionPreview } from '../../contracts/session-preview.ts';
 import { parseClientFrame, parsePtyTarget, sameTarget } from '../../contracts/pty-protocol.ts';
 
 const FIXTURE = new URL('./fixtures/deck.json', import.meta.url);
@@ -124,6 +125,14 @@ export class FixtureCore {
     this.resumes = [];
     /** The bodies of every `POST /sessions/stop` — P4-T2b. */
     this.stops = [];
+    /**
+     * Every session a preview was asked about, in order — P5a-T4.
+     *
+     * An ARRAY rather than a set, and that is the assertion it exists for: pressing the button
+     * again must ask again, because a preview is a photograph and the button is the only refresh
+     * there is (RESEARCH.md F.2.5 — never poll it).
+     */
+    this.previewed = [];
     /** Every image accepted by `POST /pasted-images` — kind and decoded size (P5a-T8). */
     this.pasted = [];
     /**
@@ -208,6 +217,7 @@ export class FixtureCore {
     if (request.method === 'GET' && path === '/health') return [200, { ok: true }];
     if (request.method === 'GET' && path === '/sessions') return [200, this.fixture.snapshot];
     if (request.method === 'GET' && path === '/session') return [200, this.detailFor(url)];
+    if (request.method === 'GET' && path === '/preview') return [200, this.previewFor(url)];
     if (request.method === 'POST' && path === '/sessions') return this.launch(await body(request));
     if (request.method === 'POST' && path === '/sessions/resume') {
       return this.resume(await body(request));
@@ -282,6 +292,33 @@ export class FixtureCore {
     // A session with no fixture detail answers the bare shape, which is an ordinary state: an
     // interactive session has no job directory and a fresh background one has written nothing.
     return this.fixture.details[ref.sessionId] ?? { sessionId: ref.sessionId, at: Date.now() };
+  }
+
+  /**
+   * One session's preview — P5a-T4, screened exactly as the detail is.
+   *
+   * A session with no fixture preview answers `none` with no lines, which is the ordinary state
+   * for a session nothing has read yet, and is what the deck draws "nothing to show" from.
+   */
+  previewFor(url) {
+    const ref = parseSessionRef(Object.fromEntries(url.searchParams));
+    if (ref === undefined) return { error: 'bad request' };
+    this.previewed.push(ref.sessionId);
+    const held = this.fixture.previews[ref.sessionId];
+    if (held === undefined) {
+      return {
+        sessionId: ref.sessionId,
+        at: Date.now(),
+        source: 'none',
+        lines: [],
+        reason: 'daemon_down',
+      };
+    }
+    // Condensed on the way out, through the SAME function core uses (`PreviewReader.preview`).
+    // The fixture's lines carry the trailing padding and the blank band a real 200x50 frame
+    // arrives with, so this is where they are removed — a double that shipped them raw would put
+    // a shape on the wire that core never sends, and the deck is what is under test.
+    return { ...held, lines: condense(held.lines) };
   }
 
   launch(raw) {
@@ -528,6 +565,10 @@ function validated(fixture) {
     ['quota', parseQuotaSummary(fixture.quota)],
     ['arriving', parseSessionRow(fixture.arriving)],
     ...Object.entries(fixture.details).map(([id, detail]) => [id, parseSessionDetail(detail)]),
+    ...Object.entries(fixture.previews).map(([id, preview]) => [
+      `${id} preview`,
+      parseSessionPreview(preview),
+    ]),
   ];
   const broken = checks.filter(([, parsed]) => parsed === undefined).map(([name]) => name);
   if (broken.length > 0) {
@@ -633,8 +674,17 @@ function countChecks(fixture) {
       [`${id} files`, (detail.extras?.files ?? []).length, parsed.extras.files.length],
     ];
   });
+  // A preview's `lines` are capped and trimmed by `parseSessionPreview`, so a fixture line wider
+  // than a real frame or a list longer than a real screen is a fixture the deck would silently
+  // shorten — which is the same class of lie the details' counts exist to refuse (P5a-T4).
+  const previews = Object.entries(fixture.previews).map(([id, preview]) => [
+    `${id} preview lines`,
+    preview.lines.length,
+    parseSessionPreview(preview).lines.length,
+  ]);
   return [
     ['rows', fixture.snapshot.rows.length, parseDeckSnapshot(fixture.snapshot).rows.length],
+    ...previews,
     [
       'subscriptions',
       fixture.quota.subscriptions.length,

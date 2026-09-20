@@ -4,3 +4,10 @@
 
 *.png binary
 *.ico binary
+
+# A terminal frame is a byte stream a terminal replays, not a text file (P5a-T4). The eol=lf rule
+# above would rewrite every CRLF in it to LF on commit, and the emulator that reads it treats those
+# as two different instructions: CRLF returns to column 0 and drops a row, a bare LF drops a row and
+# stays where it is. The screen would step right on every line and still look like a screen, which
+# is the worst way for a fixture to be wrong. Caught before committing one — RESEARCH.md G.34.
+fixtures/**/*.txt -text

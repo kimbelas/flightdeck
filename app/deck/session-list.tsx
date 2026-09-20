@@ -6,6 +6,7 @@ import type { SubscriptionId } from '../../contracts/session.ts';
 import { SEARCH_INPUT_ID } from './deck-keyboard.ts';
 import { LaunchForm } from './launch-form.tsx';
 import type { SessionDetailViewModel } from './session-detail-view-model.ts';
+import type { SessionPreviewViewModel } from './session-preview-view-model.ts';
 import { SessionRowCard } from './session-row-card.tsx';
 import type { SessionRowViewModel } from './session-row-view-model.ts';
 
@@ -20,16 +21,24 @@ interface SessionListProps {
   readonly expanded: ReadonlySet<string>;
   /** The open rows' details, by the same key. A key with `undefined` is still in flight. */
   readonly details: Readonly<Record<string, SessionDetailViewModel | undefined>>;
+  /**
+   * The previews somebody pressed for, by the same key — P5a-T4.
+   *
+   * A key with `undefined` is a read in flight; a key ABSENT is nobody having pressed, which is
+   * where every expanded row starts. That distinction is why this is a map and not a list.
+   */
+  readonly previews: Readonly<Record<string, SessionPreviewViewModel | undefined>>;
   readonly onSearch: (value: string) => void;
   readonly onToggle: (row: SessionRowViewModel) => void;
   readonly onLaunch: (subscription: SubscriptionId, prompt: string, name: string) => void;
   readonly onOpen: (row: SessionRowViewModel) => void;
   readonly onResume: (row: SessionRowViewModel) => void;
   readonly onStop: (row: SessionRowViewModel) => void;
+  readonly onPreview: (row: SessionRowViewModel) => void;
 }
 
 export function SessionList(props: SessionListProps): JSX.Element {
-  const { rows, now, expanded, details, onToggle, onOpen, onResume, onStop } = props;
+  const { rows, now, expanded, details, previews, onToggle, onOpen, onResume, onStop } = props;
   return (
     <section className="rows" aria-label="sessions">
       <LaunchForm disabled={!props.coreUp || props.loading} onLaunch={props.onLaunch} />
@@ -42,6 +51,8 @@ export function SessionList(props: SessionListProps): JSX.Element {
           now={now}
           expanded={expanded.has(row.key)}
           detail={details[row.key]}
+          preview={previews[row.key]}
+          previewAsked={row.key in previews}
           onToggle={() => {
             onToggle(row);
           }}
@@ -53,6 +64,9 @@ export function SessionList(props: SessionListProps): JSX.Element {
           }}
           onOpen={() => {
             onOpen(row);
+          }}
+          onPreview={() => {
+            props.onPreview(row);
           }}
         />
       ))}

@@ -11,9 +11,11 @@
 // (measured, P1-T7), so a transcript replaced at the same path by `--resume` is detectable even
 // when it is the same length — which a size comparison alone cannot see.
 import { open, stat } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 import type {
   TranscriptCursor,
+  TranscriptEnd,
   TranscriptFile,
   TranscriptSlice,
 } from '../../ports/transcript-file.ts';
@@ -73,6 +75,53 @@ export class FsTranscriptFile implements TranscriptFile {
       identity,
       restarted,
     });
+  }
+
+  /**
+   * The last `maxBytes`, from the first record boundary inside them — P5a-T4.
+   *
+   * The window is cut forward to the byte after the first newline, and that is the whole point of
+   * the method rather than a detail: a fixed-size window from the end almost always lands in the
+   * middle of a record, and handing half a JSON object to a parser is how a preview reports a
+   * schema change that did not happen. A window with no newline in it yields nothing, which is the
+   * honest answer — that is one record longer than the window, and there is no half of it worth
+   * showing.
+   *
+   * `completeBytes` runs after the cut for the same reason `slice` runs it at all: the cut is by
+   * byte and a transcript is UTF-8, so the far end can still be half a character.
+   *
+   * **The size comes from the OPEN HANDLE, not from a `stat` of the path** — `read` above is
+   * allowed its stat-then-open because the `identity` it takes from that stat is precisely what
+   * detects a file replaced in between, and this has no cursor and therefore no identity to
+   * compare. So it opens once and measures what it opened: the size and the bytes then come from
+   * the same descriptor, and a transcript rotated mid-call yields a short read rather than a
+   * window into a file nobody checked (CodeQL `js/file-system-race`, caught on the PR).
+   */
+  public async tail(path: string, maxBytes: number): Promise<TranscriptEnd> {
+    let handle: FileHandle;
+    try {
+      handle = await open(path, 'r');
+    } catch {
+      return { text: '', unreadable: true };
+    }
+    try {
+      const { size } = await handle.stat();
+      const from = Math.max(0, size - maxBytes);
+      const length = size - from;
+      if (length <= 0) return { text: '', unreadable: false };
+      const buffer = Buffer.alloc(length);
+      const { bytesRead } = await handle.read(buffer, 0, length, from);
+      const window = buffer.subarray(0, bytesRead);
+      // A window that starts at byte 0 already starts on a boundary; anywhere else it does not.
+      const start = from === 0 ? 0 : window.indexOf(0x0a) + 1;
+      if (start === 0 && from > 0) return { text: '', unreadable: false };
+      const whole = completeBytes(window.subarray(start));
+      return { text: window.toString('utf8', start, start + whole), unreadable: false };
+    } catch {
+      return { text: '', unreadable: true };
+    } finally {
+      await handle.close();
+    }
   }
 
   private async slice(path: string, plan: ReadPlan): Promise<TranscriptSlice> {

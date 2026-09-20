@@ -134,6 +134,24 @@ export class TranscriptReader implements EventSink {
     return view(sessionId, entry);
   }
 
+  /**
+   * Where this session's transcript is, or `undefined` if no feed has mentioned one — P5a-T4.
+   *
+   * It is a path, and a path names the account and the project folder, so it is deliberately not
+   * on `TrackedTranscript`: that shape is what `flightdeck-core status` prints and what the deck's
+   * counters come from, and a field there would be one `JSON.stringify` away from leaving core
+   * (SEC-DATA-2 — the same reason `vitals-lines.ts` drops `transcriptPath`). This is a separate
+   * question with one caller inside core, and the answer never reaches the wire.
+   *
+   * Already screened: `publish` refuses a path `ReadPolicy` will not allow before it is tracked at
+   * all, so anything this hands back has passed the check. The preview reader asks its own policy
+   * again anyway, for the reason `SessionDetailReader` does — belt and braces on the one path in
+   * core that a payload chose.
+   */
+  public pathOf(sessionId: string): string | undefined {
+    return this.tracked.get(sessionId)?.path;
+  }
+
   /** Everything tracked, least-recently-read first. `flightdeck-core status` prints it (P1-T12). */
   public all(): readonly TrackedTranscript[] {
     return [...this.tracked].map(([sessionId, entry]) => view(sessionId, entry));

@@ -34,7 +34,7 @@ fixture pipeline). The rules below are the summary; the skills are the procedure
   one-line fixes. Branch `feat/P1-T4-short-name`, commit `feat(core): summary [P1-T4]`.
 - **`npm run check` must be green before the PR** — lint, typecheck, format, roadmap, tests.
 - **`npm run check` says nothing about the deck.** `app/**` is not in `coverage.include`. Touching
-  anything under `app/` means `npm run build && npm run smoke` (P2-T7) — 101 checks against a
+  anything under `app/` means `npm run build && npm run smoke` (P2-T7) — 180 checks against a
   fixture core, no real core or Claude session needed.
 - **The dependency rule** (CODING-STANDARDS §2): imports point inward only. `domain/` may not
   import `node:*`, `ws`, `node-pty`, or anything under `adapters/` or `http/`.

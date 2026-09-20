@@ -15,6 +15,7 @@ export async function deckChecks(page, report, core) {
   await renderChecks(page, report);
   await gaugeChecks(page, report);
   await expandChecks(page, report);
+  await previewChecks(page, report, core);
   await filterChecks(page, report);
   await streamChecks(page, report, core);
   await launchChecks(page, report, core);
@@ -243,6 +244,106 @@ async function expandChecks(page, report) {
     async () => (await page.locator('.detail, .detail-note').count()) === 0,
   );
   report.check('collapsing drops the detail', collapsed);
+}
+
+/**
+ * P5a-T4 — the preview, which is a button and never a timer.
+ *
+ * The three assertions that matter are about restraint as much as about rendering. Expanding a row
+ * must NOT read a preview: one costs a 2.7 s spawn and 330 KB of terminal frame (RESEARCH.md
+ * F.2.5, "never poll it"), and a deck that fetched one on every expansion would be doing exactly
+ * what that measurement forbids. Pressing must read. Pressing again must read AGAIN, because a
+ * preview is a photograph and the button is the only refresh there is.
+ */
+async function previewChecks(page, report, core) {
+  const alpha = '365:a1b2c3d4-0000-4000-8000-000000000001';
+  const before = core.previewed.length;
+  await page.locator(`[data-deck-row="${alpha}"]`).click();
+  await waitFor(async () => (await page.locator('.detail-doing').count()) > 0);
+  report.check(
+    'expanding a row does NOT read a preview — F.2.5 says never poll it',
+    core.previewed.length === before,
+    `${String(core.previewed.length - before)} read(s)`,
+  );
+
+  const row = page.locator('article.row', { hasText: 'fixture-alpha' });
+  const button = row.locator('[data-deck-preview-read]');
+  report.check('an expanded row offers to read one', (await button.count()) === 1);
+  const narrow = (await page.locator('.deck-left').boundingBox())?.width ?? 0;
+
+  await button.click();
+  const read = await waitFor(async () => (await row.locator('pre.preview-screen').count()) === 1);
+  report.check('pressing it draws the screen core replayed', read);
+
+  const screen = (await row.locator('pre.preview-screen').innerText()) ?? '';
+  report.check(
+    'the screen is the terminal’s own text, box drawing and all',
+    screen.includes('Claude Code v2.1.268') && screen.includes('─') && screen.includes('█'),
+  );
+  report.check(
+    'no escape sequence survives into the page (SEC-UI-2)',
+    !screen.includes('\u001b') && !screen.includes('[38;2;'),
+  );
+  // GEOMETRY, not a class name: a screen is 200 columns of aligned chrome and `white-space: pre`
+  // is what keeps it aligned. If the rule were dropped the box rule would wrap and the block would
+  // grow taller than the line count can explain, so the two are compared.
+  const box = await row.locator('pre.preview-screen').boundingBox();
+  const lines = screen.split('\n').length;
+  report.check(
+    'the screen is not re-wrapped — it scrolls sideways instead',
+    box !== null && box.height < lines * 30,
+    `${String(Math.round(box?.height ?? 0))}px for ${String(lines)} lines`,
+  );
+  report.check(
+    'the blank band a fixed-height frame leaves is condensed away',
+    !screen.includes('\n\n\n'),
+  );
+  report.check(
+    'the preview says how old it is',
+    (await row.locator('.detail-preview-head .muted').count()) === 1,
+  );
+
+  // GEOMETRY again, and this one measures the CSS rule rather than the markup: a 200-column screen
+  // read through a 340px column is forty-seven characters, so the left column widens while a
+  // preview is open. Deleting the `:has()` rule fails here.
+  const wide = (await page.locator('.deck-left').boundingBox())?.width ?? 0;
+  report.check(
+    'the session column makes room while a preview is open',
+    wide > narrow + 100,
+    `${String(Math.round(narrow))}px -> ${String(Math.round(wide))}px`,
+  );
+
+  const asked = core.previewed.length;
+  await row.locator('[data-deck-preview-read]').click();
+  const again = await waitFor(async () => core.previewed.length > asked);
+  report.check('pressing again reads again — the button IS the refresh', again);
+
+  // The other KIND of answer. An interactive session can never be attached (SPEC §5.2), which is
+  // the case a preview exists for, and what it gets is a trail rather than a screen.
+  await page.locator('[data-deck-row="365:d4e5f6a7-0000-4000-8000-000000000004"]').click();
+  const delta = page.locator('article.row', { hasText: 'fixture-delta' });
+  await delta.locator('[data-deck-preview-read]').click();
+  const trail = await waitFor(async () => (await delta.locator('pre.preview-trail').count()) === 1);
+  report.check('a session with no screen gets the transcript trail instead', trail);
+  const note = (await delta.locator('.detail-preview').innerText()) ?? '';
+  report.check(
+    'and is told why, in the deck’s words rather than core’s code',
+    note.includes('background service is not running') && !note.includes('daemon_down'),
+  );
+  // `textContent`, not `innerText`. The heading is `text-transform: uppercase`, so `innerText`
+  // returns what the CSS made of it — a check on the words would be reading the stylesheet, which
+  // is the mistake `expandChecks` records having made about the recap heading.
+  const heading = (await delta.locator('.detail-preview h3').textContent()) ?? '';
+  report.check(
+    'the trail is labelled as a trail, not as a screen',
+    heading === 'recent activity',
+    heading,
+  );
+
+  await page.locator(`[data-deck-row="${alpha}"]`).click();
+  await page.locator('[data-deck-row="365:d4e5f6a7-0000-4000-8000-000000000004"]').click();
+  const gone = await waitFor(async () => (await page.locator('.detail-preview').count()) === 0);
+  report.check('collapsing drops the preview with the detail', gone);
 }
 
 /** P2-T5's `/` filter, and the empty state that distinguishes "none" from "none match". */

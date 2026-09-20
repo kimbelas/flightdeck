@@ -58,6 +58,7 @@ import {
   whyNotResumed,
   whyNotStopped,
 } from './deck-replies.ts';
+import { PreviewSlice } from './preview-slice.ts';
 import { WorkflowMapSlice } from './workflow-map-slice.ts';
 import {
   EMPTY,
@@ -85,6 +86,8 @@ export class DeckStore {
   private readonly api: DeckApi;
   /** The third fetch path, in a class of its own — see `workflow-map-slice.ts` on why (P3-T3). */
   private readonly workflowMaps: WorkflowMapSlice;
+  /** The fourth, split for the same reason — see `preview-slice.ts` (P5a-T4). */
+  private readonly previews: PreviewSlice;
   private state: DeckState = EMPTY;
   private source: EventStreamSource | undefined;
   private cancelRetry: (() => void) | undefined;
@@ -94,6 +97,9 @@ export class DeckStore {
     this.api = api;
     this.workflowMaps = new WorkflowMapSlice(api, (maps) => {
       this.set({ maps });
+    });
+    this.previews = new PreviewSlice(api, (previews) => {
+      this.set({ previews });
     });
   }
 
@@ -279,6 +285,19 @@ export class DeckStore {
   }
 
   /**
+   * Reads one session's screen — P5a-T4. See `PreviewSlice`, which owns the shape and the rule.
+   *
+   * A slice rather than three more methods here, for the reason the workflow map is one: this file
+   * is at its line limit, and "the store delegates" is cheaper to read than "the store does
+   * everything". The one thing worth repeating at the call site is that this is NOT part of
+   * `expand` — a preview spawns `claude logs` and waits 2.7 s for 330 KB (RESEARCH.md F.2.5), so
+   * it happens on a press and at no other time.
+   */
+  public async preview(ref: SessionRef): Promise<void> {
+    await this.previews.read(ref);
+  }
+
+  /**
    * Re-reads the project registry — P3-T1.
    *
    * Called once when the deck mounts and after every import or withdrawal, rather than polled: the
@@ -350,8 +369,15 @@ export class DeckStore {
     await this.loadProjects();
   }
 
-  /** Drops one detail, on collapse. See `expand` for why nothing is kept. */
+  /**
+   * Drops one detail and its preview, on collapse. See `expand` for why nothing is kept.
+   *
+   * The preview goes with it for the stronger version of the same reason: a screen from four
+   * minutes ago that looks current is worse than a button, and a preview is the one thing here
+   * that is a photograph rather than a reading.
+   */
   public forget(key: string): void {
+    this.previews.forget(key);
     if (!(key in this.state.details)) return;
     // Rebuilt without the key rather than `delete`d: absent and "asked, waiting" are different
     // states here — the spinner is drawn from the second — so the key has to GO, not become

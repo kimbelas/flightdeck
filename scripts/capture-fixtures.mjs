@@ -4,6 +4,11 @@
 //   node scripts/capture-fixtures.mjs            scrub every raw capture
 //   node scripts/capture-fixtures.mjs --check    fail if any output would change (CI)
 //
+// One file under `fixtures/` is NOT written by this script and says so in its name: a
+// `*.screen.txt` beside a frame is the screen that frame flattens to, committed as a golden and
+// compared by `tests/fixtures/logs.test.ts`. It is deliberately not regenerated here — a golden
+// rewritten by the code it checks proves nothing (P5a-T4).
+//
 // Rule: every string longer than 12 characters is replaced by a deterministic placeholder that
 // preserves the *shape* a parser cares about — a UUID stays a parseable UUID, a Windows path
 // stays a Windows path of the same depth and extension. Deterministic means the same input
@@ -274,6 +279,150 @@ function value12(text) {
   return text.length <= 40 ? text : scrubString(text);
 }
 
+// ---------------------------------------------------------------------------------------------
+// Terminal frames — `.txt` captures. P5a-T4.
+//
+// `claude logs` answers with a 200x50 terminal FRAME: 330 046 bytes, 4 724 lines and 10 483 escape
+// sequences for one short session, replaying 105 full-screen redraws (RESEARCH.md F.2.5, G.34).
+// None of the rules above apply to it, and D28 is the reason this path waited for a consumer
+// rather than being guessed at in P0: "what matters in the frame is a question only a consumer can
+// answer", and the consumer is now `HeadlessScreenReader`, which replays the frame on a screen and
+// reads the rows off it.
+//
+// **So what a parser needs here is not shape, it is LENGTH.** Every glyph advances the cursor one
+// cell and the frame relies on autowrap — its 200-character rules carry no newline and wrap onto
+// the next row — so a placeholder one character longer or shorter than what it replaces reflows
+// every row below it. That is the inverse of the JSON rules, where `text-<8 hex>` may be any length
+// because a parser reads a field by name. A fixture scrubbed by those rules would still LOOK like a
+// terminal frame and would flatten to a screen that was never on anybody's terminal.
+//
+// The rule that falls out of it:
+//
+//   - escape sequences and control characters pass through **byte for byte** — they are the
+//     structure, and 39 distinct ones carry the whole layout;
+//   - every ASCII letter and digit is replaced by one of the same class, in place;
+//   - everything else — spaces, punctuation, and the box-drawing and spinner glyphs Claude Code
+//     draws its chrome with — passes through, because none of it is identity and all of it is
+//     what makes the flattened screen recognisable.
+//
+// **The filler is derived from POSITION and LENGTH, never from the word.** That is the one place
+// this deliberately breaks the determinism rule the JSON scrubber follows, and it is a
+// disclosure decision rather than a style: `text-<sha256 prefix>` of a whole sentence is a big
+// search space, but a per-WORD hash of a 4 000-word screen is a substitution cipher anyone can
+// undo with a dictionary and one `sha256` per guess. Keying on the slot instead means the output
+// is a function of the punctuation, the escapes and the lengths — it never reads the letters — so
+// there is nothing to guess against. Re-scrubbing the same capture still yields the same bytes,
+// which is all `--check` needs.
+const FRAME_SEQUENCE = new RegExp(
+  // OSC (ends at BEL or ST), then CSI, then the two-character escapes. In that order, because CSI
+  // would otherwise match the `[`-less tail of an OSC string and split it in half.
+  // Matching control characters IS the job here: ESC introduces every sequence in the frame and
+  // BEL terminates an OSC string.
+  // eslint-disable-next-line no-control-regex
+  '\u001b\\][^\u0007\u001b]*(?:\u0007|\u001b\\\\)|\u001b\\[[0-?]*[ -/]*[@-~]|\u001b[@-Z\\\\-_]',
+  'g',
+);
+
+const UPPERCASE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const LOWERCASE = 'abcdefghijklmnopqrstuvwxyz';
+const DIGIT_CHARS = '0123456789';
+
+/**
+ * One run of letters and digits, replaced in place.
+ *
+ * Class is preserved per character rather than per run, so a uuid comes out uuid-shaped, `v2.1.267`
+ * comes out version-shaped and `$0.03` comes out money-shaped. That leaks the shape, which is the
+ * same order of information as the length this has to preserve anyway, and it is what makes the
+ * committed fixture reviewable as a screen instead of as a wall of one letter.
+ */
+function fillRun(run, at) {
+  const bytes = createHash('sha256')
+    .update(`${String(at)}:${String(run.length)}`)
+    .digest();
+  let filled = '';
+  for (let index = 0; index < run.length; index += 1) {
+    const character = run[index];
+    const pick = bytes[index % bytes.length];
+    if (character >= '0' && character <= '9') filled += DIGIT_CHARS[pick % 10];
+    else if (character >= 'A' && character <= 'Z') filled += UPPERCASE[pick % 26];
+    else filled += LOWERCASE[pick % 26];
+  }
+  return filled;
+}
+
+function isAsciiAlphanumeric(character) {
+  return (
+    (character >= '0' && character <= '9') ||
+    (character >= 'A' && character <= 'Z') ||
+    (character >= 'a' && character <= 'z')
+  );
+}
+
+/**
+ * The printable text between two escape sequences.
+ *
+ * **A non-ASCII letter or digit fails the capture rather than being replaced.** Every non-ASCII
+ * character in the captures measured so far is chrome — box drawing, spinners, arrows, `·` — and
+ * none of it is identity. A letter from another script would be, and the honest options are both
+ * bad: leaving it is a leak, and swapping it for an ASCII one changes the cell width of a wide
+ * glyph and reflows the screen this whole path exists to preserve. So it stops, the way
+ * `assertNoDataKeys` stops on an unclassified key, and names the offset so the next person can
+ * decide with the character in front of them.
+ */
+function scrubFrameText(text, offset) {
+  let out = '';
+  let run = '';
+  let runAt = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (isAsciiAlphanumeric(character)) {
+      if (run === '') runAt = offset + index;
+      run += character;
+      continue;
+    }
+    if (run !== '') {
+      out += fillRun(run, runAt);
+      run = '';
+    }
+    if (character.codePointAt(0) >= 128 && /\p{L}|\p{N}/u.test(character)) {
+      throw new Error(
+        `non-ASCII letter or digit at offset ${String(offset + index)}: ` +
+          `${JSON.stringify(character)} — decide how to replace it WITHOUT changing its cell ` +
+          `width before scrubbing this capture`,
+      );
+    }
+    out += character;
+  }
+  if (run !== '') out += fillRun(run, runAt);
+  return out;
+}
+
+/**
+ * One terminal frame, scrubbed.
+ *
+ * @throws when the capture carries no escape sequence at all. A `.txt` with no ANSI in it is not a
+ * terminal frame, and scrubbing it by these rules would be this script guessing what a file is —
+ * which is what `DEFERRED` exists to stop it doing quietly.
+ */
+export function scrubFrame(raw) {
+  let out = '';
+  let last = 0;
+  let sequences = 0;
+  FRAME_SEQUENCE.lastIndex = 0;
+  let match;
+  while ((match = FRAME_SEQUENCE.exec(raw)) !== null) {
+    out += scrubFrameText(raw.slice(last, match.index), last);
+    out += match[0];
+    last = match.index + match[0].length;
+    sequences += 1;
+  }
+  out += scrubFrameText(raw.slice(last), last);
+  if (sequences === 0) {
+    throw new Error('no escape sequences — this is not a terminal frame, so it has no scrub rule');
+  }
+  return out;
+}
+
 // Raw captures this script knowingly cannot scrub, each with the task that will handle it.
 //
 // The list exists because the alternative is worse in both directions. Silently ignoring a file
@@ -282,9 +431,11 @@ function value12(text) {
 // without anything saying so (P0-T9). Failing outright instead would redden CI over a file nobody
 // has decided how to scrub yet. So a deferral is allowed but must be WRITTEN DOWN, and anything
 // not on the list is an error — a new unscrubbable capture cannot arrive quietly.
-const DEFERRED = new Map([
-  ['logs-blocked.txt', 'P5a-T4 — `claude logs` is a 4723-line terminal frame, not JSON'],
-]);
+//
+// **Empty is the state it is supposed to be in.** `logs-blocked.txt` was the only entry and it is
+// gone, paid off by the path above. The map stays because the rule does: the next shape nobody has
+// a consumer for gets a line here with its task id, not a silent skip.
+const DEFERRED = new Map([]);
 
 function listRawFiles(directory) {
   const entries = readdirSync(directory, { withFileTypes: true });
@@ -302,8 +453,12 @@ function triage(files) {
   const unhandled = [];
   for (const file of files) {
     const name = basename(file);
-    if (name.endsWith('.json') || name.endsWith('.jsonl')) scrubbable.push(file);
-    else if (DEFERRED.has(name)) deferred.push(file);
+    // `.txt` is a terminal frame (P5a-T4). The extension is the whole classification, and
+    // `scrubFrame` is what makes that safe rather than a guess: a `.txt` with no escape sequence
+    // in it fails the capture instead of being scrubbed by rules written for something else.
+    if (name.endsWith('.json') || name.endsWith('.jsonl') || name.endsWith('.txt')) {
+      scrubbable.push(file);
+    } else if (DEFERRED.has(name)) deferred.push(file);
     else unhandled.push(file);
   }
   return { scrubbable, deferred, unhandled };
@@ -325,6 +480,10 @@ function scrubChecked(record) {
 }
 
 function render(raw, name) {
+  // A frame is not records and is not a document: it is a byte stream a terminal replays, so it
+  // comes back exactly as long as it went in, with no trailing newline added. One appended here
+  // would be one row of scroll the real `claude logs` never sent.
+  if (name.endsWith('.txt')) return scrubFrame(raw);
   if (!name.endsWith('.jsonl')) {
     return `${JSON.stringify(scrubChecked(JSON.parse(raw)), null, 2)}\n`;
   }

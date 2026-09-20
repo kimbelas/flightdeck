@@ -10,14 +10,20 @@
 // and two small reads per click is the right trade for not holding every session's job history in
 // memory (SessionDetailReader).
 import type { SubscriptionId } from '../contracts/session.ts';
+import { PreviewReader } from './application/preview-reader.ts';
 import { SessionDetailReader } from './application/session-detail-reader.ts';
 import type { TranscriptReader } from './application/transcript-reader.ts';
 import type { VitalsRegistry } from './application/vitals-registry.ts';
 import { FsJobFiles } from './adapters/node/fs-job-files.ts';
+import { FsRosterSource } from './adapters/node/fs-roster-source.ts';
+import { FsTranscriptFile } from './adapters/node/fs-transcript-file.ts';
+import { SignalProcessProbe } from './adapters/node/signal-process-probe.ts';
+import { HeadlessScreenReader } from './adapters/xterm/headless-screen-reader.ts';
 import type { ClaudeInstall } from './adapters/claude-cli/claude-install.ts';
 import { ReadPolicy } from './domain/read-policy.ts';
 import type { Clock } from './ports/clock.ts';
 import type { Logger } from './ports/logger.ts';
+import type { ProcessRunner } from './ports/process-runner.ts';
 
 export interface ReadParts {
   readonly vitals: VitalsRegistry;
@@ -25,6 +31,11 @@ export interface ReadParts {
   readonly install: ClaudeInstall;
   readonly clock: Clock;
   readonly logger: Logger;
+}
+
+export interface PreviewParts extends ReadParts {
+  /** The same runner every other `claude.exe` caller takes, so one policy covers all of them. */
+  readonly runner: ProcessRunner;
 }
 
 /**
@@ -46,6 +57,36 @@ export function buildDetailReader(parts: ReadParts): SessionDetailReader {
     files: new FsJobFiles(),
     policy: new ReadPolicy(Object.values(configDirs)),
     configDirs,
+    clock: parts.clock,
+    logger: parts.logger,
+  });
+}
+
+/**
+ * What a session that cannot be given a terminal shows instead — P5a-T4.
+ *
+ * The second thing in core that reads per request, and much the more expensive of the two: it
+ * spawns `claude logs` and replays a 330 KB frame through an emulator. It is here rather than in
+ * `main.ts` because it is the same kind of thing as the detail reader — a question about one
+ * session, asked by a person who just clicked — and because `main.ts` is at its line limit again.
+ *
+ * `ReadPolicy` is built from the same two directories the detail reader's is, for that function's
+ * reason: it is a value object over two names, so two of them cannot disagree.
+ */
+export function buildPreviewReader(parts: PreviewParts): PreviewReader {
+  const configDirs = configDirsFor(parts.install);
+  return new PreviewReader({
+    install: parts.install,
+    runner: parts.runner,
+    // Its own source rather than one shared with P1-T14's reader: this one is asked per preview
+    // and caches nothing, and the whole value of the roster here is that it is read FRESH — a
+    // supervisor that died a minute ago is exactly the state a cached answer would hide.
+    roster: new FsRosterSource(parts.install),
+    probe: new SignalProcessProbe(),
+    screen: new HeadlessScreenReader(parts.logger),
+    transcripts: parts.transcripts,
+    file: new FsTranscriptFile(),
+    policy: new ReadPolicy(Object.values(configDirs)),
     clock: parts.clock,
     logger: parts.logger,
   });

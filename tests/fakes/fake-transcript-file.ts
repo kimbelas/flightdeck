@@ -6,6 +6,7 @@
 // fixtures of a file being written while it is read.
 import {
   type TranscriptCursor,
+  type TranscriptEnd,
   type TranscriptFile,
   type TranscriptSlice,
 } from '../../core/ports/transcript-file.ts';
@@ -66,6 +67,20 @@ export class FakeTranscriptFile implements TranscriptFile {
       });
     }
     return Promise.resolve(this.slice(entry, cursor));
+  }
+
+  /** The same byte arithmetic `FsTranscriptFile.tail` does, for the same reason `slice` mirrors it. */
+  public tail(path: string, maxBytes: number): Promise<TranscriptEnd> {
+    this.reads += 1;
+    const entry = this.files.get(path);
+    if (entry?.readable !== true) return Promise.resolve({ text: '', unreadable: true });
+    const bytes = Buffer.from(entry.text);
+    const from = Math.max(0, bytes.length - maxBytes);
+    const window = bytes.subarray(from);
+    if (window.length === 0) return Promise.resolve({ text: '', unreadable: false });
+    const start = from === 0 ? 0 : window.indexOf(0x0a) + 1;
+    if (start === 0 && from > 0) return Promise.resolve({ text: '', unreadable: false });
+    return Promise.resolve({ text: window.subarray(start).toString('utf8'), unreadable: false });
   }
 
   private slice(entry: Entry, cursor: TranscriptCursor): TranscriptSlice {

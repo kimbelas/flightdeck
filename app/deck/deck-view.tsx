@@ -190,13 +190,21 @@ function useDeckActions(store: DeckStore, openPane: (pane: OpenPane) => void): D
 }
 
 /** Start, stop, wake — the three that change what a session IS rather than what is on screen. */
-function lifecycleActions(store: DeckStore): Pick<DeckActions, 'onResume' | 'onStop'> {
+function lifecycleActions(
+  store: DeckStore,
+): Pick<DeckActions, 'onResume' | 'onStop' | 'onPreview'> {
   return {
     onResume: (row: SessionRowViewModel) => {
       void store.resume(row.ref.subscription, row.ref.sessionId);
     },
     onStop: (row: SessionRowViewModel) => {
       void store.stop(row.ref);
+    },
+    // P5a-T4. Here rather than in the expand effect on purpose: a preview spawns `claude logs`
+    // and waits 2.7 s for 330 KB (RESEARCH.md F.2.5, "never poll it"), so it happens when
+    // somebody presses the button and at no other time.
+    onPreview: (row: SessionRowViewModel) => {
+      void store.preview(row.ref);
     },
   };
 }

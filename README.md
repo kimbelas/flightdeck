@@ -68,7 +68,7 @@ node scripts/flightdeck-core.ts     # binds 127.0.0.1:4950, prints the token pat
 The deck's own gate is separate, because it needs a build and a browser rather than a test runner:
 
 ```
-npm run build && npm run smoke     # 101 checks, real production build, fixture core
+npm run build && npm run smoke     # 180 checks, real production build, fixture core
 ```
 
 It starts nothing you own. A fixture core runs in-process and speaks core's HTTP surface and PTY

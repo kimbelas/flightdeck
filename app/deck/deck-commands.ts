@@ -46,6 +46,15 @@ export interface DeckActions {
   readonly onForgetProject: (path: string) => void;
   readonly onResume: (row: SessionRowViewModel) => void;
   readonly onStop: (row: SessionRowViewModel) => void;
+  /**
+   * Reads one session's screen — P5a-T4.
+   *
+   * Deliberately NOT a palette entry, unlike every other action on this interface. A preview is
+   * only legible inside the expanded row it belongs to, and the palette's verbs are things that
+   * happen to a session rather than things that appear next to one. It is here because the row
+   * takes its actions from this bag, not because the palette is missing it.
+   */
+  readonly onPreview: (row: SessionRowViewModel) => void;
 }
 
 export interface CommandTargets extends DeckActions {

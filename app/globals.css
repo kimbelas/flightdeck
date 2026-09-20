@@ -117,6 +117,23 @@ button.ghost {
   min-height: 0;
 }
 
+/* An open preview needs room the list does not — P5a-T4, and the same `:has()` move
+   `.project-list:has(details[open])` makes for the same reason. `claude logs` renders a 200-COLUMN
+   frame (measured, RESEARCH.md G.34) and the session list is 340px, which is about forty-seven
+   characters: most of a Claude Code screen is narrower than that, but its box rules and status bar
+   are not, and reading one through a slot is not reading it. The column widens only while a
+   preview is open and the pane area keeps `1fr`, so the deck's shape is unchanged the rest of the
+   time. It still scrolls sideways past this — a screen is never re-wrapped (`.preview-screen`).
+
+   ONE declaration, and that is not brevity: this rule overrides `.deck-body` and inherits the
+   rest, so anything else written here would be a second copy of a value that has to stay in step.
+   A first draft of it took `flex` and `min-height` with it when the rule was split out, which left
+   `.deck-body` without the two properties that make it fill the window — and the smoke went on
+   passing, because nothing it measures depends on them (RESEARCH.md G.38). */
+.deck-body:has(.detail-preview pre) {
+  grid-template-columns: minmax(260px, 560px) 1fr;
+}
+
 /* The left column: the projects panel is fixed at the top, the session list scrolls under it. */
 .deck-left {
   display: flex;
@@ -503,7 +520,8 @@ button.ghost {
 }
 
 .detail-recap h3,
-.detail-files h3 {
+.detail-files h3,
+.detail-preview h3 {
   margin: 0 0 4px;
   font-size: 11px;
   font-weight: 600;
@@ -537,6 +555,46 @@ button.ghost {
   color: var(--dim);
   padding: 1px 0;
   overflow-wrap: anywhere;
+}
+
+/* The preview block — P5a-T4. */
+.detail-preview {
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+
+.detail-preview-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+/* The heading takes the slack so the age and the button sit together on the right. */
+.detail-preview-head h3 {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+/* A screen is 200 columns wide and its alignment is the alignment Claude Code drew: a status bar,
+   a context gauge and a box rule all come apart if this wraps. So it SCROLLS sideways instead —
+   `white-space: pre` and not `pre-wrap` — and the row keeps its width whatever is in the frame
+   (`min-width: 0`, without which a flex child sizes to its content and stretches the whole deck).
+   The trail is drawn identically so the two sources cannot be told apart by their whitespace. */
+.preview-screen,
+.preview-trail {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  min-width: 0;
+  max-height: 340px;
+  overflow: auto;
+  white-space: pre;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--dim);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 3px;
 }
 
 .tone-needs-you {

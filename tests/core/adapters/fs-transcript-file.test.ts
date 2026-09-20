@@ -131,3 +131,77 @@ describe('FsTranscriptFile', () => {
     expect(slice.from).toBe(0);
   });
 });
+
+// The END of a transcript, for a reader that has no cursor — P5a-T4.
+//
+// `read` cannot answer this and should not be made to: it takes a cursor because a tail knows
+// where it got to, and a preview arrives on a click about a session core may never have hooked.
+describe('FsTranscriptFile.tail', () => {
+  it('reads a missing transcript as unreadable rather than throwing', async () => {
+    const end = await file.tail(join(directory, 'nothing.jsonl'), 1024);
+
+    expect(end.unreadable).toBe(true);
+    expect(end.text).toBe('');
+  });
+
+  it('reads a whole small file, which starts on a boundary already', async () => {
+    writeFileSync(path, '{"a":1}\n{"b":2}\n', 'utf8');
+
+    expect((await file.tail(path, 1024)).text).toBe('{"a":1}\n{"b":2}\n');
+  });
+
+  it('starts at a RECORD boundary, never in the middle of one', async () => {
+    writeFileSync(path, '{"a":1}\n{"b":2}\n{"c":3}\n', 'utf8');
+
+    // A window of 12 bytes lands inside `{"b":2}`. Handing half a record to a parser is how a
+    // preview would report a schema change that did not happen.
+    const end = await file.tail(path, 12);
+
+    expect(end.text).toBe('{"c":3}\n');
+    expect(() => {
+      JSON.parse(end.text.trim());
+    }).not.toThrow();
+  });
+
+  it('answers nothing when the window holds no newline — that is one record, and half of it', async () => {
+    writeFileSync(path, `{"a":"${'x'.repeat(200)}"}\n`, 'utf8');
+
+    expect((await file.tail(path, 20)).text).toBe('');
+  });
+
+  it('answers nothing for an empty file, without calling it unreadable', async () => {
+    writeFileSync(path, '', 'utf8');
+
+    const end = await file.tail(path, 1024);
+
+    expect(end.text).toBe('');
+    expect(end.unreadable).toBe(false);
+  });
+
+  it('never starts inside a UTF-8 sequence, the same promise `read` makes', async () => {
+    // Several lines of three-byte characters, so a byte-sized window lands mid-character at one
+    // offset in three and the newline it cuts forward to is a real record separator rather than
+    // the end of the file. U+FFFD anywhere would be a silent corruption in a preview line.
+    const line = `{"a":"${'’'.repeat(9)}"}`;
+    writeFileSync(path, `${line}\n${line}\n${line}\n${line}\n`, 'utf8');
+
+    for (let window = 10; window <= 130; window += 3) {
+      const end = await file.tail(path, window);
+      expect(end.text).not.toContain('�');
+      // Whatever came back is whole records, so every non-empty line still parses.
+      for (const read of end.text.split('\n').filter((text) => text !== '')) {
+        expect(JSON.parse(read)).toEqual({ a: '’’’’’’’’’' });
+      }
+    }
+  });
+
+  it('reads the LAST records, not the first', async () => {
+    const lines = Array.from({ length: 200 }, (unused, i) => `{"n":${String(i)}}`).join('\n');
+    writeFileSync(path, `${lines}\n`, 'utf8');
+
+    const end = await file.tail(path, 64);
+
+    expect(end.text).toContain('{"n":199}');
+    expect(end.text).not.toContain('{"n":0}');
+  });
+});
