@@ -1354,6 +1354,13 @@ budget harness and is not called by the deck. **P5a-T3b** decides the renderer p
 matching addon version, or accepting the DOM renderer and deleting the budget logic that only
 existed to ration WebGL contexts.
 
+> **The cause named above is wrong — see G.30.** The addon paints correctly on xterm 6.0.0,
+> measured in lit pixels. What it will not do is paint without `@xterm/xterm/css/xterm.css`, and
+> the deck had no such import until P5a-T6a. This is the SAME missing stylesheet as G.29, found
+> five weeks apart and written down as two unrelated defects in two different libraries. The
+> observation stands; "0.19 is built against xterm 5's internals" was a guess, and the version
+> survey that seemed to support it (no peer range on either package) supports nothing.
+
 ### G.5 Two artifacts in a working pane, neither fatal, both real
 
 With the DOM renderer the deck shows a live Claude Code session correctly — banner, prompt,
@@ -2383,3 +2390,61 @@ test under `tests/app/` imports a DOM-free view model, which is the layering sta
 without anybody having written it down. The decisions moved to `app/panes/pane-status.ts`, which
 imports nothing but a type; the socket stayed an adapter, covered by the smoke. **A test file
 should not be able to move a project's type floor, and this one could.**
+
+### G.30 The WebGL addon paints fine — G.4 was the missing stylesheet again (P5a-T3b, 2026-09-20)
+
+G.4 said `@xterm/addon-webgl` 0.19.0 "activates and paints NOTHING" on `@xterm/xterm` 6.0.0, and
+the deck has run on the DOM renderer ever since. It is the second finding in this file to have a
+real observation and an invented cause, and both causes turn out to be the same missing import.
+
+**The measurement G.4 did not make.** Every signal G.4 checked — `report().renderer`, the canvas
+count, the row count — is a signal about what the library *thinks*. What a person sees is pixels,
+so this probe screenshots the terminal host and counts pixels above a luminance threshold. Two
+scratch installs, a page served over loopback, Chromium, 12 rows of `A-Z0-9` written into an 80×24
+terminal in an 800×400 box, and the stylesheet made conditional on a query parameter:
+
+| `@xterm/xterm` | renderer | `xterm.css` | canvases | GL contexts | `.xterm-rows > div` | **lit pixels** |
+|---|---|---|---|---|---|---|
+| 6.0.0 | DOM | yes | 0 | 0 | 24 | **15 168** (4.74 %) |
+| 6.0.0 | WebGL 0.19.0 | yes | 3 | 1 | 0 | **14 532** (4.54 %) |
+| 6.0.0 | DOM | **no** | 0 | 0 | 24 | **15 486** (4.84 %) |
+| 6.0.0 | WebGL 0.19.0 | **no** | 3 | 1 | 0 | **295** (0.09 %) |
+
+The addon paints. Take the stylesheet away and it paints 295 pixels — **which is the cursor**, and
+which is, word for word, what G.4 reported seeing: "a cursor on an empty black rectangle". The DOM
+renderer in the same row paints 15 486, because DOM rows are ordinary text in the flow and do not
+need `xterm.css` to be visible. So the stylesheet was invisible as a cause precisely *because* the
+renderer that exposed it was the one nobody was using.
+
+**The version survey answers a question nobody needed to ask.** `@xterm/addon-webgl` has exactly
+two published lines: `0.19.0` (latest, 2025-12-22, twelve seconds after `@xterm/xterm` 6.0.0 — they
+are one release) and `0.20.0-beta.300`, which *does* declare a peer range, `@xterm/xterm`
+`^6.1.0-beta.304`. The newer addon is therefore only installable against a **beta** terminal. Since
+0.19.0 works, the beta buys nothing and costs a prerelease dependency at the centre of the app.
+
+**What WebGL is actually worth here.** Nine panes in one page, 512 KiB written into each (4.5 MB
+total), timed from the first `write` to the second `requestAnimationFrame` after the last write
+callback, three runs:
+
+| Chromium | DOM | WebGL |
+|---|---|---|
+| headless (SwiftShader) | 439 / 337 / 337 ms | 401 / 542 / 531 ms |
+| headed (real GPU) | 536 / 478 / 513 ms | **469 / 410 / 341 ms** |
+
+WebGL is ~25 % faster on the GPU and slower without one. Both render 4.5 MB across nine panes in
+under 0.6 s, which is more output than nine Claude sessions produce in a burst. **This is not a
+throughput decision**, and pretending it was would be the third guess in this section.
+
+**What it costs.** On WebGL `.xterm-rows > div` is **0** — the text leaves the DOM. Every smoke
+assertion about what a pane painted reads `.xterm-rows` or `innerText` of `.pane-host`, and so does
+a screen reader. On the DOM renderer, "what the test reads" and "what a person sees" are the same
+string; on WebGL they come apart, and keeping them honest means a pixel probe like this one in CI
+forever. G.29 and this section are both stories about the gap between those two things being where
+the bug lived for five phases.
+
+**Decided in D40: the DOM renderer, and the context budget deleted rather than re-measured.**
+`TerminalPane` loses `enableWebgl`, `releaseWebgl`, `renderer`, `lost` and the `onContextLoss`
+fallback; `app/spike/xterm/` and `scripts/xterm-spike-cli.ts` go with them, because a harness that
+still activates the addon would still report `renderer: 'webgl'` over an unpainted canvas. F.5.2's
+numbers (40 / 76 contexts) and F.5.3's 3036 ms are kept — they are measurements of Chromium and of
+the addon, and they stay true whether or not this app uses them.

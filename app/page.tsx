@@ -10,9 +10,6 @@ export default function Home(): JSX.Element {
         <li>
           <Link href="/deck">The deck — sessions and terminal panes</Link>
         </li>
-        <li style={{ color: 'var(--dim)', marginTop: 6 }}>
-          <Link href="/spike/xterm">P0-T6 — xterm.js 6 harness</Link>
-        </li>
       </ul>
     </main>
   );

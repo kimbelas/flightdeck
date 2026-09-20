@@ -968,3 +968,50 @@ that stat is deliberately not a fallback to the common directory's own mtime, wh
 moves and which would tie a thirty-read recompute to how often the owner commits. The consequence
 is stated rather than hidden: a repository's FIRST worktree appears within the 300 s TTL, and every
 one after it at once.
+
+## D40 — the deck paints in the DOM, and the WebGL budget is deleted rather than re-measured (decided 2026-09-20, P5a-T3b)
+
+SPEC §5.3 gives the terminal grid a *renderer budget*: focused panes get WebGL, capped at 8–10,
+with a DOM fallback on context loss, justified by "Chromium allows ~16 WebGL contexts per page"
+(§9 R9). Two measurements have now taken both halves of that away.
+
+**The cap is not a cap here.** P0-T6 counted 40 contexts headless and 76 on this GPU (RESEARCH.md
+F.5.2) against a nine-pane layout. Eviction order is oldest-first as documented, so the *behaviour*
+the design feared is real — there is just nothing on this machine that reaches it. A budget for a
+resource with an eight-fold margin is not a budget, it is three states and a focus listener.
+
+**And the renderer it rationed works.** G.4 recorded that `addon-webgl` 0.19.0 paints nothing on
+xterm 6.0.0, and that is why the deck has been on the DOM renderer since P5a-T3. It is wrong.
+Measured in lit pixels, the addon paints (14 532 px against the DOM renderer's 15 168) — unless
+`@xterm/xterm/css/xterm.css` is absent, and then it paints 295, which is the cursor. The deck had
+no such import until P5a-T6a. **G.4 and G.5 were one bug**, five weeks apart, in two libraries,
+written down as two.
+
+So the choice is open rather than forced, and it is made on what the two renderers do to the rest
+of the system:
+
+- **The DOM renderer puts the session's text in the DOM.** `innerText` of `.pane-host` is what the
+  smoke asserts, what a screen reader announces, and what a person sees — one string, three
+  readers. WebGL empties `.xterm-rows` and those three come apart; keeping them together then
+  means a pixel probe in CI forever, and the probe is the only thing that would have caught G.4.
+- **Throughput is not the deciding number.** Nine panes, 4.5 MB: 478–536 ms on DOM, 341–469 ms on
+  WebGL with a GPU, and *slower* than DOM without one. A 25 % edge on half a second of burst, for
+  a tool whose panes emit a few KB a second, does not buy back the paragraph above.
+- **A silent renderer is the worst failure mode this codebase has met.** The addon reports
+  `renderer: 'webgl'`, creates its three canvases and draws nothing, and it did that here for five
+  phases behind every green check. The DOM renderer has no equivalent state to be wrong about.
+
+**So: the DOM renderer, and the budget is deleted, not re-measured.** `TerminalPane` loses
+`enableWebgl`, `releaseWebgl`, `renderer`, `lost`, `onContextLoss` and the `@xterm/addon-webgl`
+dependency with them. `app/spike/xterm/` and `scripts/xterm-spike-cli.ts` — P0-T6's budget harness
+— are deleted too, on D32's precedent about `LoopbackGuard.screenFirstFrame`: a harness left
+running the addon would still report `webgl` over an unpainted canvas, which is the trap, not the
+measurement. Their findings are in RESEARCH.md F.5 and are not diminished by the code going away.
+`PaneReport`, `visibleText()` and the `blocked` tally go in the same sweep, because the spike was
+their only reader.
+
+**What would reverse this.** A pane that cannot keep up — a `tui: fullscreen` session at 60 fps
+across nine panes is the plausible case, and nothing here has produced one. Reversing it costs the
+dependency back, `enableWebgl` back, and, non-negotiably, a CI check that asserts **painted
+pixels** rather than `report().renderer`. SPEC §5.3's budget text and §9 R9 stand as written; this
+is where they stopped describing the build.

@@ -9,7 +9,7 @@
 
 version: 1
 project: flightdeck
-updated: 2026-09-16
+updated: 2026-09-20
 
 docs:
   spec: SPEC.md
@@ -1994,15 +1994,46 @@ phases:
           than take the first. app/spike/xterm/terminal-pane.ts is the working shape to start from.
       - id: P5a-T3b
         title: Renderer decision — a WebGL addon that actually paints on xterm 6, or drop the context budget
-        status: todo
+        status: done
+        done_on: 2026-09-20
         depends_on: [P5a-T3]
+        deliverables:
+          [
+            app/panes/terminal-pane.ts,
+            app/deck/pane-view.tsx,
+            app/page.tsx,
+            package.json,
+            DECISIONS.md D40,
+            RESEARCH.md G.30,
+          ]
         notes: >-
-          RESEARCH.md G.4. addon-webgl 0.19.0 on xterm 6.0.0 activates, creates canvases, reports
-          renderer 'webgl' and paints nothing; neither package declares a peer range so npm never
-          warned. The deck ships on the DOM renderer, which works and puts real text in the DOM.
-          Decide here: find a matching addon version and re-measure P0-T6's budget against it, or
-          accept the DOM renderer and delete the per-pane context rationing that only existed to
-          make WebGL affordable. Do not re-enable WebGL without a test that asserts painted text.
+          DECIDED: the DOM renderer, and the context budget is DELETED rather than re-measured —
+          DECISIONS.md D40, measured in RESEARCH.md G.30.
+          The premise this task was written on is wrong. G.4 said addon-webgl 0.19.0 paints nothing
+          on xterm 6.0.0; measured in LIT PIXELS rather than in `report().renderer`, it paints
+          14 532 px against the DOM renderer's 15 168. What it will not do is paint without
+          `@xterm/xterm/css/xterm.css` — and then it paints 295 px, which is the cursor, which is
+          word for word what G.4 described seeing. The deck had no such import until P5a-T6a, so
+          **G.4 and G.5 were the same bug**, five weeks apart, filed against two different
+          libraries. Every signal G.4 checked was a signal about what the library thought.
+          So the choice was open, not forced, and it went to DOM on what the renderers do to the
+          rest of the system rather than on speed. On DOM, `innerText` of `.pane-host` is what the
+          smoke asserts, what a screen reader announces and what a person sees — one string, three
+          readers. WebGL empties `.xterm-rows` and those come apart. Throughput is not the deciding
+          number: nine panes and 4.5 MB is 478-536 ms on DOM and 341-469 ms on WebGL with a GPU,
+          and SLOWER than DOM without one.
+          Deleted with the decision: `enableWebgl`, `releaseWebgl`, `renderer`, `lost` and the
+          `onContextLoss` fallback from TerminalPane; the `@xterm/addon-webgl` dependency; and
+          `app/spike/xterm/` plus `scripts/xterm-spike-cli.ts`, which are P0-T6's budget harness
+          and are listed in its deliverables — kept there, because the list records what that task
+          produced. They go on D32's precedent about `LoopbackGuard.screenFirstFrame`: a harness
+          still activating the addon would still report `webgl` over an unpainted canvas, which is
+          the trap rather than the measurement. `PaneReport`, `visibleText()` and the `blocked`
+          tally went in the same sweep — the spike was their only reader, and the key handler that
+          fed `blocked` stays.
+          Reversing this needs the dependency back and, non-negotiably, a CI check that asserts
+          PAINTED PIXELS. F.5.2's 40/76 contexts and F.5.3's 3036 ms stay in RESEARCH: they are
+          measurements of Chromium and of the addon, true whether or not this app uses them.
       - id: P5a-T5b
         title: Panes survive a reload — the P5a gate's last clause
         status: done
