@@ -83,3 +83,27 @@ export function parentDirectory(path: string): string | undefined {
   }
   return parent;
 }
+
+/**
+ * The last segment of a path — the folder's or file's own name — or `undefined` at a root.
+ *
+ * `parentDirectory`'s other half, and here for the same two reasons: `contracts/` is compiled into
+ * the browser bundle so `node:path.basename` is not available to it, and the two halves of one
+ * rule about where a path ends belong in one file. P3-T4 is the caller — `tree.mjs` names a
+ * worktree by its directory, and recognising a linked worktree's administrative directory means
+ * asking whether the segment above it is `worktrees`.
+ *
+ * **Casing is preserved**, like `parentDirectory`: the result is shown to a person — it is the
+ * name the owner typed when they created the tree — and a lower-cased one is only good for
+ * matching.
+ */
+export function lastSegment(path: string): string | undefined {
+  const normalised = path.replaceAll('/', WINDOWS_SEPARATOR).replace(/\\+$/, '');
+  const cut = normalised.lastIndexOf(WINDOWS_SEPARATOR);
+  const segment = cut < 0 ? normalised : normalised.slice(cut + 1);
+  // `C:\` reduces to `C:`, which is a drive reference and not a name — the same special case
+  // `parentDirectory` makes in the other direction, and the reason both live in one file. Without
+  // it a project imported at a drive root would be a worktree called `C:`.
+  if (/^[a-z]:$/i.test(segment)) return undefined;
+  return segment === '' ? undefined : segment;
+}

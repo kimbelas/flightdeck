@@ -1700,7 +1700,50 @@ phases:
         security: [SEC-FS-1, SEC-FS-2]
       - id: P3-T4
         title: Worktree discovery with the lib/tree.mjs rules (main vs linked, never touch 4200/4201)
-        status: todo
+        status: done
+        done_on: 2026-09-20
+        deliverables:
+          [
+            contracts/worktree.ts,
+            contracts/windows-path.ts,
+            contracts/workflow-map.ts,
+            core/application/worktree-reader.ts,
+            core/application/workflow-map-reader.ts,
+            core/projects.ts,
+            app/deck/workflow-map-view-model.ts,
+            app/deck/workflow-map-panel.tsx,
+            DECISIONS.md D39,
+          ]
+        notes: >-
+          SPEC §5.1(a)'s last git row, and the one reading in the map that is not about `.claude`.
+          It is in `WorkflowMap` rather than on `ProjectStatus` because a worktree is a place to
+          start a session and the map is the catalogue of what a session in this folder would be —
+          D37's line, kept.
+          `git worktree list` is named by SPEC and is not what this runs. The trees are read from
+          `<common>\worktrees\<name>\gitdir` and `HEAD`, which are the files git reads to answer
+          that command, for the reason `ProjectGitReader` already gives about the in-progress
+          state: cheaper than a process, and worktree-safe, because a spawn only ever answers about
+          the directory it ran in. Recognising a linked worktree is a shape rather than a question
+          too — git puts its administrative directory at `<common>\worktrees\<name>` and nowhere
+          else, so two string operations replace `tree.mjs`'s two spawns, and the shape is the one
+          `GitDirectoryLocator` was already built to follow from the other end.
+          The id is the tree's DIRECTORY name, not git's registration name — `tree.mjs`'s `treeId`,
+          which is what the owner sees in their prompt and what every hook keys its state by. The
+          two agree until a tree is moved, which has a test. A tree core may not read is dropped
+          rather than listed, unlike `git worktree list`'s prunable rows: the map feeds P4's
+          launcher, and a target that cannot be opened is worse than an absent one.
+          The 4200/4201 rule is taken as a prohibition, not as `tree.mjs`'s port plan. Flightdeck
+          does not serve these trees, so there is nothing to assign; `NEVER_TOUCH_PORTS` sits in
+          `contracts/worktree.ts` so SEC-PROC-5 and SPEC §9 R11 have one place to be read from.
+          The map's signature grows one stat — `mtime(<common>\worktrees)` — deliberately NOT
+          falling back to the common directory's mtime, which every commit moves and which would
+          tie a thirty-read recompute to how often the owner commits. The stated cost is that a
+          repository's first worktree appears within the 300 s TTL and every later one at once.
+          One bug caught by its own test: `lastSegment('C:\')` answered `'C:'`, a drive reference
+          rather than a name, so a project imported at a drive root would have been a worktree
+          called `C:`. `parentDirectory` already made that special case in the other direction,
+          which is why both halves of the rule now live in one file.
+        security: [SEC-FS-1, SEC-PROC-5]
       - id: P3-T5
         title: Observed behaviour — aggregate both subscriptions' transcripts per slug (sessions, cost, tools, skills, files, compactions)
         status: todo

@@ -24,6 +24,7 @@ import type { ClaudeAsset } from '../../contracts/claude-assets.ts';
 import type { HookStep } from '../../contracts/hook-timeline.ts';
 import type { InstructionFile, InstructionSource } from '../../contracts/instruction-stack.ts';
 import type { WorkflowMap } from '../../contracts/workflow-map.ts';
+import { MAIN_TREE_ID } from '../../contracts/worktree.ts';
 
 /**
  * What each instruction source is called on screen.
@@ -164,6 +165,44 @@ export class WorkflowMapViewModel {
   public get permissionRules(): readonly string[] {
     const rules = this.map?.permissions;
     return rules === undefined ? [] : [...rules.deny, ...rules.ask, ...rules.allow];
+  }
+
+  /**
+   * `main · XWEB-1853 · XWEB-1854` — every checkout, main first (P3-T4).
+   *
+   * The id and the branch together only when they differ, which is the common case worth the
+   * width: a worktree is named after the ticket and checked out on a branch named after the same
+   * ticket, so `XWEB-1853 (XWEB-1853)` would be the row this rule exists to avoid. A detached head
+   * shows the id alone — it has no branch, and `worktree.ts` says why that is not a sha.
+   *
+   * Empty for a folder outside a repository and for one with a single checkout: a repository with
+   * no worktrees has nothing to say here that the branch on the project row does not already say.
+   */
+  public get worktrees(): readonly string[] {
+    const trees = this.map?.worktrees ?? [];
+    if (trees.length < 2) return [];
+    return trees.map((tree) =>
+      tree.branch === undefined || tree.branch === tree.id
+        ? tree.id
+        : `${tree.id} (${tree.branch})`,
+    );
+  }
+
+  /** Whether this repository has linked worktrees at all — the heading's own condition. */
+  public get hasWorktrees(): boolean {
+    return this.worktrees.length > 0;
+  }
+
+  /** Which tree the imported folder itself is, for the row that names it. `undefined` when none. */
+  public get currentTree(): string | undefined {
+    const trees = this.map?.worktrees ?? [];
+    const here = trees.find((tree) => tree.path === this.map?.path);
+    return here === undefined ? undefined : here.id;
+  }
+
+  /** Whether the imported folder is the main checkout rather than a linked worktree. */
+  public get isMainTree(): boolean {
+    return this.currentTree === MAIN_TREE_ID;
   }
 
   /** `rules 6 · specs 9 · state 28` — only the folders that hold something. */

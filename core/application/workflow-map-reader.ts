@@ -44,6 +44,7 @@ import type { ProjectPaths } from './git-directory-locator.ts';
 import type { InstructionStackReader } from './instruction-stack-reader.ts';
 import type { ProjectSource } from './project-status-reader.ts';
 import { SignatureCache } from './signature-cache.ts';
+import type { WorktreeReader } from './worktree-reader.ts';
 
 /** `statusline.py`'s config TTL, for the change the signature cannot see. See the header. */
 const MAP_TTL_MS = 300_000;
@@ -60,6 +61,8 @@ export interface WorkflowMapParts {
   readonly paths: ProjectPaths;
   readonly instructions: InstructionStackReader;
   readonly assets: ClaudeAssetReader;
+  /** P3-T4. The one reading in the map that is about git rather than about `.claude`. */
+  readonly worktrees: WorktreeReader;
   readonly files: ProjectFiles;
   readonly clock: Clock;
   readonly logger: Logger;
@@ -98,7 +101,7 @@ export class WorkflowMapReader {
       return this.empty(project.path);
     }
     const claudeDir = childPath(root.value, CLAUDE_DIR);
-    const signature = await this.signature(claudeDir);
+    const signature = await this.signature(claudeDir, project.path);
     return this.maps.value(projectKey(project.path), signature, MAP_TTL_MS, () =>
       this.compose(project.path, root.value, claudeDir),
     );
@@ -111,14 +114,19 @@ export class WorkflowMapReader {
    * five sources are outside it — see the header.
    */
   private async compose(path: string, root: string, claudeDir: string): Promise<WorkflowMap> {
-    const [instructions, assets, conventions, settings, mcp, configured] = await Promise.all([
-      this.parts.instructions.read(root),
-      this.parts.assets.assets(claudeDir),
-      this.parts.assets.conventions(claudeDir),
-      this.json(childPath(claudeDir, SETTINGS_FILE), MAX_SETTINGS_BYTES),
-      this.json(childPath(root, MCP_FILE), MAX_MCP_BYTES),
-      this.isDirectory(claudeDir),
-    ]);
+    const [instructions, assets, conventions, settings, mcp, worktrees, configured] =
+      await Promise.all([
+        this.parts.instructions.read(root),
+        this.parts.assets.assets(claudeDir),
+        this.parts.assets.conventions(claudeDir),
+        this.json(childPath(claudeDir, SETTINGS_FILE), MAX_SETTINGS_BYTES),
+        this.json(childPath(root, MCP_FILE), MAX_MCP_BYTES),
+        // The stored path, not the resolved root: `WorktreeReader` climbs from it exactly as
+        // `ProjectGitReader` does, and the climb is the part that has to start where the owner
+        // pointed rather than one `realpath` further in.
+        this.parts.worktrees.read(path),
+        this.isDirectory(claudeDir),
+      ]);
     return {
       path,
       at: this.parts.clock.now().getTime(),
@@ -130,6 +138,7 @@ export class WorkflowMapReader {
       marketplaces: readMarketplaces(settings),
       permissions: readPermissions(settings),
       conventions,
+      worktrees,
       configured,
     };
   }
@@ -142,13 +151,17 @@ export class WorkflowMapReader {
    * degradation. It also means the map is recomputed the moment one is created, because the
    * signature stops being empty.
    */
-  private async signature(claudeDir: string): Promise<string> {
-    const [directory, settings] = await Promise.all([
+  private async signature(claudeDir: string, projectPath: string): Promise<string> {
+    const [directory, settings, worktrees] = await Promise.all([
       this.facts(claudeDir),
       this.facts(childPath(claudeDir, SETTINGS_FILE)),
+      // P3-T4's third stat, and it is a third stat rather than a third cache: the trees are part
+      // of the same map and a `SignatureCache` of their own would recompute them on a clock the
+      // panel never sees. `WorktreeReader` says what it observes and why that is the cheap thing.
+      this.parts.worktrees.signature(projectPath),
     ]);
-    if (directory === undefined && settings === undefined) return '';
-    return `${String(directory?.modifiedAt ?? 0)}:${String(settings?.modifiedAt ?? 0)}:${String(settings?.sizeBytes ?? 0)}`;
+    if (directory === undefined && settings === undefined && worktrees === '') return '';
+    return `${String(directory?.modifiedAt ?? 0)}:${String(settings?.modifiedAt ?? 0)}:${String(settings?.sizeBytes ?? 0)}:${worktrees}`;
   }
 
   /**
@@ -201,6 +214,9 @@ export class WorkflowMapReader {
       marketplaces: [],
       permissions: { allow: [], deny: [], ask: [], defaultMode: undefined },
       conventions: CONVENTION_FOLDERS.map((folder) => ({ folder, files: 0 })),
+      // A root core cannot resolve is one it cannot climb from either, so there is nothing to
+      // report rather than nothing to say — the same answer as a folder outside a repository.
+      worktrees: [],
       configured: false,
     };
   }

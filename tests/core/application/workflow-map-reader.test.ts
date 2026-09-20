@@ -10,8 +10,10 @@
 // with no `.claude` degrades to an instruction stack and nothing else.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ClaudeAssetReader } from '../../../core/application/claude-asset-reader.ts';
+import { GitDirectoryLocator } from '../../../core/application/git-directory-locator.ts';
 import { InstructionStackReader } from '../../../core/application/instruction-stack-reader.ts';
 import { WorkflowMapReader } from '../../../core/application/workflow-map-reader.ts';
+import { WorktreeReader } from '../../../core/application/worktree-reader.ts';
 import { projectKey, type ProjectRecord } from '../../../contracts/project.ts';
 import { childPath } from '../../../contracts/windows-path.ts';
 import { err, ok, type Result } from '../../../core/shared/result.ts';
@@ -73,6 +75,16 @@ function build(records: ProjectRecord[]): Harness {
       configDirs: { '365': C365, isg: ISG },
     }),
     assets: new ClaudeAssetReader({ paths, files }),
+    // The real reader over the real locator, not a fake of either — G.26's lesson, and the one
+    // P3-T3 paid for again in G.27: a fake that agreed with the source would have agreed with the
+    // bug too. With no `.git` in the little filesystem below it answers `[]`, which is what a
+    // folder outside a repository should say.
+    worktrees: new WorktreeReader({
+      paths,
+      locator: new GitDirectoryLocator(paths, files, logger),
+      files,
+      logger,
+    }),
     files,
     clock,
     logger,

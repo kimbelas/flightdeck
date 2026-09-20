@@ -72,6 +72,26 @@ const MAP: WorkflowMap = {
     { folder: 'reference', files: 0 },
     { folder: 'prompts', files: 0 },
   ],
+  worktrees: [
+    {
+      id: 'main',
+      path: 'C:\\Users\\belas\\Documents\\development\\app-next',
+      branch: 'main',
+      isMain: true,
+    },
+    {
+      id: 'XWEB-1853',
+      path: 'C:\\Users\\belas\\Documents\\development\\app-next\\.claude\\worktrees\\XWEB-1853',
+      branch: 'XWEB-1853',
+      isMain: false,
+    },
+    {
+      id: 'XWEB-1854',
+      path: 'C:\\Users\\belas\\Documents\\development\\app-next\\.claude\\worktrees\\XWEB-1854',
+      branch: 'feat/rework-the-picker',
+      isMain: false,
+    },
+  ],
   configured: true,
 };
 
@@ -207,5 +227,50 @@ describe('the rest of the rows', () => {
 
   it('counts only the convention folders that hold something', () => {
     expect(new WorkflowMapViewModel(MAP).conventions).toEqual(['rules 6', 'specs 9']);
+  });
+});
+
+describe('the worktree row', () => {
+  it('names every tree, main first', () => {
+    expect(new WorkflowMapViewModel(MAP).worktrees).toEqual([
+      'main',
+      'XWEB-1853',
+      'XWEB-1854 (feat/rework-the-picker)',
+    ]);
+  });
+
+  it('gives the branch only when it differs from the id, which is the common case', () => {
+    // A worktree is named after the ticket and checked out on a branch named after the same
+    // ticket, so `XWEB-1853 (XWEB-1853)` is the row this rule exists to avoid.
+    expect(new WorkflowMapViewModel(MAP).worktrees[1]).toBe('XWEB-1853');
+  });
+
+  it('says nothing for a repository with a single checkout', () => {
+    const one = { ...MAP, worktrees: MAP.worktrees.slice(0, 1) };
+    expect([
+      new WorkflowMapViewModel(one).worktrees,
+      new WorkflowMapViewModel(one).hasWorktrees,
+    ]).toEqual([[], false]);
+  });
+
+  it('says nothing for a folder outside a repository', () => {
+    expect(new WorkflowMapViewModel({ ...MAP, worktrees: [] }).worktrees).toEqual([]);
+  });
+
+  it('names which tree the imported folder itself is', () => {
+    const model = new WorkflowMapViewModel(MAP);
+    expect([model.currentTree, model.isMainTree]).toEqual(['main', true]);
+  });
+
+  it('knows when the imported folder is a linked worktree rather than the main checkout', () => {
+    const here = { ...MAP, path: MAP.worktrees[1]?.path ?? '' };
+    const model = new WorkflowMapViewModel(here);
+    expect([model.currentTree, model.isMainTree]).toEqual(['XWEB-1853', false]);
+  });
+
+  it('keeps the worktrees out of the closed summary, which is about .claude', () => {
+    // The P3 gate's second half: a folder with no `.claude` collapses to one sentence, and a
+    // worktree count in the summary line would make it collapse to a count instead.
+    expect(new WorkflowMapViewModel(MAP).summary.join(' ')).not.toContain('worktree');
   });
 });

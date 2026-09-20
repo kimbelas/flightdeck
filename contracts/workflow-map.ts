@@ -33,6 +33,7 @@ import {
 import { parseHookSteps, type HookStep } from './hook-timeline.ts';
 import { parseInstructionStack, type InstructionFile } from './instruction-stack.ts';
 import { MAX_PROJECT_PATH_CHARS } from './project.ts';
+import { parseWorktrees, type Worktree } from './worktree.ts';
 
 /**
  * The `.claude/` folders SPEC §5.1 names as conventions and in-flight work.
@@ -77,6 +78,16 @@ export interface WorkflowMap {
   /** All six, always, so a repository that keeps none of them says so. */
   readonly conventions: readonly ConventionCount[];
   /**
+   * Every checkout of this repository, main first — P3-T4, `worktree.ts`.
+   *
+   * The one reading in here that is not about `.claude` at all, and it is in the map rather than
+   * on `ProjectStatus` because SPEC §5.1(a)'s table puts it here: a worktree is a place to start a
+   * session, and the map is the catalogue of what a session in this folder would be. Empty for a
+   * folder that is not in a repository and for a repository with only a main checkout core may not
+   * read — the deck draws the same nothing for both.
+   */
+  readonly worktrees: readonly Worktree[];
+  /**
    * Whether the folder has a `.claude` directory at all.
    *
    * The one flag in here, and it earns its place: it is the difference between "this repository
@@ -108,6 +119,7 @@ export function parseWorkflowMap(value: unknown): WorkflowMap | undefined {
     marketplaces: parseNameList(fields['marketplaces']),
     permissions: parsePermissionRules(fields['permissions']),
     conventions: conventionList(fields['conventions']),
+    worktrees: parseWorktrees(fields['worktrees']),
     configured: fields['configured'] === true,
   };
 }
