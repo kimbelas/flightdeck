@@ -10,6 +10,7 @@
 // land in state and render.
 import { describe, expect, it } from 'vitest';
 import {
+  CORE_PRESETS_PATH,
   CORE_PROJECT_MAP_PATH,
   CORE_PROJECT_STATUS_PATH,
   CORE_PROJECTS_PATH,
@@ -66,7 +67,7 @@ describe('DeckStore.refresh', () => {
 
     await store.refresh();
 
-    // The registry rides along (P3-T2, P3-T3): none of the three has a stream frame, so a
+    // The registry rides along (P3-T2, P3-T3, P4-T1): none of the four has a stream frame, so a
     // deliberate refresh is the only thing that can move them. Every path still goes through the
     // rewrite.
     expect(api.requests.map((request) => request.path)).toEqual([
@@ -74,6 +75,7 @@ describe('DeckStore.refresh', () => {
       CORE_PROJECTS_PATH,
       CORE_PROJECT_STATUS_PATH,
       CORE_PROJECT_MAP_PATH,
+      CORE_PRESETS_PATH,
     ]);
     expect(api.requests.every((request) => request.path.startsWith('/api/core/'))).toBe(true);
   });
@@ -170,7 +172,9 @@ describe('DeckStore.launch', () => {
       {
         method: 'POST',
         path: CORE_SESSIONS_PATH,
-        body: { subscription: '365', prompt: 'do the thing', name: 'fd-one' },
+        // `cwd: ''` is what core reads as "no folder" (`optionalString`) — the launch form has
+        // none, and a preset is the caller that does (P4-T1).
+        body: { subscription: '365', prompt: 'do the thing', name: 'fd-one', cwd: '' },
       },
     ]);
   });

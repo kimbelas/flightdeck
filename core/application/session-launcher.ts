@@ -8,6 +8,19 @@
 // `--bg` **requires an initial prompt** (RESEARCH.md B.4). The prompt is passed as an argv element
 // and never interpolated into a command string — it is user text heading for a process, which is
 // exactly SEC-PROC-1's case.
+//
+// **The cwd is honoured as of P4-T1, and was parsed and dropped before it.** `LaunchRequest` has
+// carried one since P2-T2 and nothing passed it on, so every session started from the deck began
+// in core's own directory — which a preset naming a project folder would have turned from an
+// oversight into a button that lies. The path reaching here has been screened by
+// `PresetBook`/`ProjectRegistry`; this class does not re-screen it, and must never be given one
+// that has not been.
+//
+// **A launch into a folder Claude has not been trusted in is still the open question P4-T2 owns.**
+// F.3.6 measured an INTERACTIVE session blocking on an untrusted-folder modal that
+// `--dangerously-skip-permissions` does not bypass; what `--bg` does there is not measured. Today
+// that would present as a 60-second timeout and `launch_failed`, which is honest but slow — P4-T2
+// is where "started but never produced a session id" becomes its own reported outcome.
 import type { AuditOutcome } from '../../contracts/audit-row.ts';
 import type { LaunchFailure } from '../../contracts/launch-reply.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
@@ -73,6 +86,10 @@ export class SessionLauncher {
       command: executable,
       args,
       env: this.install.envFor(request.subscription),
+      // The cwd the session will live in. Spread rather than passed as `undefined`, because
+      // `exactOptionalPropertyTypes` is on and an absent property and an undefined one are
+      // different values to this compiler (the shape `AuditLog`'s `reason` already takes).
+      ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
       timeoutMs: LAUNCH_TIMEOUT_MS,
     });
 

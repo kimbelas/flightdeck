@@ -7,6 +7,13 @@
 // one unreadable row must not take out the page of rows around it.
 import type { AuditOutcome, AuditRow } from '../../../contracts/audit-row.ts';
 import { EVENT_SOURCES, type EventSource, type FdEvent } from '../../../contracts/fd-event.ts';
+import {
+  PROFILE_FUNCTIONS,
+  PROMPT_SOURCES,
+  type LaunchPreset,
+  type ProfileFunction,
+  type PromptSource,
+} from '../../../contracts/launch-preset.ts';
 import { projectName, type ProjectRecord } from '../../../contracts/project.ts';
 import type { SubscriptionId } from '../../../contracts/session.ts';
 import type { VitalsSnapshot } from '../../../contracts/vitals-snapshot.ts';
@@ -79,6 +86,43 @@ export function toProject(row: unknown): ProjectRecord {
     name: name === '' ? projectName(path) : name,
     importedAt: numberAt(fields, 'imported_at'),
   };
+}
+
+/**
+ * One saved launch preset — P4-T1.
+ *
+ * `builtIn` is `false` on every row by construction: built-ins are computed and never stored
+ * (`PresetCatalogue`), so a row in this table is one the owner saved. It is set here rather than
+ * read from a column, because a column whose value is always the same is a column that can
+ * eventually hold something else.
+ *
+ * A row whose `profile_fn` or `prompt_source` is not from this build reads as the safe end of each
+ * union rather than being dropped: `claude-365` starts nothing destructive and `literal` sends the
+ * text as written. Losing the row entirely would take a button off the deck with nothing said.
+ */
+export function toPreset(row: unknown): LaunchPreset {
+  const fields = asRecord(row) ?? {};
+  const held = fields['preset_group'];
+  return {
+    projectKey: stringAt(fields, 'project_key'),
+    id: stringAt(fields, 'id'),
+    name: stringAt(fields, 'name'),
+    profileFn: profileFnOf(stringAt(fields, 'profile_fn')),
+    cwd: stringAt(fields, 'cwd'),
+    sessionName: stringAt(fields, 'session_name'),
+    promptSource: promptSourceOf(stringAt(fields, 'prompt_source')),
+    prompt: stringAt(fields, 'prompt'),
+    group: typeof held === 'string' && held !== '' ? held : undefined,
+    builtIn: false,
+  };
+}
+
+function profileFnOf(value: string): ProfileFunction {
+  return PROFILE_FUNCTIONS.find((known) => known === value) ?? 'claude-365';
+}
+
+function promptSourceOf(value: string): PromptSource {
+  return PROMPT_SOURCES.find((known) => known === value) ?? 'literal';
 }
 
 /**

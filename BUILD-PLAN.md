@@ -121,10 +121,13 @@ interface Project {
   usualSubscription?: SubscriptionId;           // from observed history
   presets: Preset[];
 }
-interface Preset {
-  id: string; name: string; subscription: SubscriptionId; profileFn: string;
-  cwd: string; sessionName: string; prompt: string;
-  model?: string; agent?: string; effort?: string; permissionMode?: string; addDirs?: string[];
+interface LaunchPreset {                        // P4-T1 as built; DECISIONS.md D44
+  projectKey: string; id: string; name: string; // id = presetId(name); (projectKey,id) is the key
+  profileFn: ProfileFunction;                   // the subscription AND the model (D4) — no fields for either
+  cwd: string; sessionName: string;             // the project root, or a worktree under it
+  promptSource: 'literal' | 'ticket';           // 'ticket' computes it from sessionName (TicketPrompt)
+  prompt: string; group?: string;               // group: 'morning' — P6-T4 launches by it
+  builtIn: boolean;                             // computed from the project, never stored
 }
 ```
 
@@ -148,7 +151,8 @@ All mutating routes and `/pty` require `Authorization: Bearer <token>`. All rout
 | `POST /launch` | `{presetId}` or explicit `Preset` fields → `powershell -NoLogo -Command "<profileFn> --bg -n <name> '<prompt>' …"`; returns `{shortId, sessionId?}` |
 | `POST /run` | Ask: `-p --output-format stream-json --include-partial-messages [--json-schema] --max-budget-usd` under the chosen profile fn; SSE reply |
 | `GET /quota` | both subscriptions' last-known `Quota` + the recommended one (`most headroom`) |
-| `GET/POST /projects` · `GET /projects/:id/map` · `GET /projects/:id/observed` · `POST /projects/:id/presets` | F1/F6 |
+| `GET/POST /projects` · `POST /projects/forget` · `GET /projects/status` · `GET /projects/map` | F1/F6. Built with no path parameters — `RequestRouter` matches literally (P3-T1). |
+| `GET/POST /projects/presets` · `POST /projects/presets/forget` | P4-T1. The list is every project's four built-ins merged with whatever was saved. |
 | `WS /pty?attach=<shortId>` · `WS /pty?shell=powershell&cwd=` | attach pane (exclusive, D8) / plain shell pane; frames: `data`, `resize`, `detach`, `kill` |
 | `POST /popout/:shortId` | detach any pane, then `wt.exe -w 0 nt --title <name> -d <cwd> powershell -NoExit -Command "<profileFn> attach <shortId>"` |
 | `POST /connect/:subscription?dryRun=1` | D13: compute/merge the hooks + statusLine blocks into `$CFG/settings.json` with backup |
@@ -210,7 +214,7 @@ degrades gracefully to CLAUDE.md + stack + git.
 
 ### Phase 4 — launcher, quota-aware routing, Ask/Dispatch (2 sessions)
 
-Presets per project (encode the five profile functions), subscription picker pre-selecting the
+Presets per project (encode the four LAUNCHABLE profile functions — D44), subscription picker pre-selecting the
 most headroom, `--bg` dispatch appearing as a row within a second (hook `SessionStart`), Ask panel
 with streamed result and `--max-budget-usd`, Refresh, version/update chip with `claude update` and
 `respawn --all`, forced naming at launch (D7 `unnamed`). The bash alias drift is fixed — P4-T0

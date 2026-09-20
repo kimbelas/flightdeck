@@ -38,6 +38,13 @@ import { CORE_PORT, LOOPBACK_ADDRESS } from '../../contracts/origins.ts';
 import { PASTED_IMAGE_PATH } from '../../contracts/pasted-image.ts';
 import { PastedImage } from '../../core/domain/pasted-image.ts';
 import { KeybindingPlanner } from '../../core/application/keybinding-planner.ts';
+import { PresetCatalogue } from '../../core/domain/preset-catalogue.ts';
+import {
+  byProjectThenName,
+  parsePresetDraft,
+  parsePresetRef,
+  presetId,
+} from '../../contracts/launch-preset.ts';
 import { parseProjectPathBody, projectKey, projectName } from '../../contracts/project.ts';
 import { parseQuotaSummary } from '../../contracts/quota-summary.ts';
 import { parseSessionRef } from '../../contracts/session-ref.ts';
@@ -157,6 +164,18 @@ export class FixtureCore {
      * are answered here, and the four SEC-FS-1 checks are unit-tested where they live.
      */
     this.projects = new Map();
+    /**
+     * The SAVED presets, keyed the way the sqlite table is — P4-T1.
+     *
+     * The built-ins are not in here and must not be: core computes them from the project and the
+     * four profile functions on every request, so a double that stored them would be answering a
+     * question core does not ask. `PresetCatalogue` is imported rather than copied for exactly
+     * that reason — if the built-in set changes, this changes with it.
+     */
+    this.presets = new Map();
+    /** Every body `POST /projects/presets` was sent. The save button's real destination. */
+    this.presetSaves = [];
+    this.catalogue = new PresetCatalogue();
     this.server = createServer((request, response) => {
       void this.route(request, response);
     });
@@ -252,6 +271,15 @@ export class FixtureCore {
     if (request.method === 'GET' && path === '/projects/map') {
       return [200, { maps: [...this.projects.values()].map((held) => workflowMap(held)) }];
     }
+    if (request.method === 'GET' && path === '/projects/presets') {
+      return [200, { presets: this.presetList() }];
+    }
+    if (request.method === 'POST' && path === '/projects/presets') {
+      return this.savePreset(await body(request));
+    }
+    if (request.method === 'POST' && path === '/projects/presets/forget') {
+      return this.forgetPreset(await body(request));
+    }
     return [404, { error: 'not found' }];
   }
 
@@ -276,7 +304,76 @@ export class FixtureCore {
   forget(raw) {
     const path = parseProjectPathBody(raw);
     if (path === undefined) return [400, { error: 'empty' }];
-    return [200, { forgotten: this.projects.delete(projectKey(path)) }];
+    const key = projectKey(path);
+    // The store's cascade, repeated: a preset names a folder to start a session in, and core
+    // deletes the row when the folder is withdrawn (core/ports/store.ts).
+    for (const [slot, preset] of this.presets) {
+      if (preset.projectKey === key) this.presets.delete(slot);
+    }
+    return [200, { forgotten: this.projects.delete(key) }];
+  }
+
+  /**
+   * The merged list — `PresetBook.list`'s rule, repeated on the far side of the wire (P4-T1).
+   *
+   * Built-ins from the real `PresetCatalogue`, then the saved ones SHADOWING them by
+   * `(projectKey, id)`, then one stable order. Repeated rather than imported whole because
+   * `PresetBook` needs a registry, a store and an audit log, and this file owns none of those —
+   * but the two pieces that decide what the deck SEES, the catalogue and the sort, are core's own.
+   */
+  presetList() {
+    const merged = new Map();
+    for (const project of this.projects.values()) {
+      for (const preset of this.catalogue.builtInsFor(project)) {
+        merged.set(`${preset.projectKey}|${preset.id}`, preset);
+      }
+    }
+    for (const [slot, preset] of this.presets) {
+      if (this.projects.has(preset.projectKey)) merged.set(slot, preset);
+    }
+    return [...merged.values()].sort(byProjectThenName);
+  }
+
+  /**
+   * `POST /projects/presets` — screened through core's OWN parser, for `import`'s reason.
+   *
+   * If the panel and `parsePresetDraft` ever stop agreeing about a field name, the save has to
+   * fail in the smoke rather than be papered over by a double that accepts anything. The two
+   * refusals reachable from the page are the ones answered here: a name with nothing in it, and a
+   * folder outside the project it is filed under.
+   */
+  savePreset(raw) {
+    this.presetSaves.push(raw);
+    const draft = parsePresetDraft(raw);
+    if (draft === undefined) return [400, { error: 'empty' }];
+    const id = presetId(draft.name);
+    if (id === '') return [400, { error: 'bad_name' }];
+    const key = projectKey(draft.projectPath);
+    const project = this.projects.get(key);
+    if (project === undefined) return [400, { error: 'unknown_project' }];
+    const cwd = draft.cwd === '' ? project.path : draft.cwd;
+    if (!projectKey(cwd).startsWith(key)) return [400, { error: 'bad_cwd' }];
+    const preset = {
+      projectKey: key,
+      id,
+      name: draft.name,
+      profileFn: draft.profileFn,
+      cwd,
+      sessionName: draft.sessionName,
+      promptSource: draft.promptSource,
+      prompt: draft.prompt,
+      group: draft.group,
+      builtIn: false,
+    };
+    this.presets.set(`${key}|${id}`, preset);
+    return [201, { preset }];
+  }
+
+  forgetPreset(raw) {
+    const ref = parsePresetRef(raw);
+    if (ref === undefined) return [400, { error: 'empty' }];
+    const slot = `${projectKey(ref.projectPath)}|${ref.id}`;
+    return [200, { forgotten: this.presets.delete(slot) }];
   }
 
   /**

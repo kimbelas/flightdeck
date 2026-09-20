@@ -2721,3 +2721,43 @@ Two rules from it, both already this repo's:
   result. Prettier had rewrapped both targets this happened to (here, and `fillRun`'s hash call).
 - An override rule carries ONE declaration. Anything else in it is a second copy of a value that
   has to stay in step, and the copy is what moved.
+
+### G.39 Two of three geometry checks had teeth; the third was deleted (P4-T1, 2026-09-20)
+
+The presets panel put a second grid inside `.project`, which is itself a two-column grid whose own
+`forget` button is placed with `grid-column: 2; grid-row: 1 / -1`. That rule was written as
+`.project button` — a descendant selector — in P3-T1, when the row contained exactly one button.
+
+**Three geometry checks were written for it, and only two can fail.** Each was verified by a
+sabotage that removes the mechanism the check depends on (G.32), with the edit confirmed to have
+landed before the result was read (G.38):
+
+| Sabotage | What the smoke reported |
+|---|---|
+| `.presets { grid-column: 1 }` deleted | `the presets stay in the row's first column … 327 <= 82` FAIL |
+| `.project > button` widened to `.project button` | `the start button sits beside the name box … start y 212 vs name y 263` FAIL |
+| either of the above | `and is one control tall rather than spanning the editor — 27 vs 27` PASS |
+
+The third check was deleted. It was written on the assumption that `grid-row: 1 / -1` would stretch
+the start button down the editor; `align-items: start` on `.preset-editor` keeps it one control
+tall, so what the sabotage actually does is move the button to the editor's FIRST row, above the
+name box it belongs beside. The height check read as a guard and was not one — G.29, found by
+watching it not fail rather than by reasoning about it.
+
+**The descendant selector is the third time an override rule in this area has claimed more than it
+was written for.** P4-T2b split `.panes-focus > .pane-card.is-focused` in half and killed the pane
+grid's columns; G.38 left two declarations inside a `:has()` rule. All three kept `npm run check`
+green and the page screenshotting well enough to look fine.
+
+Two smaller things came out of running it against the live core rather than the fixture:
+
+- **A saved preset that shadows a built-in is the same word on the same chip.** Nothing on screen
+  told them apart until the editor was open and a `forget` button appeared. The chip now carries a
+  `title` — `saved · claude-isg-ticket · .claude\worktrees\xweb-1871`.
+- **`execFile`'s `cwd` is the one link in the chain no fake can stand in for.** `SessionLauncher`
+  is tested against a `FakeProcessRunner` that records what it was handed, which says nothing about
+  whether the child actually starts there. `tests/core/adapters/execfile-process-runner.test.ts`
+  now spawns `node -p process.cwd()` with a `cwd` and compares; deleting `cwd: request.cwd` from
+  the adapter fails it. Live: a preset pressed on the deck started `fd-t1-preset` in
+  `C:\Users\belas\Documents\development\flightdeck`, the field `LaunchRequest` had carried since
+  P2-T2 and nothing had ever passed on.

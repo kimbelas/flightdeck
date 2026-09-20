@@ -10,6 +10,7 @@
 // `deck-store.ts` re-exports all three, so nothing that already imported them from there had to
 // change. That is deliberate rather than lazy: this is a split for the line count, not a new
 // boundary, and moving twelve import sites to prove it would be churn with no reader behind it.
+import type { LaunchPreset, PresetRefusal } from '../../contracts/launch-preset.ts';
 import type { ImportRefusal, ProjectRecord } from '../../contracts/project.ts';
 import type { ProjectStatus } from '../../contracts/project-status.ts';
 import type { QuotaSummary } from '../../contracts/quota-summary.ts';
@@ -71,6 +72,18 @@ export interface DeckState {
    * `configured` is `false` has been read and has no `.claude`, and those are different rows.
    */
   readonly maps: Readonly<Record<string, WorkflowMap>>;
+  /**
+   * Every imported folder's launch presets, built-ins and saved together — P4-T1.
+   *
+   * A flat list rather than a map by `projectKey`, unlike the three above it, and the difference is
+   * real: a status and a map are ONE reading per project, so a keyed record is the natural shape,
+   * while presets are many per project and every one of them already carries the key it is filed
+   * under. `PresetsViewModel` does the filtering, which keeps the key that selects them the same
+   * key core filed them under.
+   */
+  readonly presets: readonly LaunchPreset[];
+  /** Why the last save was refused, as core's code. `undefined` once one succeeds. */
+  readonly presetRefusal: PresetRefusal | undefined;
   readonly coreUp: boolean;
   readonly loading: boolean;
   readonly error: string | undefined;
@@ -107,6 +120,8 @@ export const EMPTY: DeckState = {
   importRefusal: undefined,
   statuses: {},
   maps: {},
+  presets: [],
+  presetRefusal: undefined,
   coreUp: false,
   loading: false,
   error: undefined,

@@ -12,6 +12,8 @@ import { FakeProcessRunner } from '../../fakes/fake-process-runner.ts';
 import { FakeStore } from '../../fakes/fake-store.ts';
 
 const NEW_ID = '11111111-2222-3333-4444-555555555555';
+/** `String.raw`, or the backslashes are dropped and the case asserts a mangled path (G.38). */
+const APP_NEXT = String.raw`C:\Users\belas\Documents\development\app-next`;
 /** The store comes back too, because SEC-PROC-3's row is part of what a launch is (P1-T8). */
 function build(
   runner: FakeProcessRunner,
@@ -110,6 +112,38 @@ describe('SessionLauncher', () => {
 
     expect(launched).toEqual({ ok: false, error: 'bad_request' });
     expect(runner.requests).toHaveLength(0);
+  });
+
+  it('starts the session in the folder it was given — P4-T1', async () => {
+    // The field `LaunchRequest` has carried since P2-T2 and nothing passed on until this task: a
+    // background session inherits the cwd it was started in, so a preset naming a project folder
+    // and a launcher that ignored it is a button that says the wrong thing about where it goes.
+    const runner = new FakeProcessRunner();
+    runner.willReturn({ stdout: NEW_ID });
+
+    await launcher(runner).launch({
+      subscription: 'isg',
+      prompt: 'plan ticket XWEB-2019',
+      name: 'XWEB-2019',
+      cwd: APP_NEXT,
+    });
+
+    expect(runner.requests[0]?.cwd).toBe(APP_NEXT);
+  });
+
+  it('leaves the folder absent when there is none, rather than sending an empty one', async () => {
+    // Absent means "inherit core's", which is what the launch form wants; `''` would be a path.
+    const runner = new FakeProcessRunner();
+    runner.willReturn({ stdout: NEW_ID });
+
+    await launcher(runner).launch({
+      subscription: '365',
+      prompt: 'hello',
+      name: undefined,
+      cwd: undefined,
+    });
+
+    expect(runner.requests[0]).not.toHaveProperty('cwd');
   });
 
   it('refuses when Claude is not installed, without spawning', async () => {

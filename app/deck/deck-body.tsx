@@ -81,11 +81,19 @@ function DeckLeft({ rows, state, now, expanded, actions, onToggle }: DeckLeftPro
     <div className="deck-left">
       <ProjectsPanel
         model={
-          new ProjectsViewModel(state.projects, state.importRefusal, state.statuses, state.maps)
+          new ProjectsViewModel({
+            projects: state.projects,
+            refusal: state.importRefusal,
+            statuses: state.statuses,
+            maps: state.maps,
+            presets: state.presets,
+            presetRefusal: state.presetRefusal,
+          })
         }
         disabled={!state.coreUp}
         onImport={actions.onImportProject}
         onForget={actions.onForgetProject}
+        presets={actions}
       />
       <SessionList
         rows={rows.filter((row) => row.matches(search))}

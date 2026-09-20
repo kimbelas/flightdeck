@@ -1803,7 +1803,93 @@ phases:
           (SEC-PROC-2 allowlists the PowerShell functions), so no code changed.
       - id: P4-T1
         title: Presets — per project, encoding the five profile functions and the plan-first ticket prompt; preset groups
-        status: todo
+        status: done
+        done_on: 2026-09-20
+        deliverables:
+          [
+            contracts/launch-preset.ts,
+            contracts/ticket-prompt.ts,
+            contracts/deck-routes.ts,
+            core/domain/preset-catalogue.ts,
+            core/application/preset-book.ts,
+            core/application/project-registry.ts,
+            core/application/session-launcher.ts,
+            core/http/presets-route.ts,
+            core/ports/store.ts,
+            core/ports/process-runner.ts,
+            core/adapters/sqlite/schema.ts,
+            core/adapters/sqlite/sqlite-store.ts,
+            core/adapters/sqlite/rows.ts,
+            core/adapters/claude-cli/execfile-process-runner.ts,
+            core/projects.ts,
+            app/deck/presets-slice.ts,
+            app/deck/presets-view-model.ts,
+            app/deck/presets-panel.tsx,
+            app/deck/projects-slice.ts,
+            app/deck/projects-view-model.ts,
+            app/deck/projects-panel.tsx,
+            app/deck/deck-store.ts,
+            app/deck/deck-state.ts,
+            app/deck/deck-commands.ts,
+            app/globals.css,
+            tests/core/domain/preset-catalogue.test.ts,
+            tests/core/application/preset-book.test.ts,
+            tests/core/http/presets-route.test.ts,
+            tests/core/ports/preset-store-contract.ts,
+            tests/e2e/fixture-core.mjs,
+            tests/e2e/smoke/project-checks.mjs,
+            DECISIONS.md D44,
+            RESEARCH.md G.39,
+          ]
+        notes: >-
+          SPEC §5.6's preset bullet, with three of its seven fields deliberately dropped —
+          DECISIONS.md D44 is the argument, and it is D4 being KEPT rather than a feature being cut.
+          A preset is a profile function, a folder, a session name and an opening prompt. There is
+          no `model`, `agent` or `effort` because the four functions already pin those
+          (`claude-isg-ticket` is `opusplan[1m]` plus two environment pins), and a preset carrying
+          `--model` would be the second place model routing lives — which is precisely the
+          `.bashrc` drift P4-T0 finished deleting four days ago. There is no `subscription` either,
+          for the stronger version of the same reason: the function IS the config directory, so two
+          fields could disagree and the command line is the half that wins.
+          **Four profile functions, where SPEC §5.7 says five.** `claude-isg-agents` runs
+          `claude agents …` — the agents browser, a terminal UI over sessions rather than a way to
+          start one, with no `--bg` form. SEC-PROC-2 has allowlisted four since P0 for that reason.
+          The consequence is named here so P4-T3 does not discover it: quota routing can only swap
+          `claude-365` for `claude-isg` (`ROUTABLE_PROFILE_FUNCTIONS`), because the other two are
+          the isg config directory by construction.
+          **The plan-first prompt is computed, not stored.** Lifted from
+          `app-next/.claude/scripts/open-tab.mjs`, which is how the owner starts a ticket today. It
+          names the ticket three times, so freezing one id into a string would make the preset good
+          for exactly one ticket; `promptSource` is a two-value union and `TicketPrompt` rebuilds
+          it from whatever is in the name box. The prompt asks for plan mode rather than passing
+          `--permission-mode plan` because that flag cannot be combined with
+          `--dangerously-skip-permissions`, which every profile function passes. What was NOT
+          lifted is open-tab.mjs's quote-stripping: it exists because that script interpolates into
+          a PowerShell `-Command` string, and copying it would have carried a workaround for a bug
+          SEC-PROC-1's design does not have.
+          **Built-ins are computed, never seeded** — importing a folder still writes exactly one
+          row (D26's habit one layer up), and a saved preset SHADOWS the built-in whose name it
+          takes rather than sitting beside it. A preset's `cwd` cannot widen what core may read:
+          `ProjectRegistry.resolveDirectory` is a third door beside `resolve` and `resolveRoot`,
+          because a launch target is neither a file nor an imported root — a worktree is a good
+          place to start a session and is not itself imported (G.26, G.27, G.28, the fourth time
+          that distinction has been paid for).
+          **The task also made `cwd` real.** `LaunchRequest` has carried one since P2-T2 and
+          nothing passed it to the process, so every session started from the deck began in core's
+          own directory — an oversight a preset naming a project folder would have turned into a
+          button that lies. `ProcessRequest.cwd` is new, and the adapter's half is tested with a
+          real spawn, because a fake runner records what it was handed and says nothing about where
+          the child started (RESEARCH.md G.39).
+          `DeckStore` went back over its 250-line limit with the fifth fetch path, so the registry
+          reads and writes moved to `ProjectsSlice` beside `PresetsSlice` — the same split
+          `deck-state.ts` and `workflow-map-slice.ts` already made, with the public API unchanged.
+          Verified live against the real core: four computed presets per imported project, a save
+          into a real worktree accepted, and a config directory, a file, another imported project
+          and a Windows system folder all refused `bad_cwd`. Pressing `365` on the deck started
+          `fd-t1-preset` in the flightdeck repository — the P4 gate's "named, in the right folder,
+          no terminal command typed", minus the profile-function route that is P4-T2's. 202 smoke
+          checks, two of them geometry checks watched to FAIL under a sabotage; a third was written
+          and deleted because neither sabotage moved it (G.29).
       - id: P4-T2a
         title: Resume — wake a stopped background session, with the one argv that does not fork it
         status: done

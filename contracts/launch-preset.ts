@@ -1,0 +1,314 @@
+// A named way to start a session in one folder — P4-T1, SPEC §5.6, DECISIONS.md D44.
+//
+// **A preset names a PROFILE FUNCTION and nothing about the model.** BUILD-PLAN §3 sketches
+// `model`, `agent` and `effort` fields and they are deliberately absent, because D4 already
+// decided where model routing lives: `claude-isg-ticket` pins `opusplan[1m]` and two environment
+// variables, `claude-isg-orch` pins `claude-sonnet-5 --agent orchestrator`, and every spawn goes
+// through one of those functions rather than a hand-built flag string. A preset carrying `--model`
+// would be the second place model routing lives, which is the drift P4-T0 has just finished
+// deleting from `~/.bashrc`. Wanting a different model is a new function in one file — which is
+// D4's whole point, and is what "encoding the five profile functions" means.
+//
+// **There is no `subscription` field either, for a stronger version of the same reason.** The
+// function IS the config directory: `claude-365` exports `~\.claude-365` and the other three
+// export `~\.claude-isg`. Two fields could disagree, and the one that would win is the one on the
+// command line. P4-T3's quota routing therefore has exactly two functions it may swap between —
+// see `ROUTABLE_PROFILE_FUNCTIONS`.
+//
+// **Everything here is capped where it is parsed**, the rule `job-state.ts` set: a preset arrives
+// from a text box, goes into a database, and comes back out into a command line and onto a screen.
+import type { SubscriptionId } from './session.ts';
+import { TicketPrompt } from './ticket-prompt.ts';
+
+/**
+ * The profile functions a preset may name — SEC-PROC-2's allowlist, in one place.
+ *
+ * **Four, where SPEC §5.7 says five, and the fifth is not an oversight.** `claude-isg-agents` runs
+ * `claude agents …`, which opens the agents browser: it is a terminal UI over sessions, not a way
+ * to start one, and there is no `--bg` form of it. SEC-PROC-2 has always allowlisted these four for
+ * that reason. The fifth function is reachable from the deck as the thing it actually is — the
+ * session list — and a preset for it would be a button that starts nothing.
+ */
+export const PROFILE_FUNCTIONS = [
+  'claude-365',
+  'claude-isg',
+  'claude-isg-ticket',
+  'claude-isg-orch',
+] as const;
+
+export type ProfileFunction = (typeof PROFILE_FUNCTIONS)[number];
+
+/**
+ * The two a quota recommendation may choose between — P4-T3.
+ *
+ * The other two are `~\.claude-isg` by construction (`claude-isg-ticket` pins `opusplan[1m]` with
+ * two environment variables, `claude-isg-orch` pins an agent), so "run this on whichever
+ * subscription has more headroom" is only a question that can be asked about the plain pair.
+ * Naming it here rather than discovering it in P4-T3 is what stops that task offering a swap it
+ * cannot make.
+ */
+export const ROUTABLE_PROFILE_FUNCTIONS: readonly ProfileFunction[] = ['claude-365', 'claude-isg'];
+
+/** Which config directory a function exports. The function is the subscription — see the header. */
+export function subscriptionOfProfileFunction(profileFn: ProfileFunction): SubscriptionId {
+  return profileFn === 'claude-365' ? '365' : 'isg';
+}
+
+/**
+ * Whether the function already passes `-n` and the launcher must not pass a second one.
+ *
+ * `claude-isg-orch` is `… --model claude-sonnet-5 --agent orchestrator -n orchestrator @args`, so
+ * a preset adding `-n` to it puts two `-n` flags on one command line. Nothing has measured which
+ * one wins, and P4-T2 is where the argv is built, so the fact is recorded here beside the
+ * allowlist rather than discovered there.
+ */
+export function pinsSessionName(profileFn: ProfileFunction): boolean {
+  return profileFn === 'claude-isg-orch';
+}
+
+/**
+ * Where a preset's opening prompt comes from.
+ *
+ * Two values and no template engine. `ticket` means the prompt is COMPUTED from `sessionName` by
+ * `TicketPrompt` — the plan-first prompt names the ticket three times, so freezing one ticket id
+ * into a stored string would make the preset good for exactly one ticket. `literal` means the
+ * prompt is the text the owner wrote.
+ */
+export const PROMPT_SOURCES = ['literal', 'ticket'] as const;
+export type PromptSource = (typeof PROMPT_SOURCES)[number];
+
+export const MAX_PRESET_NAME_CHARS = 60;
+/** Matches `SessionLauncher`'s own cap, so a preset cannot be saved that a launch would refuse. */
+export const MAX_SESSION_NAME_CHARS = 80;
+/** The same agreement for the prompt. */
+export const MAX_PRESET_PROMPT_CHARS = 8000;
+export const MAX_PRESET_GROUP_CHARS = 40;
+export const MAX_PRESET_CWD_CHARS = 1024;
+
+/**
+ * How many presets one project may hold.
+ *
+ * A bound on a table written from a text box, not a judgement about how many are useful. Built-in
+ * presets do not count against it — they are computed, not stored.
+ */
+export const MAX_PRESETS_PER_PROJECT = 24;
+
+export interface LaunchPreset {
+  /** `projectKey(project.path)` — which imported folder this preset is filed under. */
+  readonly projectKey: string;
+  /** `presetId(name)`. Unique within a project: saving `ticket` replaces the built-in `ticket`. */
+  readonly id: string;
+  readonly name: string;
+  readonly profileFn: ProfileFunction;
+  /** Where the session starts — the project root, or a worktree under it. */
+  readonly cwd: string;
+  /** What `-n` will be given, unless `pinsSessionName` says the function names itself. */
+  readonly sessionName: string;
+  readonly promptSource: PromptSource;
+  /** The literal prompt. Ignored — and stored empty — when `promptSource` is `ticket`. */
+  readonly prompt: string;
+  /** `morning`, or `undefined`. Preset groups launch together in P6-T4. */
+  readonly group: string | undefined;
+  /**
+   * Whether core computed this one rather than reading it out of the store.
+   *
+   * Built-ins are derived from the project and the four profile functions every time they are
+   * asked for, which is why nothing is seeded into the owner's database when a folder is imported
+   * (the D26 habit: what ships is empty). The deck draws them the same and offers `forget` only on
+   * the saved ones, because forgetting a computed row would remove it until the next request.
+   */
+  readonly builtIn: boolean;
+}
+
+/** What a preset will actually send as its first prompt — the one rule both ends read. */
+export function presetPrompt(preset: LaunchPreset): string {
+  return preset.promptSource === 'ticket'
+    ? new TicketPrompt(preset.sessionName).text
+    : preset.prompt;
+}
+
+/**
+ * A preset's id, derived from its name.
+ *
+ * Derived rather than generated, for `projectKey`'s reason: an id from a counter would make saving
+ * the same preset twice two rows, and there would be no way to replace the built-in `ticket` with
+ * your own. Lower case, non-alphanumerics folded to one hyphen, capped.
+ */
+export function presetId(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, '-')
+    .replace(/^-+|-+$/gu, '')
+    .slice(0, MAX_PRESET_NAME_CHARS);
+}
+
+/**
+ * Why a preset would not be saved.
+ *
+ * A closed union rather than a sentence, exactly as `ImportRefusal` is: core names the cause, the
+ * deck writes the English, and nothing on screen was composed by core out of the request.
+ *
+ * Five, and every one of them is reachable — a union with a member nothing can produce is a
+ * sentence in the deck nobody will ever read. `empty` is the body that was not a draft at all,
+ * which includes a `profileFn` or a `promptSource` this build does not know: `parsePresetDraft`
+ * refuses those rather than coercing them, so they never reach a refusal of their own.
+ */
+export const PRESET_REFUSALS = [
+  'empty',
+  'bad_name',
+  'bad_cwd',
+  'unknown_project',
+  'too_many',
+] as const;
+
+export type PresetRefusal = (typeof PRESET_REFUSALS)[number];
+
+/** What the deck asks core to save. The project is named by PATH; core keys it. */
+export interface PresetDraft {
+  readonly projectPath: string;
+  readonly name: string;
+  readonly profileFn: ProfileFunction;
+  readonly cwd: string;
+  readonly sessionName: string;
+  readonly promptSource: PromptSource;
+  readonly prompt: string;
+  readonly group: string | undefined;
+}
+
+/**
+ * What pressing a preset sends to `POST /sessions` — P4-T1.
+ *
+ * Here rather than composed at the call site, because it is the point where a preset stops being a
+ * preset: the subscription is `subscriptionOfProfileFunction(preset.profileFn)`, the prompt is
+ * `presetPrompt(preset)` or what the owner typed over it, and the cwd is the folder the preset
+ * names. `LaunchRoute` has parsed these four fields since P2-T2 — this names the shape so the two
+ * ends cannot spell it differently.
+ *
+ * **The profile function is deliberately not in it.** Today's launcher runs `claude.exe` with the
+ * subscription's config directory; P4-T2 is what makes the function itself the command, and it
+ * will add the field here rather than infer it. Sending a name the launcher ignores would be a
+ * field that reads as routing and is not.
+ */
+export interface PresetLaunch {
+  readonly subscription: SubscriptionId;
+  readonly prompt: string;
+  readonly name: string;
+  readonly cwd: string;
+}
+
+/** Which saved preset to remove — the project it is filed under, and its id. */
+export interface PresetRef {
+  readonly projectPath: string;
+  readonly id: string;
+}
+
+/** One preset off the wire, or `undefined` if it is not one. @throws never. */
+export function parseLaunchPreset(value: unknown): LaunchPreset | undefined {
+  const fields = asFields(value);
+  if (fields === undefined) return undefined;
+  const profileFn = PROFILE_FUNCTIONS.find((known) => known === fields['profileFn']);
+  const promptSource = PROMPT_SOURCES.find((known) => known === fields['promptSource']);
+  const id = text(fields['id'], MAX_PRESET_NAME_CHARS);
+  const projectKeyOf = text(fields['projectKey'], MAX_PRESET_CWD_CHARS);
+  const cwd = text(fields['cwd'], MAX_PRESET_CWD_CHARS);
+  if (profileFn === undefined || promptSource === undefined) return undefined;
+  if (id === '' || projectKeyOf === '' || cwd === '') return undefined;
+  return {
+    projectKey: projectKeyOf,
+    id,
+    name: nameOr(fields['name'], id),
+    profileFn,
+    cwd,
+    sessionName: text(fields['sessionName'], MAX_SESSION_NAME_CHARS),
+    promptSource,
+    prompt: text(fields['prompt'], MAX_PRESET_PROMPT_CHARS),
+    group: group(fields['group']),
+    builtIn: fields['builtIn'] === true,
+  };
+}
+
+/**
+ * The list from `GET /projects/presets`.
+ *
+ * Drops what it cannot read rather than refusing the whole body — one unreadable row must not cost
+ * the deck the other nine, which is the rule every parser in this folder follows.
+ */
+export function parseLaunchPresetList(value: unknown): readonly LaunchPreset[] {
+  const fields = asFields(value);
+  const presets = fields?.['presets'];
+  if (!Array.isArray(presets)) return [];
+  return presets
+    .map((entry: unknown) => parseLaunchPreset(entry))
+    .filter((preset): preset is LaunchPreset => preset !== undefined);
+}
+
+/** A draft out of a request body, or `undefined` for a body that is not one. @throws never. */
+export function parsePresetDraft(body: string): PresetDraft | undefined {
+  const fields = asFields(readJson(body));
+  if (fields === undefined) return undefined;
+  const profileFn = PROFILE_FUNCTIONS.find((known) => known === fields['profileFn']);
+  const promptSource = PROMPT_SOURCES.find((known) => known === fields['promptSource']);
+  const projectPath = text(fields['projectPath'], MAX_PRESET_CWD_CHARS);
+  if (profileFn === undefined || promptSource === undefined || projectPath === '') return undefined;
+  return {
+    projectPath,
+    name: text(fields['name'], MAX_PRESET_NAME_CHARS),
+    profileFn,
+    cwd: text(fields['cwd'], MAX_PRESET_CWD_CHARS),
+    sessionName: text(fields['sessionName'], MAX_SESSION_NAME_CHARS),
+    promptSource,
+    // A `ticket` preset stores no prompt: it is computed from the name every time it is read.
+    prompt: promptSource === 'ticket' ? '' : text(fields['prompt'], MAX_PRESET_PROMPT_CHARS),
+    group: group(fields['group']),
+  };
+}
+
+/** The two fields `POST /projects/presets/forget` takes. @throws never. */
+export function parsePresetRef(body: string): PresetRef | undefined {
+  const fields = asFields(readJson(body));
+  if (fields === undefined) return undefined;
+  const projectPath = text(fields['projectPath'], MAX_PRESET_CWD_CHARS);
+  const id = text(fields['id'], MAX_PRESET_NAME_CHARS);
+  return projectPath === '' || id === '' ? undefined : { projectPath, id };
+}
+
+/** The refusal in an error body, or `undefined` for one this build does not know. @throws never. */
+export function parsePresetRefusal(value: unknown): PresetRefusal | undefined {
+  const error: unknown = asFields(value)?.['error'];
+  return PRESET_REFUSALS.find((refusal) => refusal === error);
+}
+
+/** Presets in one stable order: by project, then by the name the owner reads. */
+export function byProjectThenName(left: LaunchPreset, right: LaunchPreset): number {
+  if (left.projectKey !== right.projectKey) return left.projectKey < right.projectKey ? -1 : 1;
+  if (left.name !== right.name) return left.name < right.name ? -1 : 1;
+  return left.id < right.id ? -1 : 1;
+}
+
+function asFields(value: unknown): Readonly<Record<string, unknown>> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  return Object.fromEntries(Object.entries(value));
+}
+
+function readJson(body: string): unknown {
+  try {
+    return JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+}
+
+/** The stored name, or the id when a row lost it — a preset nobody can read is one nobody presses. */
+function nameOr(value: unknown, id: string): string {
+  const held = text(value, MAX_PRESET_NAME_CHARS);
+  return held === '' ? id : held;
+}
+
+function text(value: unknown, cap: number): string {
+  return typeof value === 'string' ? value.trim().slice(0, cap) : '';
+}
+
+function group(value: unknown): string | undefined {
+  const held = text(value, MAX_PRESET_GROUP_CHARS);
+  return held === '' ? undefined : held;
+}

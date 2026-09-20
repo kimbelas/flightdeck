@@ -16,6 +16,7 @@
 // They are built HERE rather than handed the registry from `main.ts`, which is the same division
 // `reads.ts` made: a slice that owns a registry owns what is built on it, and `main.ts` has a line
 // limit it already reached once.
+import { PresetBook } from './application/preset-book.ts';
 import { ProjectRegistry } from './application/project-registry.ts';
 import { ClaudeAssetReader } from './application/claude-asset-reader.ts';
 import { GitDirectoryLocator } from './application/git-directory-locator.ts';
@@ -30,6 +31,7 @@ import { FsProjectFiles } from './adapters/node/fs-project-files.ts';
 import type { ClaudeInstall } from './adapters/claude-cli/claude-install.ts';
 import { SUBSCRIPTION_IDS } from '../contracts/session.ts';
 import { ForgetProjectRoute } from './http/forget-project-route.ts';
+import { ForgetPresetRoute, PresetsRoute, SavePresetRoute } from './http/presets-route.ts';
 import { ImportProjectRoute } from './http/import-project-route.ts';
 import { ProjectStatusRoute } from './http/project-status-route.ts';
 import { ProjectsRoute } from './http/projects-route.ts';
@@ -71,14 +73,14 @@ export function buildProjectRegistry(parts: ProjectParts): ProjectRegistry {
 }
 
 /**
- * The four routes over one registry, as a list `main.ts` can spread into the router.
+ * The eight routes over one registry, as a list `main.ts` can spread into the router.
  *
  * Here rather than in `main.ts` for a reason that is more than tidiness: the router table is the
  * one list in the composition root that grows with every phase, and `main.ts` reached its line
  * limit adding the first three. A slice that owns a registry may as well own the routes onto it,
  * which is the same division `feeds.ts` made for the stream route.
  *
- * One registry for all four, deliberately: a second would hold a second copy of the roots, and
+ * One registry for all eight, deliberately: a second would hold a second copy of the roots, and
  * "which folders may be read" is not a question two objects may answer differently. That is also
  * why `ProjectStatusReader` is assembled here — it needs `resolve`, and the only correct answer to
  * "which resolve" is "the one the import route wrote to".
@@ -90,12 +92,24 @@ export function projectRoutes(parts: ProjectParts): readonly Route[] {
   // "where is this folder's git directory" is the same question `ProjectGitReader` and
   // `WorktreeReader` ask, and the two walk it in opposite directions from the same answer.
   const locator = new GitDirectoryLocator(registry, files, parts.logger);
+  // One book for all three preset routes, on the same registry, for the reason there is one
+  // registry: a preset names a folder to start a session in, and "which folders may be started in"
+  // is not a question two objects may answer differently (P4-T1).
+  const presets = new PresetBook({
+    registry,
+    store: parts.store,
+    audit: parts.audit,
+    logger: parts.logger,
+  });
   return [
     new ProjectsRoute(registry),
     new ImportProjectRoute(registry),
     new ForgetProjectRoute(registry),
     new ProjectStatusRoute(buildStatusReader(registry, files, locator, parts)),
     new WorkflowMapRoute(buildMapReader(registry, files, locator, parts)),
+    new PresetsRoute(presets),
+    new SavePresetRoute(presets),
+    new ForgetPresetRoute(presets),
   ];
 }
 

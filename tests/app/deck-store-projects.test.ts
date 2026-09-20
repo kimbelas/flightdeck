@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CORE_PROJECT_FORGET_PATH,
+  CORE_PRESETS_PATH,
   CORE_PROJECT_MAP_PATH,
   CORE_PROJECT_STATUS_PATH,
   CORE_PROJECTS_PATH,
@@ -62,6 +63,7 @@ describe('DeckStore.loadProjects', () => {
       // the same list and the map is by far the slower of the two.
       { method: 'GET', path: CORE_PROJECT_STATUS_PATH, body: undefined },
       { method: 'GET', path: CORE_PROJECT_MAP_PATH, body: undefined },
+      { method: 'GET', path: CORE_PRESETS_PATH, body: undefined },
     ]);
     // Still empty, and that is the answer rather than a failure: the registry ships empty (D26).
     expect(store.snapshot().projects).toEqual([]);
@@ -188,6 +190,7 @@ describe('DeckStore.forgetProject', () => {
       { method: 'GET', path: CORE_PROJECTS_PATH, body: undefined },
       { method: 'GET', path: CORE_PROJECT_STATUS_PATH, body: undefined },
       { method: 'GET', path: CORE_PROJECT_MAP_PATH, body: undefined },
+      { method: 'GET', path: CORE_PRESETS_PATH, body: undefined },
     ]);
     expect(store.snapshot().projects).toEqual([]);
   });
