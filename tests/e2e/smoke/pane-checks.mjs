@@ -22,7 +22,7 @@ export async function paneChecks(page, report, core, { dev = false } = {}) {
   report.group('A pane, and the keys that must and must not escape it');
 
   const before = core.minted.length;
-  await openShellPane(page, report);
+  await openShellPane(page, report, core);
   const minted = core.minted.length - before;
   // One in production. Under `next dev` React StrictMode mounts the effect twice — mount, clean up,
   // mount — so the first ticket is minted and never spent, and `PaneSocket.close` marks the pane
@@ -36,15 +36,6 @@ export async function paneChecks(page, report, core, { dev = false } = {}) {
     minted === (dev ? 2 : 1) && core.minted.at(-1)?.kind === 'shell',
     `${String(minted)} mint(s), last ${JSON.stringify(core.minted.at(-1) ?? {})}`,
   );
-
-  const input = page.locator('.xterm-helper-textarea').first();
-  await input.focus();
-  // A primer, deliberately: a freshly focused pane can swallow the first keystroke (RESEARCH.md
-  // G.5). That is a real defect and it is not this check's — the payload below is typed into a
-  // pane that has already round-tripped one keystroke, so a dropped character here is a new bug.
-  await page.keyboard.press('Enter');
-  const primed = await waitFor(async () => (await painted(page)).includes('$'));
-  report.check('the pane round-trips a keystroke through the socket', primed);
 
   await page.keyboard.type(AT_THE_SHELL);
   const arrived = await waitFor(async () => (await painted(page)).includes(AT_THE_SHELL));
@@ -64,7 +55,20 @@ export async function paneChecks(page, report, core, { dev = false } = {}) {
   report.check('closing the pane removes it', closed);
 }
 
-async function openShellPane(page, report) {
+/** Typed into the pane before it is live, which is the only place G.5's dropped keystroke shows. */
+const DURING_THE_HANDSHAKE = 'first';
+
+/**
+ * How long the fixture holds the mint open while this check types into the pane.
+ *
+ * Long enough that Playwright's focus-and-type finishes inside the window with room to spare, and
+ * short enough to be invisible in the run. Without it the window is sub-millisecond and the check
+ * below passes with the buffer ripped out — verified, which is the only reason this knob exists.
+ */
+const MINT_DELAY_MS = 1000;
+
+async function openShellPane(page, report, core) {
+  core.mintDelayMs = MINT_DELAY_MS;
   await page.locator('h1').click();
   await press(page, 'Control+k');
   await page.locator('.palette-input').fill('shell');
@@ -72,6 +76,19 @@ async function openShellPane(page, report) {
 
   const opened = await waitFor(async () => (await page.locator('.pane-card').count()) > 0);
   report.check('the palette opens a real pane', opened);
+
+  // **Typed now, deliberately, and not after `live`.** The pane mints a ticket and then completes a
+  // handshake, and `focus()` lands in the middle of both — so the keystrokes a person gets in
+  // during that window are the ones `PaneSocket` used to drop on the floor (RESEARCH.md G.5). A
+  // check that waited for `live` first could never have seen it, which is how it shipped. xterm's
+  // textarea exists as soon as the card does, because `mountPane` opens the terminal synchronously.
+  await page.locator('.xterm-helper-textarea').first().focus();
+  await page.keyboard.type(DURING_THE_HANDSHAKE);
+  report.check(
+    'the pane was still minting while that was typed, so this is the real race',
+    (await page.locator('.pane-card .chip-connecting').count()) > 0,
+  );
+  core.mintDelayMs = 0;
 
   const live = await waitFor(
     async () => (await page.locator('.pane-card .chip-live').count()) > 0,
@@ -85,6 +102,54 @@ async function openShellPane(page, report) {
   // xterm injects as a <style> block, which looks exactly like a passing assertion.
   const drawn = await waitFor(async () => (await painted(page)).includes('fixture shell'));
   report.check('xterm painted what the socket sent', drawn, (await painted(page)).slice(0, 48));
+
+  const held = await waitFor(async () => (await painted(page)).includes(DURING_THE_HANDSHAKE));
+  report.check(
+    `every keystroke typed during the handshake arrives, none dropped (${DURING_THE_HANDSHAKE})`,
+    held,
+    (await painted(page)).replaceAll(/\s+/gu, ' ').slice(-60),
+  );
+
+  await stylesheetChecks(page, report);
+}
+
+/**
+ * That xterm's own stylesheet reached the page — P5a-T6a, and the reason this check exists at all.
+ *
+ * Without `@xterm/xterm/css/xterm.css` the pane still renders and every other check here still
+ * passes, so nothing in 120 smoke checks noticed that it was missing for the whole of P5a. What
+ * gives it away is the element xterm fills with 32 `>` glyphs to measure a cell: the stylesheet
+ * parks it off-screen and hides it, and without one it paints a line of them above the session.
+ */
+async function stylesheetChecks(page, report) {
+  const measure = await page.evaluate(() => {
+    const element = document.querySelector('.pane-card .xterm-char-measure-element');
+    if (element === null) return null;
+    const style = getComputedStyle(element);
+    return { visibility: style.visibility, position: style.position, left: style.left };
+  });
+  report.check(
+    "xterm's stylesheet is on the page, so the cell-measure element is hidden",
+    measure !== null && measure.visibility === 'hidden' && measure.position === 'absolute',
+    JSON.stringify(measure),
+  );
+
+  // `innerText`, not `textContent`, and the whole card rather than `.xterm-rows`: this is the one
+  // assertion that asks what a person SEES. The measure element is a sibling of the rows, so a
+  // check scoped to `.xterm-rows` cannot see it — measured, and it passed with the stylesheet
+  // removed. `innerText` skips what is hidden, which is exactly the property under test.
+  const seen = await page.evaluate(
+    () => document.querySelector('.pane-card .pane-host')?.innerText ?? '',
+  );
+  // Asserted as "the session is the first thing in the pane" rather than as "no run of `>`": the
+  // measure element's glyph is whatever xterm picked to size a cell, and it is not stable. The same
+  // missing stylesheet paints `>>>>…` against a real ConPTY here and `$$$$…` against the fixture —
+  // which is the line RESEARCH.md G.5 reported and mistook for an unparsed escape sequence.
+  report.check(
+    'and nothing paints above the session',
+    seen.trimStart().startsWith('fixture shell'),
+    JSON.stringify(seen.slice(0, 40)),
+  );
 }
 
 /** D34's first rule: `Esc` belongs to vim and to Claude Code's own TUI, and is never taken. */

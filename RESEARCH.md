@@ -1356,6 +1356,11 @@ input until `ready` rather than discard it. Filed against P5a-T6.
 as text. Harmless, cosmetic, and it will need either a filter on the first frames or an xterm that
 understands the sequence. Also filed against P5a-T6.
 
+> **The cause named above is wrong — see G.29.** xterm 6 parses `ESC[?9001h` correctly and prints
+> nothing for it, measured. The line is xterm's own `.xterm-char-measure-element`, painting because
+> the deck never imported `@xterm/xterm/css/xterm.css`. The observation stands; the diagnosis was a
+> guess written down as a finding, and it kept anyone from looking again for five phases.
+
 ### G.6 `next start` binds 0.0.0.0 by default - the deck was on the LAN
 
 `flightdeck.cmd`'s port check refused to believe the deck had started, because it looks for
@@ -2268,3 +2273,98 @@ suite, which is the property the previous two entries asked for and did not get.
 subject converts a test suite into a rubber stamp, and the cheapest moment to notice is when a
 fake and a real implementation disagree about a refusal. Three tasks in a row have been caught by
 the same pair of methods; the fake now tells them apart.
+
+### G.29 The pane's "garbage line" was never an escape sequence — xterm's stylesheet was missing (P5a-T6a, 2026-09-20)
+
+G.5 recorded two defects in a working pane and named a cause for each. One of the two causes was
+wrong, and it was wrong in the direction that costs the most: it named a plausible culprit, so
+nobody looked again for five phases.
+
+**What G.5 said.** "A garbage line paints above the session. `$$$$$$$…5555555555` on the first
+row. It is the `ESC[?9001h` win32-input-mode sequence ConPTY emits, which xterm.js does not
+recognise and renders as text."
+
+**What is actually on the wire.** Reading the first frames off a real `/pty` socket, the first
+thing core sends is exactly 16 characters:
+
+```
+"\u001b[?9001h\u001b[?1004h"
+```
+
+So the sequence is real and the observation was honest. But `@xterm/xterm` 6.0.0 parses it
+perfectly. Writing each of these into a terminal and reading the buffer back:
+
+| written | printed |
+| --- | --- |
+| `ESC[?9001h ESC[?1004h` (the real first frame) | nothing |
+| `ESC[?9001h` | nothing |
+| `ESC[?1004h` | nothing |
+| `ESC[?25l` | nothing |
+| `ESC[?2004h` | nothing |
+
+Every one is consumed as a private-mode set, which is what xterm's parser does with an unknown
+mode: ignore it. There was never anything to filter.
+
+**What it actually was.** The deck never imported `@xterm/xterm/css/xterm.css`. The only import of
+it in the repo was `app/spike/xterm/xterm-harness.tsx` — the P0-T6 spike — and when `TerminalPane`
+was promoted out of the spike for P5a-T3, the class came and the stylesheet did not. Dumping the
+live pane's DOM:
+
+```
+.xterm-char-measure-element   text ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
+                              visibility "visible"  position "static"
+hasXtermRule (any rule matching .xterm-char-measure-element)   false
+```
+
+xterm fills that element with 32 copies of a glyph to measure a cell, and `xterm.css` parks it at
+`position: absolute; left: -9999em; visibility: hidden`. With no stylesheet it is an ordinary
+inline span in the flow, so it paints — at the top of the pane, above the session, as a run of 32
+identical characters. **Which character depends on what xterm picked to measure**, which is why
+the line reads `>>>>…` against a real ConPTY here and `$$$$…` against the smoke's fixture shell —
+and `$$$$…5555…` is what G.5 wrote down. The description in G.5 is the same element, seen once.
+
+The rest of the missing stylesheet never announced itself, because xterm degrades quietly: the
+viewport and screen lose their positioning, the helper textarea is never clipped, and the pane
+still looks approximately like a terminal. One import fixes all of it.
+
+**Why 120 smoke checks and 1 691 unit tests missed it.** The smoke read painted text out of
+`.xterm-rows`, and the measure element is a SIBLING of the rows, under `.xterm-helpers`. Every
+assertion about what the pane painted was scoped to a subtree that structurally cannot contain the
+defect. The first replacement check written for this task had the same flaw and passed with the
+stylesheet ripped out; what catches it is `innerText` of `.pane-host` — `innerText`, because it
+skips what is hidden, which is the exact property under test — asserted as "the session is the
+first thing in the pane".
+
+**The second half of G.5 was right, and needed a widened window to prove.** The lost first
+keystroke is exactly what it said: `focus()` runs in the mount effect while the mint and the
+handshake are in flight, and `PaneSocket.send` dropped any frame arriving before `ready`.
+`sendInput` now queues instead, bounded at 64 KiB, and flushes after the resize. The check for it
+ALSO passed with the fix removed, because on a loopback fixture the mint-to-`ready` window is
+sub-millisecond and Playwright cannot type inside it. `FixtureCore.mintDelayMs` holds the mint open
+for a second so the race is a thing a test can stand in the middle of; with it, removing the buffer
+fails the check.
+
+**The lesson is not "run it" — §G has said that six times and this shipped anyway.** It is that a
+recorded cause is not a measured one. G.5 was written from a screenshot and a plausible mechanism,
+filed against a future task, and read afterwards as a finding. Three of the four assertions in this
+task passed against the broken build on the first attempt; each one had to be checked by putting
+the bug back. **A check nobody has watched fail is not evidence.**
+
+**A postscript that is not about panes.** The first version of this task's unit test imported
+`PaneSocket` into `tests/app/`, and `scripts/sse-probe.ts` immediately failed lint on a `for await`
+it had done since P0:
+
+```
+scripts/sse-probe.ts
+  113:5   Unexpected `for await...of` of a value that is not async iterable
+  115:51  Unsafe argument of type `any` assigned to a parameter of type `AllowSharedBufferSource`
+```
+
+`tests/**` is compiled by `tsconfig.json`, which carries `lib: ["ES2023"]` and `types: ["node"]`
+and deliberately no DOM — `tsconfig.app.json`'s header says why. `PaneSocket` holds a `WebSocket`,
+a `MessageEvent` and a `CloseEvent`, so pulling it into that project resolved all three to
+`@types/node`'s globals and shifted `ReadableStream` for every other file in it. Every existing
+test under `tests/app/` imports a DOM-free view model, which is the layering stating the rule
+without anybody having written it down. The decisions moved to `app/panes/pane-status.ts`, which
+imports nothing but a type; the socket stayed an adapter, covered by the smoke. **A test file
+should not be able to move a project's type floor, and this one could.**

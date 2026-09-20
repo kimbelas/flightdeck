@@ -1824,9 +1824,10 @@ phases:
           event loop alive after kill() — the host owns disposal explicitly.
           DONE under D30: PaneRegistry holds one pane per subscription+sessionId, releases on both
           socket close and process exit, and refuses the second with `held_elsewhere` WITHOUT
-          spawning. STILL OWED, and deliberately not claimed here: the pane has no way yet to tell
-          eviction from a normal exit — the socket reports `exit 0` either way, and distinguishing
-          them needs the "did I ask?" flag the deck does not have until P5a-T6. node-pty also
+          spawning. The debt this task recorded — that the pane could not tell eviction from a
+          normal exit, because the socket reports `exit 0` either way — was PAID by P5a-T6a:
+          `PaneSocket.close` is the "did I ask?" flag, and a session PTY exiting 0 with nobody
+          asking now reads as `evicted` rather than as ended. node-pty also
           prints `AttachConsole failed` on stderr from its conpty_console_list helper when core has
           no attached console; harmless, but it litters the logon task's log (D21) — silence or
           redirect it in P1-T12.
@@ -1877,6 +1878,62 @@ phases:
           Decide here: find a matching addon version and re-measure P0-T6's budget against it, or
           accept the DOM renderer and delete the per-pane context rationing that only existed to
           make WebGL affordable. Do not re-enable WebGL without a test that asserts painted text.
+      - id: P5a-T6a
+        title: Pane fidelity — xterm's stylesheet, the keystroke typed during the handshake, evicted vs ended
+        status: done
+        done_on: 2026-09-20
+        depends_on: [P5a-T3]
+        deliverables:
+          [
+            app/deck/pane-view.tsx,
+            app/panes/pane-status.ts,
+            app/panes/pane-socket.ts,
+            app/globals.css,
+            tests/app/pane-status.test.ts,
+            tests/e2e/fixture-core.mjs,
+            tests/e2e/smoke/pane-checks.mjs,
+            RESEARCH.md G.29,
+          ]
+        notes: >-
+          The half of P5a-T6 that needs nothing from core, pulled out and shipped because the deck
+          is being used now and these are what it feels like to use. The controls that need a
+          launcher — stop, respawn, resume, rename — stay on P5a-T6 behind P4-T2.
+          RESEARCH.md G.29 is the entry, and the finding is about G.5 rather than about xterm. G.5
+          recorded the garbage line above every pane and named `ESC[?9001h` as the cause. The
+          sequence is real — it is the literal first 16 characters core sends, read off a live
+          socket — and xterm 6 parses it perfectly, printing nothing, measured against all four
+          private modes in the first frames. The line is `.xterm-char-measure-element`, the span
+          xterm fills with 32 glyphs to size a cell, painting in the flow because the deck never
+          imported `@xterm/xterm/css/xterm.css`. Only the P0-T6 spike ever did, and when
+          `TerminalPane` was promoted out of it for P5a-T3 the class came and the stylesheet did
+          not. The glyph is whatever xterm chose to measure, which is why it reads `>>>>` against a
+          real ConPTY and `$$$$` against the fixture — G.5 saw the second and wrote it down.
+          The lost first keystroke was diagnosed correctly by G.5 and is fixed as described:
+          `sendInput` queues below `ready` instead of letting `send`'s SEC-WS-1 guard double as a
+          bin, bounded at 64 KiB, flushed AFTER the resize so a TUI does not redraw under it.
+          `close()` doubles as the "did I ask?" flag P5a-T1 left owed, so a session PTY that exits 0
+          with nobody asking reads as `evicted` — `claude attach` is last-one-wins and the evicted
+          side exits cleanly (F.2.6) — and every ending grows a `reattach` button. A shell that
+          exits 0 is still just a shell that ended. The socket's own close no longer overwrites the
+          `exit` frame's status, which it always did.
+          The three smoke checks are the point of the task as much as the fixes are. All three
+          passed against the broken build on the first attempt and had to be rewritten until putting
+          the bug back failed them: the painted-text assertion was scoped to `.xterm-rows`, and the
+          measure element is a sibling of it; the keystroke assertion could not type inside a
+          sub-millisecond mint, so `FixtureCore.mintDelayMs` holds the mint open for a second and
+          the pane asserts it was still `connecting` when the keys went in. A check nobody has
+          watched fail is not evidence.
+          `app/panes/pane-status.ts` exists because the first attempt at testing this unit-tested
+          `PaneSocket` directly, and that broke `scripts/sse-probe.ts`. `tests/**` is compiled by
+          tsconfig.json, which has `lib: ["ES2023"]` and no DOM ON PURPOSE — tsconfig.app.json's own
+          comment is the rule. Importing an adapter that holds a `WebSocket`, a `MessageEvent` and a
+          `CloseEvent` resolved those to `@types/node`'s and moved `ReadableStream` program-wide, so
+          a `for await` that had type-checked since P0 started failing lint in an unrelated file.
+          The existing `tests/app/*` only ever import DOM-free view models, which is the layering
+          saying so quietly. So the three decisions — hold or drop, ending or eviction, which
+          explanation wins — moved into a module with no DOM in it and are tested there, and the
+          socket is plumbing the smoke drives for real. The type floor of a project is not something
+          a test file should be able to move.
       - id: P5a-T4
         title: Previews — claude logs when the daemon is up, transcript tail otherwise
         status: todo
@@ -1891,14 +1948,19 @@ phases:
         title: Layouts 1/2/4/6/9 + focus, saved per project, keyboard rearrange
         status: todo
       - id: P5a-T6
-        title: Per-pane controls — interrupt, stop, respawn, resume, rename, mute; "held elsewhere" state
+        title: Per-pane controls — stop, respawn, resume, rename, mute
         status: todo
+        depends_on: [P4-T2, P5a-T6a]
         notes: >-
-          Two defects found in P5a-T3 belong here (RESEARCH.md G.5). (1) The first keystroke after a
-          pane opens is lost: focus() runs while the socket is still handshaking, so PaneSocket.send
-          drops the frame — buffer input until `ready` instead of discarding it. (2) ConPTY's
-          `ESC[?9001h` win32-input-mode sequence paints as `$$$$…5555` on the first row because
-          xterm does not recognise it; filter it or find an xterm that does.
+          The two defects this task used to carry are SHIPPED in P5a-T6a, and one of them was not
+          what G.5 said it was — see RESEARCH.md G.29 before reading G.5 on the subject. "Held
+          elsewhere" and the evicted state went with them, because a pane that cannot say why it
+          stopped is the defect rather than a missing control.
+          What is left is the controls that need something core does not have yet: stop, respawn,
+          resume and rename are all the launcher (P4-T2), and `--bg --resume <full lowercase uuid>`
+          with nothing else is the shape F.2.7 measured. Interrupt is deliberately NOT on this list
+          any more — Ctrl+C already reaches the PTY through xterm, since `BROWSER_OWNED` claims only
+          ctrl+w/t/n, so a button for it would be a second way to do a thing that works.
       - id: P5a-T7
         title: Keybindings helper — write Ctrl+W/Ctrl+T remaps into both config dirs with diff and backup
         status: todo
