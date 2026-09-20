@@ -39,7 +39,9 @@ export function DeckView(): JSX.Element {
   const store = useDeckStore();
   const state = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot);
   useLiveStream(store);
-  const grid = usePaneGrid();
+  // The grid needs the rows to know which stored panes are still attachable after a reload
+  // (P5a-T5b), and `coreUp` to know when that list is worth reading.
+  const grid = usePaneGrid(state.rows, state.coreUp);
   const { expanded, toggle } = useExpandedRows(store);
   const now = useTickingClock();
   const actions = useDeckActions(store, grid.openPane);

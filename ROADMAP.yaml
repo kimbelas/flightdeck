@@ -1950,6 +1950,38 @@ phases:
           Decide here: find a matching addon version and re-measure P0-T6's budget against it, or
           accept the DOM renderer and delete the per-pane context rationing that only existed to
           make WebGL affordable. Do not re-enable WebGL without a test that asserts painted text.
+      - id: P5a-T5b
+        title: Panes survive a reload — the P5a gate's last clause
+        status: done
+        done_on: 2026-09-20
+        depends_on: [P5a-T5]
+        deliverables:
+          [
+            app/deck/use-pane-grid.ts,
+            app/deck/deck-view.tsx,
+            tests/e2e/smoke/pane-checks.mjs,
+          ]
+        notes: >-
+          The P5a gate ends "reopening the deck re-attaches", and until this it did not: a reload
+          lost the whole grid and every pane had to be found and clicked again. With layouts landed
+          in P5a-T5 that was the last thing between the grid and using it.
+          The open panes are written to `localStorage` beside the layout, and only what IDENTIFIES
+          one — key, title, target. Nothing about its state: whether it was live, what it had
+          painted, which was focused. Those are facts about a socket that no longer exists, and
+          restoring them would mean a pane claiming to be live before it has connected.
+          Restoring WAITS FOR `coreUp` rather than happening on mount. A pane is a live attach, so
+          putting one back for a session that has since ended opens a card that can only say
+          `closed` — which reads as a session having died rather than as one that ended hours ago.
+          Once core has answered, `rows` says which sessions are still attachable and only those
+          come back; a shell carries no identity and always does. A stored target is re-parsed
+          through `parsePtyTarget`, the same rule the WebSocket upgrade uses, because this is the
+          one deck input that survives a reload and so the only one a page can hand itself.
+          The bug this task shipped and its own check caught: reading and writing were two hooks,
+          and the WRITE fired first on mount with the empty initial list — so the stored grid was
+          overwritten with `[]` before the read ever looked at it, and nothing ever came back. The
+          smoke said `0 card(s)` on the first run. They are one hook now with three effects in the
+          order they must run: read into a ref on mount, apply once `coreUp`, write only after that.
+          Ordering between two `useEffect`s is not something review catches.
       - id: P5a-T6a
         title: Pane fidelity — xterm's stylesheet, the keystroke typed during the handshake, evicted vs ended
         status: done
