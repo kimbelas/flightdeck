@@ -103,6 +103,7 @@ async function layoutChecks(page, report) {
 
   await movementChecks(page, report);
   await persistenceChecks(page, report);
+  await reattachChecks(page, report);
 }
 
 /** A second pane, so a layout has something to arrange. */
@@ -197,6 +198,80 @@ async function persistenceChecks(page, report) {
   );
   // Put it back, so the reload this leaves behind is not a layout the next group has to expect.
   await chooseLayout(page, '2');
+}
+
+/**
+ * The last clause of the P5a gate: "reopening the deck re-attaches" - P5a-T5b.
+ *
+ * Asserted on the reload that `persistenceChecks` has already done, so this measures the same page
+ * load rather than a second one. What matters is that the panes are BACK AND LIVE: a restored card
+ * that says `closed` would be worse than an empty grid, because it looks like a session died.
+ */
+async function reattachChecks(page, report) {
+  const cards = await page.locator('.pane-card').count();
+  report.check('both panes came back after the reload', cards === 2, `${String(cards)} card(s)`);
+
+  const live = await waitFor(
+    async () => (await page.locator('.pane-card .chip-live').count()) === 2,
+    { timeout: 20_000 },
+  );
+  report.check(
+    'and both re-attached rather than coming back dead',
+    live,
+    `${String(await page.locator('.pane-card .chip-live').count())} live`,
+  );
+
+  // The mount counter is page-wide and a reload resets it, so these are new terminals by
+  // definition - what is asserted is that they are the same TARGETS, in the same order.
+  report.check(
+    'in the order they were left in',
+    JSON.stringify(await paneTitles(page)) === JSON.stringify(['shell', 'fixture-alpha']),
+    JSON.stringify(await paneTitles(page)),
+  );
+
+  await deadPaneChecks(page, report);
+}
+
+/**
+ * A stored pane whose session has since ended does NOT come back.
+ *
+ * Written straight into `localStorage`, because that is the only way to produce the state this
+ * guards: a grid saved yesterday against sessions that are gone today. Without the filter the deck
+ * reopens on a card that can only ever say `closed`, which reads as a session having died rather
+ * than as one having ended hours ago. `fixture-foxtrot` is the fixture's stopped background row,
+ * so it is exactly that case.
+ */
+async function deadPaneChecks(page, report) {
+  await page.evaluate(() => {
+    const stored = [
+      { key: 'shell', title: 'shell', target: { kind: 'shell' } },
+      {
+        key: '365:f6a7b8c9-0000-4000-8000-000000000006',
+        title: 'fixture-foxtrot',
+        target: {
+          kind: 'session',
+          sessionId: 'f6a7b8c9-0000-4000-8000-000000000006',
+          subscription: '365',
+        },
+      },
+      { key: 'junk', title: 'junk', target: { kind: 'session', sessionId: 'nope' } },
+    ];
+    window.localStorage.setItem('flightdeck.open-panes', JSON.stringify(stored));
+  });
+  await page.reload({ waitUntil: 'networkidle' });
+
+  const back = await waitFor(async () => (await page.locator('.pane-card').count()) > 0);
+  const titles = await paneTitles(page);
+  report.check(
+    'a stored pane for a session that has ended is dropped, not reopened dead',
+    back && JSON.stringify(titles) === JSON.stringify(['shell']),
+    JSON.stringify(titles),
+  );
+  report.check(
+    'and a malformed stored target is dropped rather than rendered',
+    !titles.includes('junk'),
+    JSON.stringify(titles),
+  );
 }
 
 function cardBoxes(page) {
