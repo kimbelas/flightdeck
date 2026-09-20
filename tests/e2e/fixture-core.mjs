@@ -29,11 +29,14 @@
 // instead: every fixture goes through the SAME parsers the deck uses, at boot, and the server
 // refuses to start on one that no longer matches the contract.
 import { createServer } from 'node:http';
+import { win32 } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { WebSocketServer } from 'ws';
 import { CORE_PORT, LOOPBACK_ADDRESS } from '../../contracts/origins.ts';
+import { PASTED_IMAGE_PATH } from '../../contracts/pasted-image.ts';
+import { PastedImage } from '../../core/domain/pasted-image.ts';
 import { parseProjectPathBody, projectKey, projectName } from '../../contracts/project.ts';
 import { parseQuotaSummary } from '../../contracts/quota-summary.ts';
 import { parseSessionRef } from '../../contracts/session-ref.ts';
@@ -42,6 +45,15 @@ import { parseSessionDetail } from '../../contracts/session-detail.ts';
 import { parseClientFrame, parsePtyTarget, sameTarget } from '../../contracts/pty-protocol.ts';
 
 const FIXTURE = new URL('./fixtures/deck.json', import.meta.url);
+
+/**
+ * The directory the fixture pretends it wrote a pasted image to — P5a-T8.
+ *
+ * It contains a SPACE on purpose. `%LOCALAPPDATA%` carries the Windows account name, an account
+ * name may have a space in it, and the deck quotes a path that does — so without one here that
+ * branch would only ever run on the machines it breaks on.
+ */
+const PASTE_DIRECTORY = String.raw`C:\Users\Ada Lovelace\AppData\Local\flightdeck\pasted`;
 
 /** Every key whose number is an instant. See the fixture's header — they are shifted, not pinned. */
 const TIME_KEYS = new Set([
@@ -111,6 +123,10 @@ export class FixtureCore {
     this.resumes = [];
     /** The bodies of every `POST /sessions/stop` — P4-T2b. */
     this.stops = [];
+    /** Every image accepted by `POST /pasted-images` — kind and decoded size (P5a-T8). */
+    this.pasted = [];
+    /** Every `input` frame the PTY socket received, so a check can ask what the pane SENT. */
+    this.typed = [];
     /**
      * The project registry, as a real core would hold it — P3-T1.
      *
@@ -192,6 +208,9 @@ export class FixtureCore {
       if (this.mintDelayMs > 0) await new Promise((done) => setTimeout(done, this.mintDelayMs));
       return this.mint(raw);
     }
+    if (request.method === 'POST' && path === PASTED_IMAGE_PATH) {
+      return this.pasteImage(await body(request));
+    }
     if (request.method === 'GET' && path === '/projects') {
       return [200, { projects: [...this.projects.values()] }];
     }
@@ -254,6 +273,28 @@ export class FixtureCore {
     }
     this.launches.push(request);
     return [201, { sessionId: randomUUID() }];
+  }
+
+  /**
+   * `POST /pasted-images` — P5a-T8.
+   *
+   * Screened through the SAME domain object core screens with, for the reason `import` above gives:
+   * the deck is what is under test, and a double that accepted anything would let the page and the
+   * guard drift apart without a check going red. Nothing is written — the fixture owns no disk —
+   * so the path it answers with is made up, which is exactly what the pane then types.
+   */
+  pasteImage(raw) {
+    const fields = parseJson(raw);
+    const data = fields?.data;
+    if (typeof data !== 'string' || data.length === 0) return [400, { error: 'bad request' }];
+
+    const image = PastedImage.from(fields?.kind, new Uint8Array(Buffer.from(data, 'base64')));
+    if (!image.ok) {
+      return [image.error === 'too_large' ? 413 : 400, { error: image.error }];
+    }
+    this.pasted.push({ kind: image.value.kind, bytes: image.value.bytes.length });
+    const name = `paste-20260920-143355-123-000${this.pasted.length}${image.value.extension}`;
+    return [201, { path: win32.join(PASTE_DIRECTORY, name) }];
   }
 
   mint(raw) {
@@ -343,6 +384,7 @@ export class FixtureCore {
         return;
       }
       if (frame.type === 'input') {
+        this.typed.push(frame.data);
         // `\r` becomes a real newline on the way back, which is what a shell's echo does and what
         // makes a typed line readable in `.xterm-rows` rather than overprinting itself.
         client.send(encode({ type: 'output', data: frame.data.replaceAll('\r', '\r\n') }));

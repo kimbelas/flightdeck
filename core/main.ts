@@ -33,6 +33,8 @@ import { WindowsTokenFile } from './adapters/windows/windows-token-file.ts';
 import { CoreServer } from './http/core-server.ts';
 import { BUDGETS } from './http/limits.ts';
 import { LoopbackGuard } from './http/loopback-guard.ts';
+import { PasteInbox } from './application/paste-inbox.ts';
+import { FsPastedImageStore } from './adapters/node/fs-pasted-image-store.ts';
 import { RateLimiter } from './http/rate-limiter.ts';
 import { PtySocketServer } from './http/pty-socket-server.ts';
 import { RequestRouter } from './http/request-router.ts';
@@ -269,6 +271,9 @@ function buildHttp(parts: HttpParts): HttpSide {
         resumer: new SessionResumer(sessionParts),
         stopper: new SessionStopper(sessionParts),
         tickets,
+        // P5a-T8. The directory is made on first paste, not at boot: a machine where nobody has
+        // ever pasted an image has no `pasted\` folder to explain.
+        paste: new PasteInbox({ store: new FsPastedImageStore(), clock, logger }),
         limiter,
         install,
         logger,

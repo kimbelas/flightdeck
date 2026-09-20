@@ -16,6 +16,7 @@
 import '@xterm/xterm/css/xterm.css';
 import { useCallback, useEffect, useRef, useState, type JSX, type RefObject } from 'react';
 import type { PtyTarget } from '../../contracts/pty-protocol.ts';
+import { ImagePaste } from '../panes/image-paste.ts';
 import { PaneSocket } from '../panes/pane-socket.ts';
 import { ENDED_STATUSES, type PaneStatus } from '../panes/pane-status.ts';
 import { TerminalPane } from '../panes/terminal-pane.ts';
@@ -31,6 +32,8 @@ interface PaneViewProps {
 }
 
 type Report = (status: PaneStatus, detail: string | undefined) => void;
+/** A line about something the pane did on its own — today, an image paste (P5a-T8). */
+type Note = (note: string | undefined) => void;
 
 /**
  * How many terminals this page has built, ever. Stamped on each card as `data-pane-mount`.
@@ -51,7 +54,7 @@ let mounts = 0;
  * and on the way out, close the socket before disposing the terminal, so the last thing the socket
  * does cannot be a write into a disposed one.
  */
-function mountPane(host: HTMLElement, target: PtyTarget, report: Report): () => void {
+function mountPane(host: HTMLElement, target: PtyTarget, report: Report, note: Note): () => void {
   const pane = new TerminalPane();
   pane.open(host);
   const socket = new PaneSocket(pane, { onStatus: report });
@@ -59,6 +62,16 @@ function mountPane(host: HTMLElement, target: PtyTarget, report: Report): () => 
   // The teardown below is still returned immediately, and `PaneSocket.close` covers the gap.
   void socket.connect(target);
   pane.focus();
+
+  // P5a-T8. Attached to the HOST rather than to the terminal, because it has to see the event
+  // before xterm's textarea does — see `ImagePaste`. `socket.paste` and not a write to the
+  // terminal: the path is input, and input goes over the bound socket (SEC-WS-3).
+  const detachPaste = new ImagePaste({
+    onPath: (path) => {
+      socket.paste(path);
+    },
+    onNote: note,
+  }).attach(host);
 
   // The PTY only learns the real size from us, so a window resize has to reach it.
   const onResize = (): void => {
@@ -68,6 +81,7 @@ function mountPane(host: HTMLElement, target: PtyTarget, report: Report): () => 
 
   return () => {
     window.removeEventListener('resize', onResize);
+    detachPaste();
     // Closing a pane detaches; it never stops the session (RESEARCH.md F.2.6).
     socket.close();
     pane.dispose();
@@ -83,7 +97,7 @@ export function PaneView({
   onClose,
 }: PaneViewProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const { status, detail, attempt, mount, reattach } = usePaneLifecycle(target, hostRef);
+  const { status, detail, note, attempt, mount, reattach } = usePaneLifecycle(target, hostRef);
 
   return (
     // `data-deck-pane` is what `1`-`9` resolves against (P2-T5), and it CARRIES the position rather
@@ -102,6 +116,11 @@ export function PaneView({
     >
       <PaneHead title={title} status={status} onReattach={reattach} onClose={onClose} />
       {detail !== undefined && <p className="pane-detail">{detail}</p>}
+      {note !== undefined && (
+        <p className="pane-note" data-pane-note>
+          {note}
+        </p>
+      )}
       <div ref={hostRef} className="pane-host" />
       <footer className="pane-foot">
         Closing this pane detaches it. The session keeps running.
@@ -139,6 +158,8 @@ function PaneHead({ title, status, onReattach, onClose }: PaneHeadProps): JSX.El
 interface PaneLifecycle {
   readonly status: PaneStatus;
   readonly detail: string | undefined;
+  /** Kept apart from `detail`, which belongs to the status: a paste must not overwrite `evicted`. */
+  readonly note: string | undefined;
   readonly attempt: number;
   /** Which terminal this is, page-wide. Changes only when one was actually built — see `mounts`. */
   readonly mount: number;
@@ -159,12 +180,14 @@ function usePaneLifecycle(
 ): PaneLifecycle {
   const [status, setStatus] = useState<PaneStatus>('connecting');
   const [detail, setDetail] = useState<string | undefined>(undefined);
+  const [note, setNote] = useState<string | undefined>(undefined);
   const [attempt, setAttempt] = useState(0);
   const [mount, setMount] = useState(0);
 
   const reattach = useCallback(() => {
     setStatus('connecting');
     setDetail(undefined);
+    setNote(undefined);
     setAttempt((current) => current + 1);
   }, []);
 
@@ -173,12 +196,17 @@ function usePaneLifecycle(
     if (host === null) return undefined;
     mounts += 1;
     setMount(mounts);
-    return mountPane(host, target, (next, why) => {
-      setStatus(next);
-      setDetail(why);
-    });
+    return mountPane(
+      host,
+      target,
+      (next, why) => {
+        setStatus(next);
+        setDetail(why);
+      },
+      setNote,
+    );
     // `attempt` is the remount trigger and is deliberately not read in the body.
   }, [target, attempt, hostRef]);
 
-  return { status, detail, attempt, mount, reattach };
+  return { status, detail, note, attempt, mount, reattach };
 }
