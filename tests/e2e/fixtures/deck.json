@@ -206,6 +206,44 @@
     }
   },
 
+  "//previews": "P5a-T4. Two answers of two different KINDS, because that is the distinction the deck has to draw: `logs` is a screen somebody's terminal is showing, `transcript` is a trail assembled because the background service is gone and there was no screen to read. fixture-alpha's lines carry the trailing padding and the blank band a real 200x50 frame arrives with, so `condense` is exercised by the smoke rather than only by a unit test.",
+  "previews": {
+    "a1b2c3d4-0000-4000-8000-000000000001": {
+      "sessionId": "a1b2c3d4-0000-4000-8000-000000000001",
+      "at": 1789000000000,
+      "source": "logs",
+      "lines": [
+        "",
+        " ▐▛███▛█   Claude Code v2.1.268",
+        "▝▜██████▀  Opus 5 · Claude Team          ",
+        "",
+        "",
+        "❯ Rename the audit column and write the migration                              ",
+        "",
+        "● I have written 0007-rename-audit.sql and stopped before the destructive step.",
+        "",
+        "",
+        "",
+        "",
+        "────────────────── fixture-alpha ─",
+        "  ctx ██░░░░░░░░ 37% │ 5h 16% │ $12.50",
+        ""
+      ]
+    },
+    "d4e5f6a7-0000-4000-8000-000000000004": {
+      "sessionId": "d4e5f6a7-0000-4000-8000-000000000004",
+      "at": 1789000000000,
+      "source": "transcript",
+      "reason": "daemon_down",
+      "lines": [
+        "  12m ago  you   Look at the deploy script",
+        "  11m ago  tool  Read",
+        "  10m ago  file  scripts\\deploy.ps1",
+        "   9m ago  turn  4 messages in 31s"
+      ]
+    }
+  },
+
   "arriving": {
     "sessionId": "18c9dae0-0000-4000-8000-000000000008",
     "shortId": "18c9dae0",

@@ -14,6 +14,7 @@ import { open, stat } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 import type {
   TranscriptCursor,
+  TranscriptEnd,
   TranscriptFile,
   TranscriptSlice,
 } from '../../ports/transcript-file.ts';
@@ -73,6 +74,49 @@ export class FsTranscriptFile implements TranscriptFile {
       identity,
       restarted,
     });
+  }
+
+  /**
+   * The last `maxBytes`, from the first record boundary inside them — P5a-T4.
+   *
+   * The window is cut forward to the byte after the first newline, and that is the whole point of
+   * the method rather than a detail: a fixed-size window from the end almost always lands in the
+   * middle of a record, and handing half a JSON object to a parser is how a preview reports a
+   * schema change that did not happen. A window with no newline in it yields nothing, which is the
+   * honest answer — that is one record longer than the window, and there is no half of it worth
+   * showing.
+   *
+   * `completeBytes` runs after the cut for the same reason `slice` runs it at all: the cut is by
+   * byte and a transcript is UTF-8, so the far end can still be half a character.
+   */
+  public async tail(path: string, maxBytes: number): Promise<TranscriptEnd> {
+    let info: Stats;
+    try {
+      info = await stat(path);
+    } catch {
+      return { text: '', unreadable: true };
+    }
+    const from = Math.max(0, info.size - maxBytes);
+    const length = info.size - from;
+    if (length <= 0) return { text: '', unreadable: false };
+    const buffer = Buffer.alloc(length);
+    let read: number;
+    try {
+      const handle = await open(path, 'r');
+      try {
+        ({ bytesRead: read } = await handle.read(buffer, 0, length, from));
+      } finally {
+        await handle.close();
+      }
+    } catch {
+      return { text: '', unreadable: true };
+    }
+    const window = buffer.subarray(0, read);
+    // A window that starts at byte 0 already starts on a boundary; anywhere else it does not.
+    const start = from === 0 ? 0 : window.indexOf(0x0a) + 1;
+    if (start === 0 && from > 0) return { text: '', unreadable: false };
+    const whole = completeBytes(window.subarray(start));
+    return { text: window.toString('utf8', start, start + whole), unreadable: false };
   }
 
   private async slice(path: string, plan: ReadPlan): Promise<TranscriptSlice> {

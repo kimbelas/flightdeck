@@ -60,7 +60,37 @@ export interface TranscriptSlice {
   readonly unreadable: boolean;
 }
 
+/**
+ * The END of a transcript, for a reader that has no cursor and wants no history — P5a-T4.
+ *
+ * `read` cannot answer this and should not be made to. It exists for the tail that has been
+ * following a file since the first hook, and the whole reason it takes a cursor is that a tail
+ * knows where it got to. A preview is the opposite kind of reader: it arrives on a click, about a
+ * session core may never have seen a hook from, wants the last few records and nothing before
+ * them, and must not cost a walk through 50 MB to reach them. Passing `read` a guessed offset
+ * would be worse than either — a transcript shorter than the guess reads as `restarted`, which is
+ * a claim about the file rather than about the reader.
+ */
+export interface TranscriptEnd {
+  /**
+   * The text read, starting at a RECORD boundary — the first whole line inside the window.
+   *
+   * Empty when the file is empty or when the window landed inside a single line longer than it,
+   * which is a real case: P1-T7's survey found one line of 3 230 728 bytes.
+   */
+  readonly text: string;
+  /** Nothing could be read — no file, no permission, a delete mid-read. The ordinary absent case. */
+  readonly unreadable: boolean;
+}
+
 export interface TranscriptFile {
   /** @throws never — everything that can go wrong comes back as `unreadable`. */
   read(path: string, cursor: TranscriptCursor): Promise<TranscriptSlice>;
+  /**
+   * The last `maxBytes` of `path`, trimmed forward to the first record boundary.
+   *
+   * @throws never — a preview is best-effort exactly as feed 4 is, and a transcript that cannot
+   * be read costs one preview its lines rather than raising.
+   */
+  tail(path: string, maxBytes: number): Promise<TranscriptEnd>;
 }

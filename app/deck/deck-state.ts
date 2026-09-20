@@ -14,6 +14,7 @@ import type { ImportRefusal, ProjectRecord } from '../../contracts/project.ts';
 import type { ProjectStatus } from '../../contracts/project-status.ts';
 import type { QuotaSummary } from '../../contracts/quota-summary.ts';
 import type { SessionDetail } from '../../contracts/session-detail.ts';
+import type { SessionPreview } from '../../contracts/session-preview.ts';
 import type { SessionRow } from '../../contracts/session-row.ts';
 import type { WorkflowMap } from '../../contracts/workflow-map.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
@@ -31,6 +32,16 @@ export interface DeckState {
    * which is what draws the spinner; a key absent means nobody asked.
    */
   readonly details: Readonly<Record<string, SessionDetail | undefined>>;
+  /**
+   * The previews somebody asked for, keyed by `sessionKey` — P5a-T4.
+   *
+   * A second map beside `details` rather than a field on one, and the split is the same one core
+   * makes on its side: a detail arrives with the expansion and a preview arrives only when it is
+   * asked for, because asking spawns `claude logs` and waits 2.7 s for 330 KB (RESEARCH.md F.2.5).
+   * A key present with `undefined` means "asked, still waiting"; a key absent means nobody asked,
+   * which is the state every expanded row starts in and most of them stay in.
+   */
+  readonly previews: Readonly<Record<string, SessionPreview | undefined>>;
   /**
    * The imported projects, newest first — P3-T1.
    *
@@ -91,6 +102,7 @@ export const EMPTY: DeckState = {
   unreadable: [],
   quota: undefined,
   details: {},
+  previews: {},
   projects: [],
   importRefusal: undefined,
   statuses: {},

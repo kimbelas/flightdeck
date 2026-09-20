@@ -12,6 +12,7 @@ import { ProjectsPanel } from './projects-panel.tsx';
 import { ProjectsViewModel } from './projects-view-model.ts';
 import { SessionDetailViewModel } from './session-detail-view-model.ts';
 import { SessionList } from './session-list.tsx';
+import { SessionPreviewViewModel } from './session-preview-view-model.ts';
 import type { SessionRowViewModel } from './session-row-view-model.ts';
 import type { PaneGridState } from './use-pane-grid.ts';
 
@@ -94,12 +95,14 @@ function DeckLeft({ rows, state, now, expanded, actions, onToggle }: DeckLeftPro
         search={search}
         expanded={expanded}
         details={detailViewModels(state.details)}
+        previews={previewViewModels(state.previews)}
         onSearch={setSearch}
         onToggle={onToggle}
         onLaunch={actions.onLaunch}
         onOpen={actions.onOpenPane}
         onResume={actions.onResume}
         onStop={actions.onStop}
+        onPreview={actions.onPreview}
       />
     </div>
   );
@@ -119,6 +122,24 @@ function detailViewModels(
     Object.entries(details).map(([key, detail]) => [
       key,
       detail === undefined ? undefined : new SessionDetailViewModel(detail),
+    ]),
+  );
+}
+
+/**
+ * The previews that were pressed for, as view models — P5a-T4.
+ *
+ * `detailViewModels`'s twin, and the mapping has to preserve an ABSENT key rather than filling it
+ * with `undefined`: absent means nobody pressed and draws the button alone, while present-and-
+ * `undefined` means a read is in flight and draws the spinner.
+ */
+function previewViewModels(
+  previews: DeckState['previews'],
+): Readonly<Record<string, SessionPreviewViewModel | undefined>> {
+  return Object.fromEntries(
+    Object.entries(previews).map(([key, preview]) => [
+      key,
+      preview === undefined ? undefined : new SessionPreviewViewModel(preview),
     ]),
   );
 }

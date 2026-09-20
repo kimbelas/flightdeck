@@ -45,7 +45,7 @@ import { warmUp } from './http/warm-up.ts';
 import { buildFeeds, type Feeds } from './feeds.ts';
 import { buildRouter } from './routes.ts';
 import { projectRoutes } from './projects.ts';
-import { buildDetailReader } from './reads.ts';
+import { buildDetailReader, buildPreviewReader } from './reads.ts';
 import { stopCore, type Running } from './shutdown.ts';
 import { SystemClock } from './ports/clock.ts';
 import type { Logger } from './ports/logger.ts';
@@ -266,6 +266,9 @@ function buildHttp(parts: HttpParts): HttpSide {
         version: parts.version,
         report: parts.report,
         detail: buildDetailReader({ ...feeds, install, clock, logger }),
+        // P5a-T4. The one reader that spawns a process per request, which is why it is asked for
+        // by its own route and its own click rather than riding the detail (`preview-route.ts`).
+        preview: buildPreviewReader({ ...feeds, install, runner: parts.runner, clock, logger }),
         deck: new DeckQuery(parts.sessions, clock),
         // One bag of ports for both session verbs: they differ in their argv, not in what they
         // need to run one (SessionResumer's header says why they are two classes at all).

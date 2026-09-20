@@ -318,10 +318,14 @@ today. **Also here:** the Claude Code version chip (2.1.267 shared by both subs)
   project; keyboard to rearrange.
 - **Panes are views** (§4.3). Close = detach. Attach is exclusive; a pane shows "held by Windows
   Terminal" when a pop-out owns the session.
-- **Renderer budget** — Chromium's ~16 WebGL contexts per page is the hard limit:
-  focused/visible panes get a live PTY + WebGL renderer (cap 8–10); other panes get **no PTY** —
-  a text preview from `claude logs <id>` when the daemon is up, else the transcript tail,
-  refreshed every few seconds; `onContextLoss` → dispose WebGL, fall back to the DOM renderer.
+- **Renderer budget** — **deleted; the deck paints in the DOM** (D40, measured in RESEARCH.md
+  G.30). Every pane gets a live PTY.
+- **Previews** — a text preview from `claude logs <id>` when the daemon is up, else the transcript
+  trail. **Built in P5a-T4 with two changes to this line, both measured** (D43): it belongs to the
+  sessions that can never have a pane at all — an interactive one (§5.2), or a stopped background
+  one — rather than to panes a WebGL budget had no renderer for, and it is a **button rather than
+  a refresh every few seconds**, because one read costs a 2.7 s spawn and 330 KB of terminal frame
+  (F.2.5's "never poll it", G.34). It lives in the expanded row, not the grid.
 - **Per-pane controls:** interrupt (Esc / Ctrl+C when no selection), stop, respawn, resume,
   rename, mute, **pop out to Windows Terminal** (`wt.exe -w 0 nt --title … -d … powershell
   -NoExit -Command "<profile fn> attach <id>"`, AppX path resolved as `open-tab.mjs` does).

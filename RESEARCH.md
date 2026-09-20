@@ -568,6 +568,12 @@ bytes, 4 724 lines and 10 483 escape sequences (39 distinct)**, including 24-bit
 It replays repeated full-screen redraws, so a naive tail is garbage — a preview has to run the
 stream through an emulator (P5a-T4 already plans xterm.js; SEC-UI-2 requires it). Never poll it.
 
+> **Built in P5a-T4, and G.34 adds the two numbers this was missing.** The frame's GEOMETRY is a
+> fixed 200 x 50 that `COLUMNS` cannot move, and a `claude logs` against a *dead* daemon takes
+> 1.7-2.5 s to fail — almost as long as a working one. "Never poll it" is therefore load-bearing
+> rather than advice: the preview is a button, and SPEC §5.3's "refreshed every few seconds" was
+> written before this was measured.
+
 **F.2.6 `attach` inside node-pty works — and is last-one-wins.** This contradicts §D.1 and §B.4.
 
 - node-pty 1.1.0 with the prebuilt `win32-x64` ConPTY binaries, no compiler, `import` resolved
@@ -2568,3 +2574,150 @@ pane reloads the whole deck instead of searching history, every time.
 D.4 above is left as it was written, with a pointer here, on the same principle as G.4 and G.29:
 the observation was honest and the conclusion was not, and deleting it would hide how the mistake
 was made.
+
+### G.34 `claude logs` renders a FIXED 200x50 frame, and a dead daemon costs 2 s to say so (P5a-T4, 2026-09-20)
+
+F.2.5 measured the size of the frame and never measured its GEOMETRY, and the difference decides
+whether a preview is a screen or nonsense. The frame relies on autowrap — its 200-character box
+rules are written with no newline after them and wrap onto the next row — so an emulator one column
+narrower reflows every line below the first and still produces something that looks like a screen.
+
+**200 columns by 50 rows, checked three ways**, because the obvious assumption is that a program
+writing to a pipe falls back to 80 and it does not:
+
+| How | Border run | Highest `CSI r;cH` row | Rows in one repaint |
+|---|---|---|---|
+| Piped `claude logs`, fresh capture, 2.1.278 | 200 | 47 | 50 |
+| Same, with `COLUMNS=120 LINES=30` set | 200 | 47 | 50 |
+| The P0 capture, 2.1.267, a fortnight earlier | 200 | 47 | 50 |
+
+`COLUMNS` and `LINES` do not move it and neither does a pipe. So `CLAUDE_LOGS_FRAME` is a measured
+constant rather than a setting, and the fixture P0 captured is representative of what core gets.
+
+**The frame uses six CSI finals and nothing else** — `m` (5 516), `K` (4 692), `H` (209), `X` (32),
+`C` (32), `J` (2). No scroll region, no alternate screen, no insert/delete line. A hand-rolled
+reader of six sequences is about forty lines, which is why the decision to use `@xterm/headless`
+anyway is in D42 rather than here: the argument is not difficulty, it is that the seventh sequence
+arrives silently.
+
+**Replaying the whole 330 KB capture takes 110-150 ms** and yields 18-25 lines, about 1.8 KB. That
+is the ratio the whole design rests on: flatten in core and the wire carries a screen, flatten in
+the browser and it carries a third of a megabyte per preview.
+
+**A `claude logs` against a DEAD daemon takes 1.7-2.5 s to fail** — measured three times, 1702 ms,
+1838 ms, 2480 ms, exit 1, nothing on stdout, and on stderr the F.2.16 sentence:
+
+```
+Couldn't read logs for 7208b44e - connect ENOENT \\.\pipe\cc-daemon-*-control
+```
+
+Against a LIVE daemon it is 1.6-2.7 s. So the failing case costs almost as much as the working one,
+and a preview that simply tried would make somebody wait two seconds to be told no. Reading
+`daemon/roster.json` and asking whether its `supervisorPid` still exists answers the same question
+in under a millisecond, and **in the running app that is 259 ms against 2 186 ms** for a
+subscription whose supervisor has gone. The roster is a cache and can be a second out of date, so
+the command is still trusted over the check — the pre-check is the optimisation, the fallback is
+the correctness.
+
+**Both rosters on this machine named dead supervisors when this was written**, one of them for nine
+days. F.2.16's state is not an edge case; on a machine where background sessions are occasional it
+is the normal one, and it is what makes the transcript fallback the path most previews take.
+
+### G.35 `.gitattributes` would have destroyed the frame fixture, silently (P5a-T4, 2026-09-20)
+
+The repo sets `* text=auto eol=lf` so that Prettier's `endOfLine: "lf"` check cannot fail on a clone
+made on Windows. A terminal frame is not a text file: its 4 723 line endings are CRLF, and an
+emulator reads the two forms as **different instructions** — CRLF returns to column 0 and drops a
+row, a bare LF drops a row and leaves the column where it was. A frame normalised to LF steps right
+on every line and still renders as a screen.
+
+Watched rather than reasoned about. With `fixtures/**/*.txt -text` removed and the file re-staged:
+
+```
+warning: CRLF will be replaced by LF in fixtures/logs/logs-blocked.txt
+git check-attr text -- ...  ->  text: auto
+index blob: 325 323 bytes, 0 CRLF, 4 723 bare LF    (330 046 bytes and 4 723 CRLF with the rule)
+```
+
+**The working tree keeps its original endings**, which is what makes this worth writing down: the
+machine that wrote the fixture goes on passing, and only a fresh checkout sees the damage. Confirmed
+by materialising the index with `git checkout-index` — the file comes out 325 323 bytes with no CRLF
+at all, and `tests/fixtures/logs.test.ts`'s CRLF assertion fails on it. So the check guards the rule
+**in CI and nowhere else**, which is enough, and is not the same as guarding it here.
+
+### G.36 A blank screen is a silent failure, and the reader shipped with one for ten minutes (P5a-T4, 2026-09-20)
+
+`terminal.buffer` is PROPOSED API in `@xterm/headless` 6.0.0 and throws without
+`allowProposedApi: true`. The adapter's `catch` — there for malformed frames, which are untrusted
+input — turned that into fifty empty rows and returned them as an answer. The prototype had the
+flag, the class did not, and every unit test that did not read the content passed.
+
+**A preview that is blank is indistinguishable from a quiet session**, which is why this is worse
+than a crash. Three changes came out of it, and the second is the one worth copying:
+
+1. The flag, obviously.
+2. **The adapter takes a `Logger` and says why it went blank.** A reader that fails soft has to be
+   a reader that says so, or the soft failure is the product.
+3. `new Terminal` moved INSIDE the `try`. It validates its options and can throw, so the version
+   with the construction above the `try` broke the port's `@throws never` for one input — found by
+   the test that asserts the warning is logged, which could not make the warning happen.
+
+That test then had to change too, and the change is the G.32 lesson again: `{cols: 0, rows: 0}` does
+**not** throw — xterm accepts it, builds a screen of no size and returns rows that are all empty.
+So the assertion was standing on an unreachable branch. The guard is now explicit (`columns < 1 ||
+rows < 1` warns and returns blank) and the test reaches it, and a second check — "never silently
+answers a blank screen for a real frame" — fails if `allowProposedApi` is removed.
+
+### G.37 The transcript trail said about six things in twenty-four rows (P5a-T4, 2026-09-20)
+
+Run against this session's own transcript, the first trail came back as a wall:
+
+```
+          you   /loop Work through every remaining task in ROADMAP.yaml until the roadmap is ...
+  9m ago  tool  Bash
+  9m ago  tool  Bash
+  9m ago  tool  Bash
+          you   /loop Work through every remaining task in ROADMAP.yaml until the roadmap is ...
+  7m ago  tool  PowerShell
+```
+
+Two causes, two fixes, and neither was visible in a unit test written against a synthetic
+transcript.
+
+**Claude Code REWRITES `last-prompt` on every turn rather than appending one.** A 256 KB tail
+therefore holds one copy per turn, and the same 140 characters landed on seven of twenty-four rows —
+non-consecutively, interleaved with tool rows. The prompt now joins `title`, `agent` and `cost` in
+the dropped set, and for the same three reasons: it is already on the expanded row as the intent
+line, it carries no `timestamp` so it cannot be placed in the sequence, and it repeats.
+
+**An agentic turn reaches for the same tool several times, and the age is in whole minutes**, so
+those rows render identically. Consecutive identical rows now collapse to one with a count — `tool
+Bash  x5` — rather than being de-duplicated, because they ARE separate calls and dropping them
+would say the session did less than it did.
+
+The collapse runs BEFORE the cap, and the test for that ordering is worth reading as a G.32
+specimen: the first version had a wall of repeats followed by one distinct row, and capping first
+left that row in place too, so it passed against both orders and proved nothing. Adding a distinct
+row BEFORE the wall is what makes it discriminate.
+
+After both: sixteen rows, 524 bytes, and a readable account of what the session has been doing.
+
+### G.38 A CSS rule split in two took two properties with it, and the smoke did not notice (P5a-T4, 2026-09-20)
+
+Adding `.deck-body:has(.detail-preview pre)` meant closing `.deck-body` early, and the edit closed
+it after `grid-template-columns` — leaving `flex: 1` and `min-height: 0` inside the new `:has()`
+rule, so the deck body kept them only while a preview was open.
+
+**180 smoke checks passed against that.** Nothing the suite measures depends on those two
+properties, and the page still laid out well enough to screenshot. It was found by the sabotage
+that followed: deleting the `:has()` rule to watch the width check go red printed `340px -> 340px`
+**while the rule was still there**, because the deletion had not matched the formatted text — the
+same false negative as G.32, arriving from the other direction. Checking that the sabotage had
+LANDED is what surfaced the misplaced braces.
+
+Two rules from it, both already this repo's:
+
+- A sabotage that does not change the file proves nothing, so verify the edit before reading the
+  result. Prettier had rewrapped both targets this happened to (here, and `fillRun`'s hash call).
+- An override rule carries ONE declaration. Anything else in it is a second copy of a value that
+  has to stay in step, and the copy is what moved.

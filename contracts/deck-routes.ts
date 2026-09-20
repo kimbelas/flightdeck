@@ -99,6 +99,17 @@ export const CORE_STOP_PATH = `${CORE_PREFIX}sessions/stop`;
 export const CORE_SESSION_PATH = `${CORE_PREFIX}session`;
 
 /**
+ * What one session looks like when it cannot be given a terminal — P5a-T4.
+ *
+ * Its own path rather than a field on `CORE_SESSION_PATH`, and the reason is cost rather than
+ * tidiness. A detail is two small file reads; a preview spawns `claude logs`, which takes 2.7 s
+ * warm and answers with 330 KB (RESEARCH.md F.2.5, G.34). Folding it into the detail would make
+ * every expanded row pay that, which is what F.2.5's "never poll it" forbids — so it is asked for
+ * by its own click.
+ */
+export const CORE_PREVIEW_PATH = `${CORE_PREFIX}preview`;
+
+/**
  * The project registry — `GET` to list it, `POST` to import a folder (P3-T1, DECISIONS.md D26).
  *
  * A request rather than a stream frame, like the session detail and for a related reason: the

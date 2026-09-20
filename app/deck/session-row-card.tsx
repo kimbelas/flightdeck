@@ -13,6 +13,8 @@
 import type { JSX } from 'react';
 import { SessionDetailView } from './session-detail-view.tsx';
 import type { SessionDetailViewModel } from './session-detail-view-model.ts';
+import type { SessionPreviewViewModel } from './session-preview-view-model.ts';
+import { SessionPreviewView } from './session-preview-view.tsx';
 import type { SessionRowViewModel } from './session-row-view-model.ts';
 
 interface SessionRowCardProps {
@@ -21,10 +23,15 @@ interface SessionRowCardProps {
   readonly expanded: boolean;
   /** `undefined` while the detail is in flight, which is what draws the row's spinner. */
   readonly detail: SessionDetailViewModel | undefined;
+  /** The preview, if one was asked for and has arrived — P5a-T4. */
+  readonly preview: SessionPreviewViewModel | undefined;
+  /** Whether a preview was ASKED for at all, which is what tells "waiting" from "never pressed". */
+  readonly previewAsked: boolean;
   readonly onToggle: () => void;
   readonly onOpen: () => void;
   readonly onResume: () => void;
   readonly onStop: () => void;
+  readonly onPreview: () => void;
 }
 
 export function SessionRowCard({
@@ -32,10 +39,13 @@ export function SessionRowCard({
   now,
   expanded,
   detail,
+  preview,
+  previewAsked,
   onToggle,
   onOpen,
   onResume,
   onStop,
+  onPreview,
 }: SessionRowCardProps): JSX.Element {
   return (
     <article className={`row tone-${row.tone}${expanded ? ' row-open' : ''}`}>
@@ -51,6 +61,17 @@ export function SessionRowCard({
       </div>
       <RowAction row={row} onOpen={onOpen} onResume={onResume} onStop={onStop} />
       {expanded && <SessionDetailView detail={detail} now={now} />}
+      {/* Under the detail rather than beside it, and offered on EVERY expanded row: a session
+          that cannot be attached is the one this matters most for, and a session that can is
+          still one somebody may want to look at without taking the terminal (P5a-T4). */}
+      {expanded && (
+        <SessionPreviewView
+          preview={preview}
+          asked={previewAsked}
+          now={now}
+          onPreview={onPreview}
+        />
+      )}
     </article>
   );
 }

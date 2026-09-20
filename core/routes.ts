@@ -16,6 +16,7 @@ import { HooksRoute } from './http/hooks-route.ts';
 import { KeybindingPlanRoute, KeybindingWriteRoute } from './http/keybindings-route.ts';
 import { LaunchRoute } from './http/launch-route.ts';
 import { PasteRoute } from './http/paste-route.ts';
+import { PreviewRoute, type PreviewSource } from './http/preview-route.ts';
 import { RequestRouter } from './http/request-router.ts';
 import { ResumeRoute } from './http/resume-route.ts';
 import { StopRoute } from './http/stop-route.ts';
@@ -44,6 +45,7 @@ export interface RouterParts {
   readonly version: string;
   readonly report: StatusReport;
   readonly detail: DetailSource;
+  readonly preview: PreviewSource;
   readonly deck: DeckQuery;
   readonly launcher: SessionLauncher;
   readonly resumer: SessionResumer;
@@ -69,6 +71,8 @@ export function buildRouter(parts: RouterParts, extra: readonly Route[]): Reques
     new HealthRoute(parts.version),
     new SessionsRoute(parts.deck),
     new SessionDetailRoute(parts.detail),
+    // Its own route and not a field on the detail: a preview spawns `claude.exe` (P5a-T4).
+    new PreviewRoute(parts.preview),
     new StatusRoute(parts.report),
     new LaunchRoute(parts.launcher),
     new ResumeRoute(parts.resumer),
