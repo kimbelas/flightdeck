@@ -71,11 +71,13 @@ Condensed; every row has evidence in RESEARCH.md §A–§D.
 | `claude-isg-orch` | `~\.claude-isg` | `claude-sonnet-5 --agent orchestrator -n orchestrator` |
 | `claude-isg-agents` | `~\.claude-isg` | the `agents` view (FleetView) with opus/high defaults |
 
-These are PowerShell profile functions. **`~\.bashrc` carries a second, diverging copy** (its
-`claude-365` pins `--model claude-fable-5`, and it adds `claude-isg-bg` and `-1m` variants).
-Flightdeck follows the PowerShell set, as `open-tab.mjs` already does; the bash drift is fixed
-before Phase 4 (D4). `~\.claude` is legacy — shared `hooks/` and `CLAUDE.md`, an empty
-`sessions/`.
+These are PowerShell profile functions, and since P4-T0 they are the **only** launch route.
+`~\.bashrc` used to carry a second, diverging copy — its `claude-365` pinned `--model
+claude-fable-5` where PowerShell lets `settings.json` decide, and it added `claude-isg-bg` and
+`-1m` variants with no PowerShell counterpart — plus a menu on every new shell that called them.
+All of it is deleted (D4, D20): launching Claude from Git Bash is deliberately no longer possible,
+and the `claude` alias there now points at Flightdeck and at these functions. `~\.claude` is
+legacy — shared `hooks/` and `CLAUDE.md`, an empty `sessions/`.
 
 ### 2.2 The live session surface (documented, supported)
 

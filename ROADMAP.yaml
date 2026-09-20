@@ -1778,10 +1778,29 @@ phases:
     tasks:
       - id: P4-T0
         title: Delete the diverging bash Claude aliases — the PowerShell profile is the only launch route
-        status: todo
+        status: done
+        done_on: 2026-09-20
+        deliverables: [SPEC.md, RESEARCH.md, BUILD-PLAN.md]
         notes: >-
-          DP1 answered delete (DECISIONS.md D20). .bashrc lines 24–33 go; the `claude` guard alias is
-          repointed at the PowerShell functions. Nothing in the product depends on them (SEC-PROC-2).
+          DP1 answered delete (DECISIONS.md D20). The change is to `~/.bashrc`, which is the owner's
+          machine and not this repo, so the deliverables are the three documents that described the
+          drift and now describe its absence. Backed up to `~/.bashrc.bak-<timestamp>` first, and
+          the backup restores byte for byte — checked, not assumed.
+          **The task was bigger than D20 said, and the owner decided the extra part.** D20 names
+          lines 24-33: eight aliases and the `claude` guard. It does not mention lines 41-59, an
+          interactive menu that prints `[1] claude-isg [2] claude-365 ...` on every new shell and
+          CALLS those aliases. Deleting the aliases alone would have left a menu that offers four
+          launches and then says `command not found` — a worse state than either end. Asked rather
+          than assumed; the owner chose to delete the menu too, which is what D20's own consequence
+          ("launching Claude from Git Bash stops working — deliberately") implies once you notice
+          the menu exists.
+          What is left in `.bashrc` from this block is one alias: `claude` now points at Flightdeck
+          and at the four PowerShell functions, so the shell says where to go rather than failing
+          silently. The `cd`-title function and the fnm block above it are untouched.
+          Verified by sourcing the new file in a fresh non-Claude shell: it reaches a prompt with no
+          menu and no keypress, `claude` prints the signpost, none of the eight aliases resolves,
+          and fnm still puts Node 26.3.0 on PATH. Nothing in the product ever depended on them
+          (SEC-PROC-2 allowlists the PowerShell functions), so no code changed.
       - id: P4-T1
         title: Presets — per project, encoding the five profile functions and the plan-first ticket prompt; preset groups
         status: todo
