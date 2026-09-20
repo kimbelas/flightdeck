@@ -1841,7 +1841,8 @@ phases:
           The smoke check is not vacuous: sending `row.ref.shortId` instead of the uuid fails it, and
           fails it because the FIXTURE CORE refuses the short id with `bad_session`, the same shape
           rule core applies. That is F.2.7's protection observed end to end rather than asserted.
-          Still owed to P4-T2 and named here so it is not lost: `stop` and `rm`. `rm` deletes a live
+          Still owed to P4-T2 and named here so it is not lost: `rm`. (`stop` shipped as P4-T2b.)
+          `rm` deletes a live
           session with no confirmation (F.2.8) and is the most destructive verb Flightdeck will
           expose, so it gets its own confirm step — it is deliberately not in this task, where it
           would have ridden in behind a one-line button.
@@ -1850,10 +1851,62 @@ phases:
           verbs disagree in opposite directions and fail differently — `--resume` with a short id
           succeeds and forks, `stop` with a full uuid fails loudly — so P4-T2 must not share one id
           helper between them.
+      - id: P4-T2b
+        title: Stop — end a running background session without deleting it
+        status: done
+        done_on: 2026-09-20
+        depends_on: [P4-T2a]
+        deliverables:
+          [
+            contracts/launch-reply.ts,
+            contracts/session-ref.ts,
+            contracts/deck-routes.ts,
+            core/application/session-stopper.ts,
+            core/http/stop-route.ts,
+            core/routes.ts,
+            core/main.ts,
+            app/deck/deck-store.ts,
+            app/deck/deck-replies.ts,
+            app/deck/session-row-view-model.ts,
+            app/deck/session-row-card.tsx,
+            app/deck/session-list.tsx,
+            app/deck/deck-commands.ts,
+            app/deck/deck-view.tsx,
+            app/globals.css,
+            tests/core/application/session-stopper.test.ts,
+            tests/core/http/stop-route.test.ts,
+            tests/e2e/fixture-core.mjs,
+            tests/e2e/smoke/deck-checks.mjs,
+          ]
+        notes: >-
+          The other half of P4-T2a, and the end of the asymmetry it left: the deck could start a
+          session and wake one, and could not end one. That meant a terminal, which is the one thing
+          P5a's goal says should stop happening.
+          Built on F.2.8b, which P4-T2a measured by accident: `stop` takes the SHORT id and refuses
+          the full uuid, the exact mirror of `--resume`. The two verbs share no id helper, on
+          purpose — `SessionResumer` screens the full uuid and `SessionStopper` screens the short
+          one, and neither could serve the other. The short id is TAKEN from the `SessionRef` rather
+          than sliced off the uuid, because contracts/session-ref.ts already refuses to let the deck
+          guess at a value that names a job directory (F.7.1).
+          `parseSessionRefPayload` is new beside `parseSessionRef`, and is `parseTargetPayload`
+          beside `parsePtyTarget` for the same reason: one rule for a value that arrives by two
+          routes. Here the short id reaches a COMMAND LINE rather than a path, which is if anything
+          the stricter case.
+          **No confirmation step, deliberately.** Stopping keeps the session, keeps its transcript,
+          and P4-T2a wakes it again under its own id. `rm` is the verb that deletes (F.2.8) and is
+          deliberately still absent: it needs a confirm of its own and must not arrive behind a
+          button that looks like this one. Between `canStop` and `canResume` every background row
+          now offers exactly one lifecycle verb — the thing it is not currently doing — and an
+          interactive row still offers neither.
+          One self-inflicted bug, caught by P5a-T5's geometry check rather than by review: the CSS
+          for the new `.row-actions` rule was inserted in the middle of the
+          `.panes-focus > .pane-card.is-focused` SELECTOR, splitting it in two and silently killing
+          the pane grid's columns. The smoke reported 2-up drawing one column. A check that read a
+          class name would have passed.
       - id: P4-T2
         title: Launcher adapter — PowerShell -EncodedCommand, profile-function allowlist, prompt via environment variable, --bg, name required
         status: todo
-        depends_on: [P4-T2a]
+        depends_on: [P4-T2a, P4-T2b]
         notes: >-
           RESEARCH.md F.2.7–F.2.8. Resume is `--bg --resume <full lowercase uuid>` and nothing else —
           a short id, or any extra flag including -n, silently forks a copy under a new id and loses

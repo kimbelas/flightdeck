@@ -24,6 +24,7 @@ interface SessionRowCardProps {
   readonly onToggle: () => void;
   readonly onOpen: () => void;
   readonly onResume: () => void;
+  readonly onStop: () => void;
 }
 
 export function SessionRowCard({
@@ -34,6 +35,7 @@ export function SessionRowCard({
   onToggle,
   onOpen,
   onResume,
+  onStop,
 }: SessionRowCardProps): JSX.Element {
   return (
     <article className={`row tone-${row.tone}${expanded ? ' row-open' : ''}`}>
@@ -47,7 +49,7 @@ export function SessionRowCard({
         <span>{row.stateLabel}</span>
         <span>{row.startedAgo(now)}</span>
       </div>
-      <RowAction row={row} onOpen={onOpen} onResume={onResume} />
+      <RowAction row={row} onOpen={onOpen} onResume={onResume} onStop={onStop} />
       {expanded && <SessionDetailView detail={detail} now={now} />}
     </article>
   );
@@ -57,6 +59,7 @@ interface RowActionProps {
   readonly row: SessionRowViewModel;
   readonly onOpen: () => void;
   readonly onResume: () => void;
+  readonly onStop: () => void;
 }
 
 /**
@@ -67,12 +70,22 @@ interface RowActionProps {
  * button rather than being replaced by it: it is the explanation P2 put there on purpose, and
  * "Not running. Resume it to attach." is what makes the button make sense.
  */
-function RowAction({ row, onOpen, onResume }: RowActionProps): JSX.Element {
+function RowAction({ row, onOpen, onResume, onStop }: RowActionProps): JSX.Element {
   if (row.canOpenPane) {
     return (
-      <button type="button" onClick={onOpen}>
-        open pane
-      </button>
+      <div className="row-actions">
+        <button type="button" onClick={onOpen}>
+          open pane
+        </button>
+        {/* No confirmation, deliberately: stopping keeps the session and its transcript, and
+            resume wakes it again under its own id. `rm` is the verb that deletes and is not
+            here — it needs a confirm of its own (RESEARCH.md F.2.8). */}
+        {row.canStop && (
+          <button type="button" className="ghost" onClick={onStop}>
+            stop
+          </button>
+        )}
+      </div>
     );
   }
   return (

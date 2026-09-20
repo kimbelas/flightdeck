@@ -12,6 +12,7 @@ import {
   parseLaunchAccepted,
   parseLaunchFailure,
   parseResumeFailure,
+  parseStopFailure,
   type LaunchAccepted,
 } from '../../contracts/launch-reply.ts';
 import type { JsonReply } from './deck-api.ts';
@@ -65,6 +66,24 @@ export function whyNotResumed(reply: JsonReply | undefined): string {
   }
   if (failure === 'bad_session') return 'That row does not carry a full session id.';
   if (failure !== undefined) return 'Core could not wake that session.';
+  return describeStatus(reply.status);
+}
+
+/**
+ * Why a session would not stop, on the same rule as the other two.
+ *
+ * `bad_session` means the DECK sent something wrong — a row missing one of the two ids, or one
+ * that is not the right shape. `stop` takes the SHORT id and refuses the full uuid (F.2.8b), so
+ * this is the code a row with a half-filled ref would produce.
+ */
+export function whyNotStopped(reply: JsonReply | undefined): string {
+  if (reply === undefined) return UNREACHABLE;
+  const failure = parseStopFailure(reply.body);
+  if (failure === 'no_claude') {
+    return 'Core is running but cannot find claude.exe — run `npm run doctor`.';
+  }
+  if (failure === 'bad_session') return 'That row does not carry the ids core needs.';
+  if (failure !== undefined) return 'Core could not stop that session.';
   return describeStatus(reply.status);
 }
 

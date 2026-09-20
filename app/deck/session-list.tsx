@@ -25,10 +25,11 @@ interface SessionListProps {
   readonly onLaunch: (subscription: SubscriptionId, prompt: string, name: string) => void;
   readonly onOpen: (row: SessionRowViewModel) => void;
   readonly onResume: (row: SessionRowViewModel) => void;
+  readonly onStop: (row: SessionRowViewModel) => void;
 }
 
 export function SessionList(props: SessionListProps): JSX.Element {
-  const { rows, now, expanded, details, onToggle, onOpen, onResume } = props;
+  const { rows, now, expanded, details, onToggle, onOpen, onResume, onStop } = props;
   return (
     <section className="rows" aria-label="sessions">
       <LaunchForm disabled={!props.coreUp || props.loading} onLaunch={props.onLaunch} />
@@ -46,6 +47,9 @@ export function SessionList(props: SessionListProps): JSX.Element {
           }}
           onResume={() => {
             onResume(row);
+          }}
+          onStop={() => {
+            onStop(row);
           }}
           onOpen={() => {
             onOpen(row);

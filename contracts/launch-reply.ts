@@ -80,3 +80,23 @@ export function parseResumeFailure(value: unknown): ResumeFailure | undefined {
   const code: unknown = fields['error'];
   return RESUME_FAILURES.find((failure) => failure === code);
 }
+
+/**
+ * Why core would not stop a running session — P4-T2b.
+ *
+ * Stopping is NOT destructive and deliberately has no confirmation step: the session survives, its
+ * transcript survives, and P4-T2a's resume wakes it again under its own id. `rm` is the verb that
+ * deletes (RESEARCH.md F.2.8) and it is not here for exactly that reason — it needs a confirm of
+ * its own and must not ride in behind a button that looks like this one.
+ */
+export type StopFailure = 'no_claude' | 'bad_session' | 'stop_failed';
+
+export const STOP_FAILURES: readonly StopFailure[] = ['no_claude', 'bad_session', 'stop_failed'];
+
+/** The code off a refused stop, or `undefined` for a body that carries none. */
+export function parseStopFailure(value: unknown): StopFailure | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const fields: Readonly<Record<string, unknown>> = Object.fromEntries(Object.entries(value));
+  const code: unknown = fields['error'];
+  return STOP_FAILURES.find((failure) => failure === code);
+}

@@ -79,6 +79,18 @@ export class SessionRowViewModel {
   }
 
   /**
+   * Whether this row can be stopped — P4-T2b, and the exact complement of `canResume`.
+   *
+   * A running background session, and nothing else. An interactive session is not a `--bg` job and
+   * is not core's to stop; a session already stopped has nothing to do. Between this and
+   * `canResume` every background row has exactly one lifecycle button, which is what makes the
+   * pair readable: the row always offers the thing it is not currently doing.
+   */
+  public get canStop(): boolean {
+    return this.row.kind === 'background' && this.row.live;
+  }
+
+  /**
    * Which session to ask about when this row is expanded — P2-T4.
    *
    * `shortId` is sent rather than derived from `sessionId`, even though it is the first block of

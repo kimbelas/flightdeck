@@ -76,6 +76,8 @@ const STREAM_HEADERS = {
 
 /** Core's own shape check, repeated so the fixture refuses exactly what core refuses. */
 const FULL_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+/** What `stop` takes, and what names a job directory — eight lowercase hex (F.7.1, F.2.8b). */
+const SHORT_SESSION_ID = /^[0-9a-f]{8}$/u;
 
 export class FixtureCore {
   /**
@@ -107,6 +109,8 @@ export class FixtureCore {
     this.launches = [];
     /** The bodies of every `POST /sessions/resume` — P4-T2a. */
     this.resumes = [];
+    /** The bodies of every `POST /sessions/stop` — P4-T2b. */
+    this.stops = [];
     /**
      * The project registry, as a real core would hold it — P3-T1.
      *
@@ -179,6 +183,9 @@ export class FixtureCore {
     if (request.method === 'POST' && path === '/sessions') return this.launch(await body(request));
     if (request.method === 'POST' && path === '/sessions/resume') {
       return this.resume(await body(request));
+    }
+    if (request.method === 'POST' && path === '/sessions/stop') {
+      return this.stopSession(await body(request));
     }
     if (request.method === 'POST' && path === '/pty-ticket') {
       const raw = await body(request);
@@ -272,6 +279,23 @@ export class FixtureCore {
     const full = typeof sessionId === 'string' && FULL_SESSION_ID.test(sessionId);
     if (!known || !full) return [400, { error: 'bad_session' }];
     this.resumes.push({ subscription, sessionId });
+    return [200, { sessionId }];
+  }
+
+  /**
+   * Stopping a session — P4-T2b, with core's refusals.
+   *
+   * Both ids are required and both shapes are checked, which is what makes the deck-side check
+   * real: `stop` takes the SHORT id (RESEARCH.md F.2.8b), so a deck that sent only the uuid, or
+   * sliced its own short id badly, is refused here exactly as core would refuse it.
+   */
+  stopSession(raw) {
+    const { sessionId, shortId, subscription } = parseJson(raw) ?? {};
+    const known = subscription === '365' || subscription === 'isg';
+    const full = typeof sessionId === 'string' && FULL_SESSION_ID.test(sessionId);
+    const short = typeof shortId === 'string' && SHORT_SESSION_ID.test(shortId);
+    if (!known || !full || !short) return [400, { error: 'bad_session' }];
+    this.stops.push({ subscription, sessionId, shortId });
     return [200, { sessionId }];
   }
 

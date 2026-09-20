@@ -81,6 +81,8 @@ export const CORE_REWRITE = {
 export const CORE_SESSIONS_PATH = `${CORE_PREFIX}sessions`;
 /** Waking a stopped background session — P4-T2a. Its own path, matching core's route table. */
 export const CORE_RESUME_PATH = `${CORE_PREFIX}sessions/resume`;
+/** Stopping one without deleting it — P4-T2b. `rm` is not here and is not this button. */
+export const CORE_STOP_PATH = `${CORE_PREFIX}sessions/stop`;
 
 /**
  * One session's detail, for an expanded row — P2-T4.

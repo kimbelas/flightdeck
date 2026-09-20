@@ -814,6 +814,13 @@ button.ghost {
   height: auto;
 }
 
+/* The lifecycle buttons on a row: the primary verb, then the one that undoes it (P4-T2b). */
+.row-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
 /* The empty-state sentence is not a pane and must not be cut into a grid cell. */
 .panes > .pad {
   grid-column: 1 / -1;

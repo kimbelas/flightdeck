@@ -34,6 +34,7 @@ import {
   CORE_SESSION_PATH,
   CORE_RESUME_PATH,
   CORE_SESSIONS_PATH,
+  CORE_STOP_PATH,
 } from '../../contracts/deck-routes.ts';
 import { parseImportRefusal, parseProjectList, projectKey } from '../../contracts/project.ts';
 import { parseProjectStatusList, type ProjectStatus } from '../../contracts/project-status.ts';
@@ -55,6 +56,7 @@ import {
   whatStarted,
   whyNotLaunched,
   whyNotResumed,
+  whyNotStopped,
 } from './deck-replies.ts';
 import { WorkflowMapSlice } from './workflow-map-slice.ts';
 import {
@@ -218,6 +220,29 @@ export class DeckStore {
       return true;
     }
     this.set({ loading: false, error: whyNotResumed(reply) });
+    return false;
+  }
+
+  /**
+   * Stops a running background session, without deleting it — P4-T2b.
+   *
+   * Nothing is fetched afterwards, for `launch`'s reason: the reconciler's next sweep publishes the
+   * change and it arrives on the stream. So the row goes on saying "running" for a sweep, which is
+   * honest — it is running until core has seen that it is not.
+   *
+   * The whole ref goes over, both ids: `stop` takes the SHORT one (RESEARCH.md F.2.8b) and the deck
+   * does not derive it (contracts/session-ref.ts).
+   *
+   * @returns whether core stopped it.
+   */
+  public async stop(ref: SessionRef): Promise<boolean> {
+    this.set({ loading: true, error: undefined });
+    const reply = await this.api.post(CORE_STOP_PATH, ref);
+    if (reply?.status === 200) {
+      this.set({ loading: false });
+      return true;
+    }
+    this.set({ loading: false, error: whyNotStopped(reply) });
     return false;
   }
 
