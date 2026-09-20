@@ -185,6 +185,10 @@ original_branch}`.
 
 ### D.4 keybindings (`keybindings.md`)
 
+> **"`ctrl+w` can be rebound" below is wrong — see G.33.** Measured against the installed CLI,
+> delete-word is not a keybindings action at all and no file can move it. The rest of this entry
+> holds.
+
 `~/.claude/keybindings.json` (per config dir under `CLAUDE_CONFIG_DIR`); `/keybindings` creates
 it. Contexts: `Global, Chat, Autocomplete, Confirmation, Tabs, Transcript, HistorySearch, Task,
 …`. Chords (`ctrl+k ctrl+s`, 3 s window). **`ctrl+w` can be rebound** (or set to `null`).
@@ -2515,3 +2519,52 @@ Two calls, two different defaults, and only one of them was under test.
 The general form, which is the third time this file has recorded it: **a sabotage is only evidence
 if it removes the mechanism the check depends on.** Deleting a line that was never load-bearing
 proves the check is insensitive to that line and nothing more.
+
+### G.33 Ctrl+W is not a keybindings action, so half of P5a-T7 was never buildable (P5a-T7, 2026-09-20)
+
+SPEC §5.3, DECISIONS D1 and this task's own title all say the same thing: write the **Ctrl+W** and
+Ctrl+T remaps into both config dirs' `keybindings.json`. D.4 in this file backs it up — "`ctrl+w`
+can be rebound (or set to `null`)". That came from reading the keybindings documentation, and it
+is wrong for the CLI actually installed here.
+
+**Measured against `claude.exe` 2.1.278** (a 237 MB bundle, so: `grep -a` on the binary):
+
+| looked for | found |
+|---|---|
+| any action matching `:*Word*`, `:*Delete*`, `:*Kill*` | `chat:workflowKeywordToggle`, and nothing else |
+| `"ctrl+w":"<action>"` in any default bindings map | nothing |
+| the literal `ctrl+w`, anywhere in the bundle | **one** occurrence — a worktree-view chord |
+
+So delete-word is not in the keybindings system at all. It is the input editor reading the key
+directly, the way a readline implementation does, and **no `keybindings.json` can move it.** The
+`keybindings-help` skill's own action table confirms it from the other side: 130-odd actions, no
+delete-word among them.
+
+**What IS moveable**, from the same source — the `Global` defaults, read off the binary intact:
+
+```
+context:"Global",bindings:{"ctrl+c":"app:interrupt","ctrl+d":"app:exit","ctrl+t":"app:toggleTodos",
+"ctrl+o":"app:toggleTranscript","ctrl+shift+b":"app:toggleBrief","ctrl+r":"history:search", ...}
+```
+
+Two of those are keys the browser takes: `ctrl+t` (new tab) and **`ctrl+r` (reload the deck)** —
+and the second was not in the task's title at all. It is the better catch of the two: Ctrl+R in a
+pane reloads the whole deck instead of searching history, every time.
+
+**Three things this changes.**
+
+1. The helper moves `ctrl+t` and `ctrl+r`, and the panel says out loud that Ctrl+W cannot be
+   moved. Shipping the Ctrl+T half quietly and letting somebody find out about Ctrl+W by pressing
+   it would have been the worse outcome of the two.
+2. **The remaps are chords under `ctrl+x`**, which is the family Claude Code already uses
+   (`ctrl+x ctrl+e`, `ctrl+x ctrl+b`, `ctrl+x ctrl+s`), and deliberately NOT under `ctrl+k`, which
+   the skill's own example suggests: the deck claims Ctrl+K away from a pane (D34), so a `ctrl+k`
+   chord is the one prefix that never arrives.
+3. **Both halves of a move are written.** User bindings are additive, so binding the chord alone
+   leaves the stolen key bound underneath — `"ctrl+t": null` and `"ctrl+x ctrl+t": "app:toggleTodos"`
+   together are the move. The smoke asserts both strings in the rendered diff, and with the `null`
+   removed it fails.
+
+D.4 above is left as it was written, with a pointer here, on the same principle as G.4 and G.29:
+the observation was honest and the conclusion was not, and deleting it would hide how the mistake
+was made.

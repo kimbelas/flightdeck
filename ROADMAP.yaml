@@ -2205,8 +2205,65 @@ phases:
           ctrl+w/t/n, so a button for it would be a second way to do a thing that works.
       - id: P5a-T7
         title: Keybindings helper — write Ctrl+W/Ctrl+T remaps into both config dirs with diff and backup
-        status: todo
-        security: [SEC-FS-3]
+        status: done
+        done_on: 2026-09-20
+        security: [SEC-FS-1, SEC-FS-3]
+        deliverables:
+          [
+            contracts/keybinding-plan.ts,
+            core/application/keybinding-block.ts,
+            core/application/keybinding-planner.ts,
+            core/application/keybinding-helper.ts,
+            core/http/keybindings-route.ts,
+            core/ports/config-file.ts,
+            core/adapters/node/backing-up-config-file.ts,
+            app/deck/keyboard-helper-model.ts,
+            app/deck/keyboard-helper.tsx,
+            app/deck/shortcut-sheet.tsx,
+            tests/contracts/keybinding-plan.test.ts,
+            tests/core/application/keybinding-planner.test.ts,
+            tests/core/application/keybinding-helper.test.ts,
+            tests/core/http/keybindings-route.test.ts,
+            tests/e2e/smoke/keyboard-checks.mjs,
+            DECISIONS.md D41,
+            RESEARCH.md G.33,
+          ]
+        notes: >-
+          **Half the title was never buildable, and finding that out was the task.** RESEARCH.md
+          G.33: delete-word is NOT a keybindings action in Claude Code 2.1.278 — measured against
+          the installed 237 MB binary, `ctrl+w` occurs exactly once in it and that once is a
+          worktree chord — so no `keybindings.json` can move it, and D.4 in RESEARCH (which said it
+          could) is flagged rather than deleted. The `keybindings-help` skill's own action table
+          says the same from the other side.
+          DECIDED in D41: move what is moveable and NAME what is not. The panel says plainly that
+          Ctrl+W cannot be moved, because the alternative — shipping the Ctrl+T half quietly — is
+          how somebody finds out by pressing it and losing the window.
+          What moves is `ctrl+t` (`app:toggleTodos`) and `ctrl+r` (`history:search`). The second
+          was not in the title and is the better catch: Ctrl+R in a pane reloads the deck instead
+          of searching history. Both go to `ctrl+x`-prefixed CHORDS, the family Claude Code already
+          uses, and deliberately not `ctrl+k` ones even though the skill's example uses one — the
+          deck claims Ctrl+K away from a pane (D34), so that prefix never arrives.
+          **Both halves of each move are written.** User bindings are ADDITIVE, so the chord alone
+          leaves the stolen key bound underneath: `"ctrl+t": null` plus the chord is the move. The
+          smoke asserts both strings in the rendered diff and fails with the null removed.
+          The third sanctioned writer into `$CFG` (SEC-FS-3, and CLAUDE.md's rule updated to say
+          three). Narrow by construction: a GET that computes and a POST that writes are separate
+          routes, so a handler that cannot write cannot be talked into writing early; the deck will
+          not render the write button until a plan has been shown; the POST takes nothing from the
+          page but a direction from a closed union; it re-plans from disk at the moment of the
+          write; removal is by VALUE so a binding the owner later put on the same key survives; and
+          one refusal fails the WHOLE plan, because two subscriptions are one keyboard.
+          `ConfigFile` grew `create`, separate from `replace` rather than a branch inside it:
+          `replace` throws when the backup fails and that guarantee is what makes an interrupted
+          rewrite recoverable, so a version that decided "missing" for itself would be one race
+          from replacing a real file without one. Neither config dir has a keybindings.json today,
+          so `create` is the path that actually runs.
+          A bug the route tests caught before anything else did: `?direction=APPLY` fell through to
+          the default because the capture was `[a-z]+`, so a value this does not recognise became
+          "no value". Present-and-unrecognised is a 400 now; only ABSENT is a default.
+          NOT APPLIED to the owner's machine. The plan was fetched from the real core against the
+          real config dirs — both files absent, both `after` blocks correct — and nothing was
+          written, because CLAUDE.md says a write under `~/.claude*` is shown first and asked for.
       - id: P5a-T8
         title: Scrollback cap and image-paste handler
         status: done

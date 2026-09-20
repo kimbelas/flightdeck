@@ -13,6 +13,7 @@
 // and it is why the list below is spelled out rather than generated.
 import { HealthRoute } from './http/health-route.ts';
 import { HooksRoute } from './http/hooks-route.ts';
+import { KeybindingPlanRoute, KeybindingWriteRoute } from './http/keybindings-route.ts';
 import { LaunchRoute } from './http/launch-route.ts';
 import { PasteRoute } from './http/paste-route.ts';
 import { RequestRouter } from './http/request-router.ts';
@@ -26,6 +27,7 @@ import { StatuslineRoute } from './http/statusline-route.ts';
 import { TicketRoute } from './http/ticket-route.ts';
 import type { RateLimiter } from './http/rate-limiter.ts';
 import type { DeckQuery } from './application/deck-query.ts';
+import type { KeybindingHelper } from './application/keybinding-helper.ts';
 import type { PasteInbox } from './application/paste-inbox.ts';
 import type { SessionLauncher } from './application/session-launcher.ts';
 import type { SessionResumer } from './application/session-resumer.ts';
@@ -48,6 +50,7 @@ export interface RouterParts {
   readonly stopper: SessionStopper;
   readonly tickets: TicketOffice;
   readonly paste: PasteInbox;
+  readonly keybindings: KeybindingHelper;
   readonly limiter: RateLimiter;
   readonly install: ClaudeInstall;
   readonly logger: Logger;
@@ -72,6 +75,9 @@ export function buildRouter(parts: RouterParts, extra: readonly Route[]): Reques
     new StopRoute(parts.stopper),
     new TicketRoute(parts.tickets),
     new PasteRoute(parts.paste),
+    // Two routes on one path: the GET cannot write and the POST re-plans from disk (P5a-T7).
+    new KeybindingPlanRoute(parts.keybindings),
+    new KeybindingWriteRoute(parts.keybindings),
     ...extra,
     new HooksRoute({
       queue: parts.feeds.hooks,

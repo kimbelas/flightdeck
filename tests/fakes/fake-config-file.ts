@@ -18,6 +18,13 @@ export class FakeConfigFile implements ConfigFile {
     return this.files.get(path);
   }
 
+  /** No `backup` line, deliberately: a test asserting the order must see that there was none. */
+  public create(path: string, contents: string): void {
+    if (this.failOn === path) throw new Error('disk full');
+    this.operations.push(`create ${path}`);
+    this.files.set(path, contents);
+  }
+
   public replace(path: string, contents: string): string {
     if (this.failOn === path) throw new Error('disk full');
     const backup = `${path}.bak-fake`;

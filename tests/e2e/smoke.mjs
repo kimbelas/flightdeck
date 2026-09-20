@@ -28,7 +28,7 @@ import { FixtureCore } from './fixture-core.mjs';
 import { Report, waitFor } from './smoke/report.mjs';
 import { deckChecks } from './smoke/deck-checks.mjs';
 import { devChecks } from './smoke/dev-checks.mjs';
-import { keyboardChecks } from './smoke/keyboard-checks.mjs';
+import { keyboardChecks, keyboardHelperChecks } from './smoke/keyboard-checks.mjs';
 import { paneChecks } from './smoke/pane-checks.mjs';
 import { projectChecks } from './smoke/project-checks.mjs';
 import { securityChecks } from './smoke/security-checks.mjs';
@@ -73,6 +73,7 @@ try {
   await deckChecks(page, report, core);
   await projectChecks(page, report, core);
   await keyboardChecks(page, report);
+  await keyboardHelperChecks(page, report, core);
   await paneChecks(page, report, core, { dev: DEV });
   if (DEV) devChecks(report, seen);
   else await securityChecks(page, report, core, seen);

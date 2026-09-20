@@ -1015,3 +1015,53 @@ across nine panes is the plausible case, and nothing here has produced one. Reve
 dependency back, `enableWebgl` back, and, non-negotiably, a CI check that asserts **painted
 pixels** rather than `report().renderer`. SPEC §5.3's budget text and §9 R9 stand as written; this
 is where they stopped describing the build.
+
+## D41 — the keyboard helper moves what a file can move, and says so about the rest (decided 2026-09-20, P5a-T7)
+
+SPEC §5.3 and D1 both promise a one-click helper that writes "the Ctrl+W / Ctrl+T remaps" into
+both config directories. Half of that promise cannot be kept: **delete-word is not a keybindings
+action in Claude Code 2.1.278**, measured against the installed binary rather than read from the
+docs (RESEARCH.md G.33), so no `keybindings.json` moves Ctrl+W.
+
+Three ways to respond, and only one of them is honest.
+
+- **Ship the Ctrl+T half quietly.** The button works, the sheet says nothing, and the owner finds
+  out about Ctrl+W by pressing it and losing the window. This is the failure mode G.4 and G.5 are
+  both about — a true thing recorded in a way that stops anyone looking again.
+- **Drop the task.** One reclaimable key is not worth a route, and it would be defensible if
+  Ctrl+T were the only one. It is not.
+- **Move what is moveable and name what is not.** Taken.
+
+**What moves: `ctrl+t` and `ctrl+r`.** The second was not in the task's title and is the better
+catch — `history:search` on Ctrl+R means that in a pane, Ctrl+R reloads the deck instead of
+searching history, every time. Both go to `ctrl+x`-prefixed chords, the family Claude Code already
+uses for its own, and deliberately **not** to `ctrl+k` chords even though the keybindings skill's
+example uses one: the deck claims Ctrl+K away from a pane (D34), so a `ctrl+k` prefix is the one
+that never arrives.
+
+**Both halves of a move are written**, because user bindings are additive: `"ctrl+t": null` unbinds
+the default and `"ctrl+x ctrl+t": "app:toggleTodos"` adds the chord. Writing only the chord leaves
+the stolen key bound underneath, which is not a move.
+
+**The helper is the third sanctioned writer into `$CFG`** (SEC-FS-3), after Connect and
+Disconnect, and it is the narrowest of the three by construction rather than by care:
+
+- **A GET computes the plan and a POST writes it**, two routes rather than one with a flag. A
+  handler that cannot write cannot be talked into writing early, which is how D13's promise —
+  the owner sees the diff first — is kept structurally. The deck enforces the same ordering: the
+  button that writes is not rendered until a plan has been shown.
+- **The POST takes nothing from the page but a direction**, from a closed union. Not a path, not
+  contents, not a key. The two files are named from `SubscriptionId` the way every other config
+  path in this project is.
+- **It re-plans from disk at the moment of the write.** A plan computed a minute ago against a
+  file the owner has since edited is exactly the write SEC-FS-3's sequence exists to refuse.
+- **Removal is by value, not by key.** A binding the owner later put on `ctrl+x ctrl+t` themselves
+  survives "put it back"; only our own pair comes out.
+- **One refusal fails the whole plan.** The two subscriptions are one keyboard, and a Ctrl+T that
+  moved on 365 and not on isg is worse than one that did not move — it is unpredictable per
+  session rather than merely unchanged.
+
+**What is deliberately not done.** A file created by the helper is left behind by "put it back",
+emptied rather than deleted: deleting a file in `$CFG` is a larger blast radius than writing one,
+and the emptied file is inert. And no CLI, unlike Connect: Connect runs before the deck works, and
+this runs from inside the sheet somebody opened because a key did something they did not expect.
