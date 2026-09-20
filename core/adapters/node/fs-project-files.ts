@@ -31,6 +31,7 @@ export class FsProjectFiles implements ProjectFiles {
         isDirectory: facts.isDirectory(),
         // Whole seconds — see `FileFacts.modifiedAt` for why the precision is dropped here.
         modifiedAt: Math.trunc(facts.mtimeMs / 1000),
+        sizeBytes: facts.size,
       };
     } catch {
       return undefined;

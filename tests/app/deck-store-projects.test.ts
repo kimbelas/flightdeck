@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CORE_PROJECT_FORGET_PATH,
+  CORE_PROJECT_MAP_PATH,
   CORE_PROJECT_STATUS_PATH,
   CORE_PROJECTS_PATH,
 } from '../../contracts/deck-routes.ts';
@@ -56,8 +57,11 @@ describe('DeckStore.loadProjects', () => {
 
     expect(api.requests).toEqual([
       { method: 'GET', path: CORE_PROJECTS_PATH, body: undefined },
-      // The readings follow the list, and cost nothing on a registry with nothing in it (P3-T2).
+      // The readings follow the list, and cost nothing on a registry with nothing in it (P3-T2,
+      // P3-T3). Both ride together rather than one after the other: they are independent reads of
+      // the same list and the map is by far the slower of the two.
       { method: 'GET', path: CORE_PROJECT_STATUS_PATH, body: undefined },
+      { method: 'GET', path: CORE_PROJECT_MAP_PATH, body: undefined },
     ]);
     // Still empty, and that is the answer rather than a failure: the registry ships empty (D26).
     expect(store.snapshot().projects).toEqual([]);
@@ -183,6 +187,7 @@ describe('DeckStore.forgetProject', () => {
       { method: 'POST', path: CORE_PROJECT_FORGET_PATH, body: { path: APP_NEXT.path } },
       { method: 'GET', path: CORE_PROJECTS_PATH, body: undefined },
       { method: 'GET', path: CORE_PROJECT_STATUS_PATH, body: undefined },
+      { method: 'GET', path: CORE_PROJECT_MAP_PATH, body: undefined },
     ]);
     expect(store.snapshot().projects).toEqual([]);
   });
@@ -272,5 +277,50 @@ describe('DeckStore.loadProjectStatuses', () => {
     await store.loadProjects();
 
     expect(api.requests.map((request) => request.path)).toEqual([CORE_PROJECTS_PATH]);
+  });
+});
+
+describe('the workflow map', () => {
+  it('keys every map by projectKey, so the panel can match it to a row', async () => {
+    const { store, api } = rig();
+    api.willAnswerPath(CORE_PROJECTS_PATH, 200, listing(APP_NEXT));
+    api.willAnswerPath(CORE_PROJECT_MAP_PATH, 200, {
+      maps: [{ path: APP_NEXT.path, at: 1, configured: true }],
+    });
+
+    await store.loadProjects();
+
+    expect(Object.keys(store.snapshot().maps)).toEqual([projectKey(APP_NEXT.path)]);
+    expect(store.snapshot().maps[projectKey(APP_NEXT.path)]?.configured).toBe(true);
+  });
+
+  it('replaces what is held rather than merging, so a forgotten folder takes its map', async () => {
+    const { store, api } = rig();
+    api.willAnswerPath(CORE_PROJECTS_PATH, 200, listing(APP_NEXT));
+    api.willAnswerPath(CORE_PROJECT_MAP_PATH, 200, {
+      maps: [{ path: APP_NEXT.path, at: 1, configured: true }],
+    });
+    await store.loadProjects();
+
+    api.willAnswerPath(CORE_PROJECT_MAP_PATH, 200, { maps: [] });
+    await store.loadProjects();
+
+    expect(store.snapshot().maps).toEqual({});
+  });
+
+  it('leaves what is held alone when the reply cannot be read', async () => {
+    // An empty map is a real answer — docs-tool has no `.claude` at all — so rendering one because
+    // a request failed would say something false about the repository rather than about the reply.
+    const { store, api } = rig();
+    api.willAnswerPath(CORE_PROJECTS_PATH, 200, listing(APP_NEXT));
+    api.willAnswerPath(CORE_PROJECT_MAP_PATH, 200, {
+      maps: [{ path: APP_NEXT.path, at: 1, configured: true }],
+    });
+    await store.loadProjects();
+
+    api.willAnswerPath(CORE_PROJECT_MAP_PATH, 503, undefined);
+    await store.loadProjects();
+
+    expect(store.snapshot().maps[projectKey(APP_NEXT.path)]?.configured).toBe(true);
   });
 });

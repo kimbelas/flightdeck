@@ -26,7 +26,7 @@ describe('ProjectsViewModel', () => {
   it('gives every project a key, a name and its path', () => {
     const [line] = new ProjectsViewModel([APP_NEXT], undefined).lines;
 
-    expect(line).toEqual({
+    expect(line).toMatchObject({
       key: 'c:\\users\\belas\\documents\\development\\app-next',
       name: 'app-next',
       path: APP_NEXT.path,
@@ -38,6 +38,9 @@ describe('ProjectsViewModel', () => {
       gitSummary: undefined,
       progress: undefined,
     });
+    // The workflow map is nested rather than a second list the panel aligns by key, and a row
+    // whose map has not arrived answers `isKnown: false` and draws no section (P3-T3).
+    expect(line?.map.isKnown).toBe(false);
   });
 
   it('keys two spellings of one folder the same, so a re-import cannot duplicate a row', () => {

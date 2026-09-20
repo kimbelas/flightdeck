@@ -10,6 +10,7 @@
 // land in state and render.
 import { describe, expect, it } from 'vitest';
 import {
+  CORE_PROJECT_MAP_PATH,
   CORE_PROJECT_STATUS_PATH,
   CORE_PROJECTS_PATH,
   CORE_SESSIONS_PATH,
@@ -65,12 +66,14 @@ describe('DeckStore.refresh', () => {
 
     await store.refresh();
 
-    // The registry rides along (P3-T2): it has no stream frame, so a deliberate refresh is the
-    // only thing that can move it. Every path still goes through the rewrite.
+    // The registry rides along (P3-T2, P3-T3): none of the three has a stream frame, so a
+    // deliberate refresh is the only thing that can move them. Every path still goes through the
+    // rewrite.
     expect(api.requests.map((request) => request.path)).toEqual([
       CORE_SESSIONS_PATH,
       CORE_PROJECTS_PATH,
       CORE_PROJECT_STATUS_PATH,
+      CORE_PROJECT_MAP_PATH,
     ]);
     expect(api.requests.every((request) => request.path.startsWith('/api/core/'))).toBe(true);
   });

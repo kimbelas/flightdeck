@@ -173,6 +173,9 @@ export class FixtureCore {
     if (request.method === 'GET' && path === '/projects/status') {
       return [200, { statuses: [...this.projects.values()].map((held) => reading(held)) }];
     }
+    if (request.method === 'GET' && path === '/projects/map') {
+      return [200, { maps: [...this.projects.values()].map((held) => workflowMap(held)) }];
+    }
     return [404, { error: 'not found' }];
   }
 
@@ -396,6 +399,52 @@ function reading(project) {
     at: Date.now(),
     stack: ['Next.js', 'Node'],
     git: { branch: 'feat/smoke', ahead: 2, behind: 0, dirty: 3, conflicts: 0 },
+  };
+}
+
+/**
+ * One workflow map — P3-T3, SPEC §5.1(a).
+ *
+ * `app-next`'s shape, cut to one of each thing the panel draws rather than to all 16 assets: what
+ * this double exists to prove is that the third request goes out, lands on the right row by
+ * `projectKey`, and comes out of `WorkflowMapViewModel` as English. Whether a frontmatter block or
+ * a nested `hooks` object parses is settled in tests/contracts.
+ *
+ * The two hooks share an event on purpose — grouping a run of adjacent rows under one heading is
+ * the one thing the panel does to the timeline, and a single hook could not show it.
+ */
+function workflowMap(project) {
+  return {
+    path: project.path,
+    at: Date.now(),
+    instructions: [
+      { source: 'user-365', bytes: 683 },
+      { source: 'claude-md', bytes: 3482 },
+    ],
+    assets: [
+      { kind: 'agent', name: 'german-ui-expert', description: 'German label to source string.' },
+      { kind: 'command', name: 'design-check' },
+      { kind: 'skill', name: 'fix-review', tools: ['Bash', 'Read'] },
+    ],
+    hooks: [
+      { event: 'PostToolUse', matcher: 'Edit|Write', command: 'node fast-lint.mjs', async: true },
+      {
+        event: 'PostToolUse',
+        matcher: 'Edit|Write',
+        command: 'node check-symbols.mjs',
+        timeout: 20,
+      },
+      { event: 'PreCompact', command: 'node state-dump.mjs', timeout: 15 },
+    ],
+    servers: [{ name: 'chrome-devtools', transport: 'stdio' }],
+    plugins: ['context-hygiene@claude-kit'],
+    marketplaces: ['claude-kit'],
+    permissions: { allow: ['Bash(git status:*)', 'Bash(npm run:*)'], deny: ['Read(.env)'] },
+    conventions: [
+      { folder: 'rules', files: 6 },
+      { folder: 'specs', files: 9 },
+    ],
+    configured: true,
   };
 }
 

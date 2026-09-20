@@ -15,6 +15,7 @@ import type { ProjectStatus } from '../../contracts/project-status.ts';
 import type { QuotaSummary } from '../../contracts/quota-summary.ts';
 import type { SessionDetail } from '../../contracts/session-detail.ts';
 import type { SessionRow } from '../../contracts/session-row.ts';
+import type { WorkflowMap } from '../../contracts/workflow-map.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
 
 export interface DeckState {
@@ -50,6 +51,15 @@ export interface DeckState {
    * annotation on that.
    */
   readonly statuses: Readonly<Record<string, ProjectStatus>>;
+  /**
+   * What Claude is configured to do in each imported folder, keyed by `projectKey` — P3-T3.
+   *
+   * A third map beside `statuses` for the reason that one is beside `projects`: the three are read
+   * on three routes with three costs and three lifetimes, and a row draws with whichever of them
+   * has arrived. A project with no entry here has not been read yet; a project with an entry whose
+   * `configured` is `false` has been read and has no `.claude`, and those are different rows.
+   */
+  readonly maps: Readonly<Record<string, WorkflowMap>>;
   readonly coreUp: boolean;
   readonly loading: boolean;
   readonly error: string | undefined;
@@ -84,6 +94,7 @@ export const EMPTY: DeckState = {
   projects: [],
   importRefusal: undefined,
   statuses: {},
+  maps: {},
   coreUp: false,
   loading: false,
   error: undefined,

@@ -40,7 +40,13 @@ export class FakeProjectFiles implements ProjectFiles {
     const key = canonicalWindowsPath(path);
     const isDirectory = this.directories.has(key);
     if (!isDirectory && !this.files.has(key)) return Promise.resolve(undefined);
-    return Promise.resolve({ isDirectory, modifiedAt: this.times.get(key) ?? 0 });
+    return Promise.resolve({
+      isDirectory,
+      modifiedAt: this.times.get(key) ?? 0,
+      // The text's length, so a test that writes a file gets a size without stating one twice, and
+      // `0` for a directory exactly as the platform reports it (`FileFacts.sizeBytes`).
+      sizeBytes: this.files.get(key)?.length ?? 0,
+    });
   }
 
   public read(path: string, maxBytes: number): Promise<string | undefined> {

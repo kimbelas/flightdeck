@@ -54,6 +54,30 @@ const ALLOWED_FILES: readonly string[] = [
   // Allowlisted as a FILE here and narrowed to five fields by the adapter that parses it — the two
   // halves of SEC-FS-1's "by field, not as a file" (P1-T14, DECISIONS.md D24).
   'daemon\\roster.json',
+  // The user-scope instruction file, for SPEC §5.1's instruction stack (P3-T3, DECISIONS.md D38).
+  //
+  // **One named entry, which is the only shape this list takes.** SPEC's first row is "`CLAUDE.md`,
+  // `AGENTS.md`, `.claude/soul.md`, user `CLAUDE.md` of both configs", and the first three are
+  // under a project root and were already readable (D36). This is the fourth, and adding it was a
+  // decision rather than an oversight being corrected: a config directory is ALLOW-listed
+  // precisely so that a file appears here only when somebody has argued for it, and the wrong fix
+  // — allowlisting the config directory's top level, or `*.md` under it — would have made the next
+  // release's new markdown file readable by default.
+  //
+  // **What it exposes is the owner's own instructions to Claude**, a few hundred bytes of prose
+  // they wrote, on a machine-local page only they can reach. That is a different class of thing
+  // from `history.jsonl` and `daemon.log`, which are already here. Both files on this machine are
+  // 683 bytes and hold an `@~/.claude/CLAUDE.md` import rather than the text itself, and core
+  // never follows that import: `stat` is all the instruction stack takes, because the row is byte
+  // sizes in resolution order (contracts/instruction-stack.ts). Reading it is what a later row
+  // would need, and this entry is what a later row would use.
+  //
+  // **Lower case because `canonicalWindowsPath` lower-cases**, and the entry is compared against
+  // its output. The four above happen to be written that way already, so nothing here said so and
+  // the first entry with a capital in it was silently unreachable — allowlisted in the source and
+  // refused at runtime. Caught by a unit test that asked the real policy rather than a fake
+  // (tests/core/application/instruction-stack-reader.test.ts).
+  'claude.md',
 ];
 
 /** Directories whose non-secret contents are readable: transcripts, session and job state. */
