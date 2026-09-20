@@ -21,12 +21,28 @@ import { ENDED_STATUSES, type PaneStatus } from '../panes/pane-status.ts';
 import { TerminalPane } from '../panes/terminal-pane.ts';
 
 interface PaneViewProps {
+  /** Position from the left, zero-based. What `1`-`9` resolves against — see `data-deck-pane`. */
+  readonly index: number;
   readonly target: PtyTarget;
   readonly title: string;
+  readonly focused: boolean;
+  readonly onFocused: () => void;
   readonly onClose: () => void;
 }
 
 type Report = (status: PaneStatus, detail: string | undefined) => void;
+
+/**
+ * How many terminals this page has built, ever. Stamped on each card as `data-pane-mount`.
+ *
+ * It exists for one assertion and it is worth the two lines: reordering panes must be a React key
+ * move and never a remount, because a remount disposes the terminal and closes the socket — which
+ * for an attached session means killing a live PTY because somebody pressed an arrow key. A counter
+ * OUTSIDE React is the only honest detector, since any state inside the component is reset by the
+ * remount it is supposed to notice (`data-pane-attempt` was, and the first version of the check
+ * passed against a build that remounted on every move).
+ */
+let mounts = 0;
 
 /**
  * Builds the pane and its socket, and returns the teardown.
@@ -58,33 +74,33 @@ function mountPane(host: HTMLElement, target: PtyTarget, report: Report): () => 
   };
 }
 
-export function PaneView({ target, title, onClose }: PaneViewProps): JSX.Element {
+export function PaneView({
+  index,
+  target,
+  title,
+  focused,
+  onFocused,
+  onClose,
+}: PaneViewProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const { status, detail, attempt, reattach } = usePaneLifecycle(target, hostRef);
+  const { status, detail, attempt, mount, reattach } = usePaneLifecycle(target, hostRef);
 
   return (
-    // `data-deck-pane` is what `1`-`9` counts (P2-T5). On the card rather than on the host so
-    // the digit finds the pane even before xterm has attached its input to it.
+    // `data-deck-pane` is what `1`-`9` resolves against (P2-T5), and it CARRIES the position rather
+    // than relying on document order, because focus mode reorders the grid. On the card rather than
+    // on the host so the digit finds the pane even before xterm has attached its input to it.
+    //
+    // `onFocus` is React's delegated `focusin`, so it fires for xterm's hidden textarea inside —
+    // clicking into a pane and pressing its digit both mark it focused, and `[`/`]` move that one.
     <section
-      className="pane-card"
-      data-deck-pane=""
+      className={focused ? 'pane-card is-focused' : 'pane-card'}
+      data-deck-pane={index}
       data-pane-attempt={attempt}
+      data-pane-mount={mount}
+      onFocus={onFocused}
       aria-label={`terminal for ${title}`}
     >
-      <header className="pane-head">
-        <span className="pane-title">{title}</span>
-        <span className={`chip chip-${status}`}>{status}</span>
-        {/* Offered for every ending, not only eviction: a pane whose session was resumed elsewhere
-            and a pane whose socket dropped are both reattachable, and neither is worth a reload. */}
-        {ENDED_STATUSES.has(status) && (
-          <button type="button" className="ghost" onClick={reattach}>
-            reattach
-          </button>
-        )}
-        <button type="button" className="ghost" onClick={onClose}>
-          close
-        </button>
-      </header>
+      <PaneHead title={title} status={status} onReattach={reattach} onClose={onClose} />
       {detail !== undefined && <p className="pane-detail">{detail}</p>}
       <div ref={hostRef} className="pane-host" />
       <footer className="pane-foot">
@@ -94,10 +110,38 @@ export function PaneView({ target, title, onClose }: PaneViewProps): JSX.Element
   );
 }
 
+interface PaneHeadProps {
+  readonly title: string;
+  readonly status: PaneStatus;
+  readonly onReattach: () => void;
+  readonly onClose: () => void;
+}
+
+function PaneHead({ title, status, onReattach, onClose }: PaneHeadProps): JSX.Element {
+  return (
+    <header className="pane-head">
+      <span className="pane-title">{title}</span>
+      <span className={`chip chip-${status}`}>{status}</span>
+      {/* Offered for every ending, not only eviction: a pane whose session was resumed elsewhere
+          and a pane whose socket dropped are both reattachable, and neither is worth a reload. */}
+      {ENDED_STATUSES.has(status) && (
+        <button type="button" className="ghost" onClick={onReattach}>
+          reattach
+        </button>
+      )}
+      <button type="button" className="ghost" onClick={onClose}>
+        close
+      </button>
+    </header>
+  );
+}
+
 interface PaneLifecycle {
   readonly status: PaneStatus;
   readonly detail: string | undefined;
   readonly attempt: number;
+  /** Which terminal this is, page-wide. Changes only when one was actually built — see `mounts`. */
+  readonly mount: number;
   readonly reattach: () => void;
 }
 
@@ -116,6 +160,7 @@ function usePaneLifecycle(
   const [status, setStatus] = useState<PaneStatus>('connecting');
   const [detail, setDetail] = useState<string | undefined>(undefined);
   const [attempt, setAttempt] = useState(0);
+  const [mount, setMount] = useState(0);
 
   const reattach = useCallback(() => {
     setStatus('connecting');
@@ -126,6 +171,8 @@ function usePaneLifecycle(
   useEffect(() => {
     const host = hostRef.current;
     if (host === null) return undefined;
+    mounts += 1;
+    setMount(mounts);
     return mountPane(host, target, (next, why) => {
       setStatus(next);
       setDetail(why);
@@ -133,5 +180,5 @@ function usePaneLifecycle(
     // `attempt` is the remount trigger and is deliberately not read in the body.
   }, [target, attempt, hostRef]);
 
-  return { status, detail, attempt, reattach };
+  return { status, detail, attempt, mount, reattach };
 }

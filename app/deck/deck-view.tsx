@@ -18,15 +18,12 @@ import { BrowserStreamTransport } from './browser-stream-transport.ts';
 import { CommandPalette } from './command-palette.tsx';
 import { DeckBanners } from './deck-banners.tsx';
 import { DeckHeader } from './deck-header.tsx';
-import { DeckStore, type DeckState } from './deck-store.ts';
+import { DeckBody } from './deck-body.tsx';
+import { DeckStore } from './deck-store.ts';
 import { deckCommands, type DeckActions } from './deck-commands.ts';
-import { PaneGrid } from './pane-grid.tsx';
-import { ProjectsPanel } from './projects-panel.tsx';
-import { ProjectsViewModel } from './projects-view-model.ts';
-import { SessionList } from './session-list.tsx';
-import { SessionDetailViewModel } from './session-detail-view-model.ts';
 import { SessionRowViewModel } from './session-row-view-model.ts';
 import { ShortcutSheet } from './shortcut-sheet.tsx';
+import { usePaneGrid } from './use-pane-grid.ts';
 import { useDeckKeys, type DeckKeys } from './use-deck-keys.ts';
 
 export interface OpenPane {
@@ -35,7 +32,6 @@ export interface OpenPane {
   readonly target: PtyTarget;
 }
 
-const MAX_PANES = 4;
 const AGE_TICK_MS = 10_000;
 const SHELL_PANE: OpenPane = { key: 'shell', title: 'shell', target: { kind: 'shell' } };
 
@@ -43,14 +39,18 @@ export function DeckView(): JSX.Element {
   const store = useDeckStore();
   const state = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot);
   useLiveStream(store);
-  const { panes, openPane, closePane } = useOpenPanes();
+  const grid = usePaneGrid();
   const { expanded, toggle } = useExpandedRows(store);
   const now = useTickingClock();
-  const actions = useDeckActions(store, openPane);
+  const actions = useDeckActions(store, grid.openPane);
 
   // Every session, unfiltered: the palette can reach one the `/` box is currently hiding.
   const rows = state.rows.map((row) => new SessionRowViewModel(row));
-  const keys = useDeckKeys(deckCommands({ rows, ...actions }));
+  // `onLayout` comes from the grid rather than from `useDeckActions`: the palette's six layout
+  // entries and the chooser's six buttons must be the same call, or one of them gets the next fix.
+  const keys = useDeckKeys(deckCommands({ rows, ...actions, onLayout: grid.setLayout }), {
+    onMovePane: grid.movePaneBy,
+  });
 
   return (
     <main className="deck">
@@ -68,74 +68,13 @@ export function DeckView(): JSX.Element {
         rows={rows}
         state={state}
         now={now}
-        panes={panes}
+        grid={grid}
         expanded={expanded}
         actions={actions}
         onToggle={toggle}
-        onClosePane={closePane}
       />
       <DeckOverlays keys={keys} />
     </main>
-  );
-}
-
-interface DeckBodyProps {
-  readonly rows: readonly SessionRowViewModel[];
-  readonly state: DeckState;
-  readonly now: number;
-  readonly panes: readonly OpenPane[];
-  readonly expanded: ReadonlySet<string>;
-  readonly actions: DeckActions;
-  readonly onToggle: (row: SessionRowViewModel) => void;
-  readonly onClosePane: (key: string) => void;
-}
-
-/**
- * The two columns, and the one piece of state that belongs to them rather than to the deck.
- *
- * `/`'s filter lives here because it is a fact about the list — the header still counts every
- * session and the palette still reaches every session, and neither has to know a box is filled in.
- * The keyboard does not know either: `/` focuses this box by id (deck-keyboard.ts), which is why
- * nothing above had to thread the query down or a setter back up.
- */
-function DeckBody({
-  rows,
-  state,
-  now,
-  panes,
-  expanded,
-  actions,
-  onToggle,
-  onClosePane,
-}: DeckBodyProps): JSX.Element {
-  const [search, setSearch] = useState('');
-  return (
-    <div className="deck-body">
-      <div className="deck-left">
-        <ProjectsPanel
-          model={
-            new ProjectsViewModel(state.projects, state.importRefusal, state.statuses, state.maps)
-          }
-          disabled={!state.coreUp}
-          onImport={actions.onImportProject}
-          onForget={actions.onForgetProject}
-        />
-        <SessionList
-          rows={rows.filter((row) => row.matches(search))}
-          now={now}
-          loading={state.loading}
-          coreUp={state.coreUp}
-          search={search}
-          expanded={expanded}
-          details={detailViewModels(state.details)}
-          onSearch={setSearch}
-          onToggle={onToggle}
-          onLaunch={actions.onLaunch}
-          onOpen={actions.onOpenPane}
-        />
-      </div>
-      <PaneGrid panes={panes} onClose={onClosePane} />
-    </div>
   );
 }
 
@@ -190,24 +129,6 @@ function useLiveStream(store: DeckStore): void {
       store.disconnect();
     };
   }, [store]);
-}
-
-/**
- * The open rows' details, as view models.
- *
- * Wrapped here rather than in the store, which holds wire values: a view model is presentation and
- * the store is state (CODING-STANDARDS §3). `undefined` survives the mapping and is what draws the
- * spinner — a key present with no value means "asked, still waiting".
- */
-function detailViewModels(
-  details: DeckState['details'],
-): Readonly<Record<string, SessionDetailViewModel | undefined>> {
-  return Object.fromEntries(
-    Object.entries(details).map(([key, detail]) => [
-      key,
-      detail === undefined ? undefined : new SessionDetailViewModel(detail),
-    ]),
-  );
 }
 
 /**
@@ -298,35 +219,6 @@ function useExpandedRows(store: DeckStore): ExpandedRows {
   );
 
   return { expanded, toggle };
-}
-
-interface OpenPanes {
-  readonly panes: readonly OpenPane[];
-  readonly openPane: (pane: OpenPane) => void;
-  readonly closePane: (key: string) => void;
-}
-
-/**
- * Which panes are on screen. Opening the same one twice is a no-op, not a second PTY.
- *
- * The cap is a layout decision only — attach exclusivity is core's (SEC-WS-3) and must never be
- * something the browser believes it is enforcing.
- */
-function useOpenPanes(): OpenPanes {
-  const [panes, setPanes] = useState<readonly OpenPane[]>([]);
-
-  const openPane = useCallback((pane: OpenPane) => {
-    setPanes((current) => {
-      if (current.some((open) => open.key === pane.key)) return current;
-      return [...current, pane].slice(-MAX_PANES);
-    });
-  }, []);
-
-  const closePane = useCallback((key: string) => {
-    setPanes((current) => current.filter((pane) => pane.key !== key));
-  }, []);
-
-  return { panes, openPane, closePane };
 }
 
 /**

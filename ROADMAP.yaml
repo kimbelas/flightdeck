@@ -1759,6 +1759,12 @@ phases:
       - id: P3-T6
         title: By-project view, project groups, coach gates.json verdict deep link
         status: todo
+        notes: >-
+          Two things wait on this rather than on themselves, because both need a CURRENT PROJECT and
+          nothing in the deck has one yet. The palette's "switch project" is the older of them
+          (deck-commands.ts, since P2-T5). The newer is P5a-T5's pane layout, which SPEC §5.3 says is
+          saved per project and which is saved per browser today — a `localStorage` key invented
+          before there was a project to name would be a key this task had to migrate off.
       - id: P3-T7
         title: Config-change snapshots and diff
         status: todo
@@ -1945,8 +1951,61 @@ phases:
           than guessed — RESEARCH.md F.2.5 measured 330 046 bytes from one short session, so what
           matters in the frame is a question only a consumer can answer.
       - id: P5a-T5
-        title: Layouts 1/2/4/6/9 + focus, saved per project, keyboard rearrange
-        status: todo
+        title: Layouts 1/2/4/6/9 + focus mode, remembered across a reload, keyboard rearrange
+        status: done
+        done_on: 2026-09-20
+        depends_on: [P5a-T3]
+        deliverables:
+          [
+            contracts/pane-layout.ts,
+            contracts/keymap.ts,
+            app/deck/use-pane-grid.ts,
+            app/deck/deck-body.tsx,
+            app/deck/deck-view.tsx,
+            app/deck/pane-grid.tsx,
+            app/deck/pane-view.tsx,
+            app/deck/deck-commands.ts,
+            app/deck/deck-keyboard.ts,
+            app/deck/use-deck-keys.ts,
+            app/globals.css,
+            tests/contracts/pane-layout.test.ts,
+            tests/e2e/smoke/pane-checks.mjs,
+          ]
+        notes: >-
+          SPEC §5.3's first bullet. A layout is CHOSEN now rather than derived from how many panes
+          are open — `deck-commands.ts` had been carrying "there is nothing to choose until there is
+          a chooser" since P2-T5, and this is the chooser, in the pane bar and as six palette
+          entries running the same call. The pane cap moves from 4 to 9, which is the phase gate's
+          number. The count still decides the DEFAULT, and only until somebody picks; after that the
+          choice stands even when it is smaller than the panes open, and the extras scroll. A choice
+          that quietly un-chose itself on the next pane would be worse than no chooser.
+          `[` and `]` move the focused pane, `deck`-context only. That is D34 rather than a
+          compromise: `Ctrl+K` is the ONE key taken from a live pane, so every bracket typed at a
+          shell still reaches the shell, and rearranging is something you do from the deck.
+          **The load-bearing constraint is that a layout change must not remount a pane.** React
+          keeps a component mounted only while it stays in the same position in the tree, so the
+          obvious shape for focus mode — a "stage" wrapper around the big pane and a "strip" around
+          the rest — would unmount and rebuild every card on every layout change, and unmounting a
+          pane disposes its terminal and closes its socket. For an attached session that is killing
+          a live PTY because somebody clicked a layout button. So every card is a direct child of
+          one container in array order in every layout, and focus mode is grid placement: eight
+          explicit columns so the focused card can span `1 / -1`, and an `auto` strip row so one
+          pane open leaves no empty band under it.
+          Two things this task had to fix about its own checks, which is G.29's lesson arriving one
+          task later and cheap. The layout assertions measure GEOMETRY — two cards side by side
+          share a `y` and differ in `x` — rather than reading a class name off the container, so the
+          stylesheet is under test; deleting the `.panes-2` rule fails them. And the first remount
+          detector was `data-pane-attempt`, which is component state that a remount RESETS, so it
+          compared `["0","0"]` with `["0","0"]` and passed against a build that rebuilt both
+          terminals on every move. `data-pane-mount` is a counter kept outside React, and with
+          `key={index}` in place of `key={pane.key}` the check fails `["1","2"] -> ["3","4"]`.
+          "Saved per project" is the one word of the title not shipped, and it is deferred rather
+          than dropped: the layout is remembered per BROWSER in `localStorage`, because this deck
+          has no current project to key it by until P3-T6 builds the by-project view — which is also
+          where the palette's "switch project" is waiting. A key invented here would be one P3-T6
+          had to migrate off. Reading it happens in an effect, not in a `useState` initialiser:
+          `localStorage` does not exist while Next renders on the server, and the first client
+          render would disagree with it.
       - id: P5a-T6
         title: Per-pane controls — stop, respawn, resume, rename, mute
         status: todo
