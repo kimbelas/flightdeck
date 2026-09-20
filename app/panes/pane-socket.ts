@@ -10,12 +10,24 @@
 //
 // The class owns the socket rather than the component, because a React effect that re-runs is an
 // ordinary event and a PTY that respawns because a component re-rendered is not.
+//
+// **What is left in this file is plumbing.** Every decision a pane makes — whether a keystroke is
+// held or dropped, whether an exit is an ending or an eviction, which of two explanations for a
+// dead pane wins — is in `pane-status.ts`, which touches no DOM and is unit tested. This file
+// holds a `WebSocket`, and a `WebSocket` is the reason it cannot be (P5a-T6a, RESEARCH.md G.29).
 import type { ClientFrame, PtyTarget, ServerFrame } from '../../contracts/pty-protocol.ts';
 import { CORE_WEBSOCKET } from '../../contracts/origins.ts';
 import { requestPaneTicket } from './pane-ticket.ts';
+import {
+  PaneStatusReporter,
+  PendingInput,
+  readPaneExit,
+  reasonText,
+  type PaneStatus,
+} from './pane-status.ts';
 import type { TerminalPane } from './terminal-pane.ts';
 
-export type PaneStatus = 'connecting' | 'live' | 'closed' | 'refused';
+export type { PaneStatus } from './pane-status.ts';
 
 export interface PaneSocketListeners {
   onStatus(status: PaneStatus, detail: string | undefined): void;
@@ -26,15 +38,20 @@ const MAX_INPUT_BYTES = 512 * 1024;
 
 export class PaneSocket {
   private readonly pane: TerminalPane;
-  private readonly listeners: PaneSocketListeners;
+  private readonly status: PaneStatusReporter;
+  private readonly pending = new PendingInput();
   private socket: WebSocket | undefined;
   private authorised = false;
-  /** Set by `close()`. A pane torn down mid-mint must not open the socket it was waiting for. */
+  /** Set by `close()`. Both "do not open the socket I am waiting for" and P5a-T1's "did I ask?". */
   private abandoned = false;
+  /** Kept only so an `exit` can be read against what this pane was attached to. */
+  private target: PtyTarget | undefined;
 
   constructor(pane: TerminalPane, listeners: PaneSocketListeners) {
     this.pane = pane;
-    this.listeners = listeners;
+    this.status = new PaneStatusReporter((report) => {
+      listeners.onStatus(report.status, report.detail);
+    });
   }
 
   /**
@@ -43,10 +60,12 @@ export class PaneSocket {
    * Awaits the mint before the socket exists, rather than racing the two: core's 2 s auth deadline
    * starts when the socket opens (SEC-WS-1), so a socket opened first would be spending that
    * budget on a fetch. The input handler is wired before the await so a keystroke during the mint
-   * is handled by the same code as one during the handshake — dropped by `send`, not by nobody.
+   * is handled by the same code as one during the handshake — held, and delivered when `ready`
+   * lands rather than discarded.
    */
   public async connect(target: PtyTarget): Promise<void> {
-    this.listeners.onStatus('connecting', undefined);
+    this.target = target;
+    this.status.update('connecting');
     this.pane.onInput((data) => {
       this.sendInput(data);
     });
@@ -55,7 +74,7 @@ export class PaneSocket {
     // A pane closed while the mint was in flight: the ticket goes unspent and expires on its own.
     if (this.abandoned) return;
     if (ticket === undefined) {
-      this.listeners.onStatus('refused', 'core would not issue a ticket for this pane');
+      this.status.finish('refused', 'core would not issue a ticket for this pane');
       return;
     }
 
@@ -72,11 +91,13 @@ export class PaneSocket {
     socket.addEventListener('close', (event: CloseEvent) => {
       this.authorised = false;
       // 1008 is core refusing us, which is a different thing to tell the user than "it ended".
-      if (event.code === 1008) this.listeners.onStatus('refused', event.reason);
-      else this.listeners.onStatus('closed', undefined);
+      // Either way `finish` decides whether this is news: the `exit` frame arrives first and says
+      // more, and it is the one that can say "evicted".
+      if (event.code === 1008) this.status.finish('refused', event.reason);
+      else this.status.finish('closed');
     });
     socket.addEventListener('error', () => {
-      this.listeners.onStatus('refused', 'could not reach core');
+      this.status.finish('refused', 'could not reach core');
     });
   }
 
@@ -87,8 +108,10 @@ export class PaneSocket {
     this.send({ type: 'resize', cols, rows });
   }
 
+  /** Detaches. Closing a pane never stops the session (RESEARCH.md F.2.6). */
   public close(): void {
     this.abandoned = true;
+    this.pending.clear();
     this.socket?.close();
     this.socket = undefined;
     this.authorised = false;
@@ -96,10 +119,17 @@ export class PaneSocket {
 
   private sendInput(data: string): void {
     if (data.length > MAX_INPUT_BYTES) {
-      this.listeners.onStatus('live', 'paste too large — it was not sent');
+      this.status.update('live', 'paste too large — it was not sent');
       return;
     }
-    this.send({ type: 'input', data });
+    if (this.authorised) {
+      this.send({ type: 'input', data });
+      return;
+    }
+    if (this.abandoned || this.status.ended) return;
+    if (!this.pending.hold(data)) {
+      this.status.update('connecting', 'typed too much before the pane was ready — not all sent');
+    }
   }
 
   private send(frame: ClientFrame): void {
@@ -113,18 +143,23 @@ export class PaneSocket {
     switch (frame.type) {
       case 'ready':
         this.authorised = true;
-        this.listeners.onStatus('live', undefined);
+        this.status.update('live');
         // The PTY spawned at core's default size; tell it what this pane actually is.
         this.resize();
+        // After the resize, not before: what was typed during the handshake should land in a
+        // terminal that is already the size it will stay, or a TUI redraws under the keystrokes.
+        for (const data of this.pending.take()) this.send({ type: 'input', data });
         break;
       case 'output':
         void this.pane.write(frame.data);
         break;
-      case 'exit':
-        this.listeners.onStatus('closed', `session exited (${String(frame.code)})`);
+      case 'exit': {
+        const report = readPaneExit(frame.code, this.target, this.abandoned);
+        if (report !== undefined) this.status.finish(report.status, report.detail);
         break;
+      }
       case 'error':
-        this.listeners.onStatus('refused', reasonText(frame.reason));
+        this.status.finish('refused', reasonText(frame.reason));
         break;
     }
   }
@@ -133,13 +168,6 @@ export class PaneSocket {
 function queryFor(target: PtyTarget): string {
   if (target.kind === 'shell') return 'shell=1';
   return `session=${encodeURIComponent(target.sessionId)}&subscription=${target.subscription}`;
-}
-
-/** Core's failure names, as something a person reads on a row. */
-function reasonText(reason: string): string {
-  if (reason === 'held_elsewhere') return 'Already open in another pane or terminal.';
-  if (reason === 'cannot_run') return 'Claude Code was not found on this machine.';
-  return reason;
 }
 
 function decode(raw: string): ServerFrame | undefined {

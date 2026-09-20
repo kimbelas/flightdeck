@@ -585,6 +585,13 @@ button.ghost {
   color: var(--dim);
 }
 
+/* Evicted is not an error and not an ending — somebody else took the session and it is still
+   running, so it reads as a warning with a reattach button next to it (P5a-T6a). */
+.chip-evicted {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
 /* ---- header quota gauges (P2-T3) ---- */
 
 /* margin-left:auto pushes the gauges and everything after them to the right of the count, so the

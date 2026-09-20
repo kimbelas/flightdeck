@@ -88,6 +88,16 @@ export class FixtureCore {
     this.tickets = new Map();
     /** Every target a ticket was minted for. One per pane, and the checks count them. */
     this.minted = [];
+    /**
+     * How long `POST /pty-ticket` sits on its hands before answering — 0 unless a check asks.
+     *
+     * It exists for exactly one assertion: the keystrokes a person gets in while a pane is still
+     * minting and handshaking (RESEARCH.md G.5). On a loopback fixture that window is sub-millisecond,
+     * so a check that simply typed quickly would pass whether or not the input is buffered — which
+     * is what the first draft of it did, measured. Widening the window here is what makes the race
+     * a thing a test can stand in the middle of.
+     */
+    this.mintDelayMs = 0;
     /** Every request core answered, so a check can ask what the deck actually sent. */
     this.requests = [];
     /** The bodies of every `POST /sessions`. The launch form's real destination. */
@@ -162,7 +172,11 @@ export class FixtureCore {
     if (request.method === 'GET' && path === '/sessions') return [200, this.fixture.snapshot];
     if (request.method === 'GET' && path === '/session') return [200, this.detailFor(url)];
     if (request.method === 'POST' && path === '/sessions') return this.launch(await body(request));
-    if (request.method === 'POST' && path === '/pty-ticket') return this.mint(await body(request));
+    if (request.method === 'POST' && path === '/pty-ticket') {
+      const raw = await body(request);
+      if (this.mintDelayMs > 0) await new Promise((done) => setTimeout(done, this.mintDelayMs));
+      return this.mint(raw);
+    }
     if (request.method === 'GET' && path === '/projects') {
       return [200, { projects: [...this.projects.values()] }];
     }
