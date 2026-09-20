@@ -108,7 +108,11 @@ describe('PreviewReader', () => {
 
       await harness.reader.read(REF);
 
-      expect(harness.runner.requests[0]?.env['CLAUDE_CONFIG_DIR']).toBe(CONFIG);
+      // `toContain`, not `toBe`, and the sibling tests for `stop` and `--resume` agree: the value
+      // comes from `ClaudeInstall.configDirFor`, which composes it with `node:path.join` — so the
+      // separator is `\` on Windows and `/` on the Linux runner that is the gate. Pinning the whole
+      // string passes here and fails in CI, which is what it did (RESEARCH.md G.20's lesson).
+      expect(harness.runner.requests[0]?.env['CLAUDE_CONFIG_DIR']).toContain('.claude-365');
     });
 
     it('carries no reason — nothing about the answer that was asked for needs explaining', async () => {
