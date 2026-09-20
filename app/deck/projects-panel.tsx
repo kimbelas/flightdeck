@@ -15,15 +15,25 @@
 // Every decision this panel makes lives in `ProjectsViewModel` — the empty message, the sentence a
 // refusal turns into. What is left here is markup and two callbacks (CODING-STANDARDS §3).
 import { useState, type JSX, type SyntheticEvent } from 'react';
+import type { PresetDraft, PresetLaunch, PresetRef } from '../../contracts/launch-preset.ts';
 import { PROJECT_PATH_ID } from './deck-keyboard.ts';
+import { PresetsPanel } from './presets-panel.tsx';
 import type { ProjectLine, ProjectsViewModel } from './projects-view-model.ts';
 import { WorkflowMapPanel } from './workflow-map-panel.tsx';
+
+/** The four preset callbacks, as one prop: `max-params` applies to a component's props too. */
+export interface PresetActions {
+  readonly onLaunchPreset: (request: PresetLaunch) => void;
+  readonly onSavePreset: (draft: PresetDraft) => void;
+  readonly onForgetPreset: (ref: PresetRef) => void;
+}
 
 interface ProjectsPanelProps {
   readonly model: ProjectsViewModel;
   readonly disabled: boolean;
   readonly onImport: (path: string) => void;
   readonly onForget: (path: string) => void;
+  readonly presets: PresetActions;
 }
 
 export function ProjectsPanel({
@@ -31,6 +41,7 @@ export function ProjectsPanel({
   disabled,
   onImport,
   onForget,
+  presets,
 }: ProjectsPanelProps): JSX.Element {
   return (
     <section className="projects" aria-label="projects">
@@ -45,7 +56,13 @@ export function ProjectsPanel({
       ) : (
         <ul className="project-list">
           {model.lines.map((line) => (
-            <ProjectRow key={line.key} line={line} onForget={onForget} />
+            <ProjectRow
+              key={line.key}
+              line={line}
+              disabled={disabled}
+              onForget={onForget}
+              presets={presets}
+            />
           ))}
         </ul>
       )}
@@ -92,7 +109,9 @@ function ImportBox({ disabled, onImport }: ImportBoxProps): JSX.Element {
 
 interface ProjectRowProps {
   readonly line: ProjectLine;
+  readonly disabled: boolean;
   readonly onForget: (path: string) => void;
+  readonly presets: PresetActions;
 }
 
 /**
@@ -103,7 +122,7 @@ interface ProjectRowProps {
  * buy nothing and would teach the owner to click through dialogues. `title` carries the full path
  * for a folder whose name is the interesting part and whose path is long.
  */
-function ProjectRow({ line, onForget }: ProjectRowProps): JSX.Element {
+function ProjectRow({ line, disabled, onForget, presets }: ProjectRowProps): JSX.Element {
   return (
     <li className="project">
       <span className="project-name">{line.name}</span>
@@ -120,6 +139,15 @@ function ProjectRow({ line, onForget }: ProjectRowProps): JSX.Element {
         forget
       </button>
       <ProjectMeta line={line} />
+      <PresetsPanel
+        model={line.presets}
+        projectPath={line.path}
+        projectName={line.name}
+        disabled={disabled}
+        onLaunch={presets.onLaunchPreset}
+        onSave={presets.onSavePreset}
+        onForget={presets.onForgetPreset}
+      />
       <WorkflowMapPanel model={line.map} project={line.name} />
     </li>
   );

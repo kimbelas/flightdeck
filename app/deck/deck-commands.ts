@@ -18,6 +18,7 @@
 //
 // A palette entry that does nothing is worse than an absent one: the first no-op teaches you not to
 // trust the entries beside it. So the list grows when those tasks land, and not before.
+import type { PresetDraft, PresetLaunch, PresetRef } from '../../contracts/launch-preset.ts';
 import { PANE_LAYOUTS, type PaneLayout } from '../../contracts/pane-layout.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
 import {
@@ -44,6 +45,19 @@ export interface DeckActions {
   readonly onLaunch: (subscription: SubscriptionId, prompt: string, name: string) => void;
   readonly onImportProject: (path: string) => void;
   readonly onForgetProject: (path: string) => void;
+  /**
+   * The three preset verbs — P4-T1.
+   *
+   * On this interface rather than threaded into the projects panel on their own, because that is
+   * what this interface is for: a button and a palette entry that do the same thing must be the
+   * same function. None of the three is a palette entry YET, for the reason the header gives about
+   * "switch project" — a palette that could start a session from a preset would need a preset to
+   * name, and naming one needs P3-T6's current project. That is the task that turns these into
+   * `Start app-next · ticket`.
+   */
+  readonly onLaunchPreset: (request: PresetLaunch) => void;
+  readonly onSavePreset: (draft: PresetDraft) => void;
+  readonly onForgetPreset: (ref: PresetRef) => void;
   readonly onResume: (row: SessionRowViewModel) => void;
   readonly onStop: (row: SessionRowViewModel) => void;
   /**

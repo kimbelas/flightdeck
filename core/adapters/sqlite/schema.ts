@@ -82,6 +82,37 @@ export const MIGRATIONS: readonly string[] = [
     imported_at INTEGER NOT NULL
   );
   `,
+  // 4 — launch presets: the named ways to start a session in a folder (P4-T1, SPEC §5.6).
+  //
+  // **Only the SAVED ones are here.** The four built-ins are computed from the project and the
+  // profile functions on every request (`PresetCatalogue`), so importing a folder still writes
+  // exactly one row and the owner's database holds nothing they did not put there.
+  //
+  // **The key is (project_key, id), and `id` is derived from the name** (`presetId`), which is
+  // what makes saving idempotent and what makes a saved `ticket` shadow the built-in of that name
+  // rather than sit beside it. The same argument as the projects table one migration up: the thing
+  // being named is the identity, so a surrogate id would make the second save a duplicate.
+  //
+  // **No `subscription` column and no `model`.** The profile function is both (D4, D44): it
+  // exports the config directory and pins the model, so a column for either would be a second
+  // opinion that the command line would then contradict.
+  //
+  // **`preset_group`, not `group`** — `GROUP` is a SQL keyword, and a column name that needs
+  // quoting in every statement is one somebody eventually forgets to quote.
+  `
+  CREATE TABLE presets (
+    project_key   TEXT NOT NULL,
+    id            TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    profile_fn    TEXT NOT NULL,
+    cwd           TEXT NOT NULL,
+    session_name  TEXT NOT NULL,
+    prompt_source TEXT NOT NULL,
+    prompt        TEXT NOT NULL,
+    preset_group  TEXT,
+    PRIMARY KEY (project_key, id)
+  );
+  `,
 ];
 
 /**

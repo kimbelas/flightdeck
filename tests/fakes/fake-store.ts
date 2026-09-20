@@ -8,6 +8,7 @@
 // the test that the port is the right shape.
 import type { AuditOutcome, AuditRow, DraftAuditRow } from '../../contracts/audit-row.ts';
 import type { DraftEvent, FdEvent } from '../../contracts/fd-event.ts';
+import { byProjectThenName, type LaunchPreset } from '../../contracts/launch-preset.ts';
 import { projectKey, type ProjectRecord } from '../../contracts/project.ts';
 import type { DraftVitalsSnapshot, VitalsSnapshot } from '../../contracts/vitals-snapshot.ts';
 import type { Store } from '../../core/ports/store.ts';
@@ -18,6 +19,8 @@ export class FakeStore implements Store {
   private readonly snapshots: VitalsSnapshot[] = [];
   /** Keyed by `projectKey`, exactly as the sqlite table is — re-import is a replace, not a row. */
   private readonly imported = new Map<string, ProjectRecord>();
+  /** Keyed `<projectKey>|<id>` with a separator neither half can contain. */
+  private readonly presets = new Map<string, LaunchPreset>();
   private nextEventId = 1;
   private nextAuditId = 1;
   private nextSnapshotId = 1;
@@ -115,8 +118,36 @@ export class FakeStore implements Store {
       .map(([, project]) => project);
   }
 
+  /** The presets go with it, exactly as the adapter's second DELETE does (the port's cascade). */
   public forgetProject(path: string): boolean {
     if (!this.writable) throw new Error('store is not writable');
-    return this.imported.delete(projectKey(path));
+    const key = projectKey(path);
+    for (const [held, preset] of this.presets) {
+      if (preset.projectKey === key) this.presets.delete(held);
+    }
+    return this.imported.delete(key);
   }
+
+  /** `builtIn` is forced false on the way in: a stored preset is one the owner saved (`toPreset`). */
+  public savePreset(preset: LaunchPreset): LaunchPreset {
+    if (!this.writable) throw new Error('store is not writable');
+    const stored: LaunchPreset = { ...preset, builtIn: false };
+    this.presets.set(presetSlot(preset.projectKey, preset.id), stored);
+    return stored;
+  }
+
+  /** The adapter's `ORDER BY project_key, name, id`, which is `byProjectThenName`. */
+  public savedPresets(): readonly LaunchPreset[] {
+    return [...this.presets.values()].sort(byProjectThenName);
+  }
+
+  public forgetPreset(projectKeyValue: string, id: string): boolean {
+    if (!this.writable) throw new Error('store is not writable');
+    return this.presets.delete(presetSlot(projectKeyValue, id));
+  }
+}
+
+/** The composite key as one string. `|` is illegal in a Windows path and `presetId` folds it. */
+function presetSlot(projectKeyValue: string, id: string): string {
+  return `${projectKeyValue}|${id}`;
 }

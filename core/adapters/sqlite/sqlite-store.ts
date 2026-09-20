@@ -17,10 +17,11 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { AuditRow, DraftAuditRow } from '../../../contracts/audit-row.ts';
 import type { DraftEvent, FdEvent } from '../../../contracts/fd-event.ts';
+import type { LaunchPreset } from '../../../contracts/launch-preset.ts';
 import { projectKey, type ProjectRecord } from '../../../contracts/project.ts';
 import type { DraftVitalsSnapshot, VitalsSnapshot } from '../../../contracts/vitals-snapshot.ts';
 import type { Store } from '../../ports/store.ts';
-import { asRecord, toAudit, toEvent, toProject, toSnapshot } from './rows.ts';
+import { asRecord, toAudit, toEvent, toPreset, toProject, toSnapshot } from './rows.ts';
 import { MIGRATIONS, PRAGMAS } from './schema.ts';
 
 /**
@@ -71,6 +72,44 @@ function prepareProjectStatements(db: DatabaseSync): ProjectStatements {
   };
 }
 
+/** The preset table's statements — P4-T1. Grouped for `ProjectStatements`' reason. */
+interface PresetStatements {
+  readonly upsert: StatementSync;
+  readonly selectAll: StatementSync;
+  readonly selectOne: StatementSync;
+  readonly remove: StatementSync;
+  readonly removeForProject: StatementSync;
+}
+
+/**
+ * The preset table's five.
+ *
+ * `selectAll` orders by project then name then id, which is `byProjectThenName` in SQL: the deck
+ * draws these as a keyed React list under each project row, and a list that reshuffles between
+ * reads is one React has to rebuild rather than reconcile.
+ *
+ * `removeForProject` is the cascade the port promises — forgetting a folder takes its presets with
+ * it, because a preset names a folder to start a session in and a folder that is no longer
+ * imported is one core may not read (SEC-FS-1).
+ */
+function preparePresetStatements(db: DatabaseSync): PresetStatements {
+  return {
+    upsert: db.prepare(
+      `INSERT INTO presets
+         (project_key, id, name, profile_fn, cwd, session_name, prompt_source, prompt, preset_group)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(project_key, id) DO UPDATE SET
+         name = excluded.name, profile_fn = excluded.profile_fn, cwd = excluded.cwd,
+         session_name = excluded.session_name, prompt_source = excluded.prompt_source,
+         prompt = excluded.prompt, preset_group = excluded.preset_group`,
+    ),
+    selectAll: db.prepare(`SELECT * FROM presets ORDER BY project_key, name, id`),
+    selectOne: db.prepare(`SELECT * FROM presets WHERE project_key = ? AND id = ?`),
+    remove: db.prepare(`DELETE FROM presets WHERE project_key = ? AND id = ?`),
+    removeForProject: db.prepare(`DELETE FROM presets WHERE project_key = ?`),
+  };
+}
+
 export class SqliteStore implements Store {
   private readonly db: DatabaseSync;
   private readonly insertEvent: StatementSync;
@@ -88,6 +127,8 @@ export class SqliteStore implements Store {
    * this table is keyed, upserted and deleted from. Grouping them says which is which.
    */
   private readonly projectRows: ProjectStatements;
+  /** The preset table's five, grouped for the same reason — P4-T1. */
+  private readonly presetRows: PresetStatements;
 
   /**
    * Opens (and creates) the store, applying any migrations it is behind on.
@@ -135,6 +176,7 @@ export class SqliteStore implements Store {
       `SELECT * FROM vitals_snapshots WHERE session_id = ? ORDER BY id DESC LIMIT ?`,
     );
     this.projectRows = prepareProjectStatements(this.db);
+    this.presetRows = preparePresetStatements(this.db);
   }
 
   /** The schema version this file is at. `flightdeck-core status` prints it (P1-T12). */
@@ -207,8 +249,36 @@ export class SqliteStore implements Store {
     return this.projectRows.selectAll.all().map(toProject);
   }
 
+  /** The project row and its presets, in that order. The answer is about the PROJECT row. */
   public forgetProject(path: string): boolean {
-    return this.projectRows.remove.run(projectKey(path)).changes > 0;
+    const key = projectKey(path);
+    const removed = this.projectRows.remove.run(key).changes > 0;
+    this.presetRows.removeForProject.run(key);
+    return removed;
+  }
+
+  /** Read back rather than echoed, exactly as `rememberProject` is. */
+  public savePreset(preset: LaunchPreset): LaunchPreset {
+    this.presetRows.upsert.run(
+      preset.projectKey,
+      preset.id,
+      preset.name,
+      preset.profileFn,
+      preset.cwd,
+      preset.sessionName,
+      preset.promptSource,
+      preset.prompt,
+      preset.group ?? null,
+    );
+    return toPreset(this.presetRows.selectOne.get(preset.projectKey, preset.id));
+  }
+
+  public savedPresets(): readonly LaunchPreset[] {
+    return this.presetRows.selectAll.all().map(toPreset);
+  }
+
+  public forgetPreset(projectKeyValue: string, id: string): boolean {
+    return this.presetRows.remove.run(projectKeyValue, id).changes > 0;
   }
 
   /** Closes the handle. Idempotent, because shutdown is (main.ts `stopCore`). */

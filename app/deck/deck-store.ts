@@ -28,16 +28,12 @@
 // ordinary event on this machine (F.3.3), a deck that stopped retrying would be a deck that needs
 // a page reload every time. One path for both cases: close, wait, reopen.
 import {
-  CORE_PROJECT_FORGET_PATH,
-  CORE_PROJECT_STATUS_PATH,
-  CORE_PROJECTS_PATH,
   CORE_SESSION_PATH,
   CORE_RESUME_PATH,
   CORE_SESSIONS_PATH,
   CORE_STOP_PATH,
 } from '../../contracts/deck-routes.ts';
-import { parseImportRefusal, parseProjectList, projectKey } from '../../contracts/project.ts';
-import { parseProjectStatusList, type ProjectStatus } from '../../contracts/project-status.ts';
+import type { PresetDraft, PresetLaunch, PresetRef } from '../../contracts/launch-preset.ts';
 import { parseSessionDetail, type SessionDetail } from '../../contracts/session-detail.ts';
 import { sessionRefQuery, type SessionRef } from '../../contracts/session-ref.ts';
 import {
@@ -58,7 +54,9 @@ import {
   whyNotResumed,
   whyNotStopped,
 } from './deck-replies.ts';
+import { PresetsSlice } from './presets-slice.ts';
 import { PreviewSlice } from './preview-slice.ts';
+import { ProjectsSlice } from './projects-slice.ts';
 import { WorkflowMapSlice } from './workflow-map-slice.ts';
 import {
   EMPTY,
@@ -88,6 +86,10 @@ export class DeckStore {
   private readonly workflowMaps: WorkflowMapSlice;
   /** The fourth, split for the same reason — see `preview-slice.ts` (P5a-T4). */
   private readonly previews: PreviewSlice;
+  /** The fifth — see `presets-slice.ts` (P4-T1). */
+  private readonly presets: PresetsSlice;
+  /** The registry and its readings, lifted out for the line count when the fifth arrived. */
+  private readonly projects: ProjectsSlice;
   private state: DeckState = EMPTY;
   private source: EventStreamSource | undefined;
   private cancelRetry: (() => void) | undefined;
@@ -100,6 +102,12 @@ export class DeckStore {
     });
     this.previews = new PreviewSlice(api, (previews) => {
       this.set({ previews });
+    });
+    this.presets = new PresetsSlice(api, (changes) => {
+      this.set(changes);
+    });
+    this.projects = new ProjectsSlice(api, (changes) => {
+      this.set(changes);
     });
   }
 
@@ -196,18 +204,29 @@ export class DeckStore {
     prompt: string,
     name: string | undefined,
   ): Promise<string | undefined> {
-    this.set({ loading: true, error: undefined });
-    const reply = await this.api.post(CORE_SESSIONS_PATH, { subscription, prompt, name });
-    const started = reply === undefined ? undefined : whatStarted(reply);
-    if (started !== undefined) {
-      this.set({ loading: false });
-      return started.sessionId;
-    }
-    // Not `coreUp: false`: the stream is the authority on that, and a refused launch says nothing
-    // about whether core is there — it usually means it answered.
-    this.set({ loading: false, error: whyNotLaunched(reply) });
-    return undefined;
+    return this.start({ subscription, prompt, name: name ?? '', cwd: '' });
   }
+
+  /**
+   * Starts a session from a preset — P4-T1.
+   *
+   * The same route and the same reply as `launch`; what a preset adds is a `cwd`, which core has
+   * been parsing and dropping since P2-T2 and now honours (`SessionLauncher`). Two methods over one
+   * private one rather than a fifth parameter on `launch`, because the launch FORM has no folder
+   * and a preset always does — a parameter every caller had to pass as `''` would be a field that
+   * reads as optional and is not.
+   */
+  public launchPreset = (request: PresetLaunch): Promise<string | undefined> => this.start(request);
+
+  /**
+   * Saves one preset for a project, then re-reads the list. See `PresetsSlice` for the rule.
+   *
+   * @returns whether core saved it. The refusal goes into `presetRefusal` for the panel.
+   */
+  public savePreset = (draft: PresetDraft): Promise<boolean> => this.presets.save(draft);
+
+  /** Removes one saved preset. The built-in it was shadowing comes back. */
+  public forgetPreset = (ref: PresetRef): Promise<void> => this.presets.forget(ref);
 
   /**
    * Wakes a stopped background session so a pane can attach to it — P4-T2a.
@@ -308,12 +327,14 @@ export class DeckStore {
    * tell the owner their projects are gone.
    */
   public async loadProjects(): Promise<void> {
-    const reply = await this.api.get(CORE_PROJECTS_PATH);
-    if (reply?.status !== 200) return;
-    this.set({ projects: parseProjectList(reply.body) });
-    // In parallel: two independent reads of the same list, and the map is by far the slower of the
-    // two. Neither throws, so neither can lose the other's result.
-    await Promise.all([this.loadProjectStatuses(), this.workflowMaps.load()]);
+    if (!(await this.projects.load())) return;
+    // In parallel: three independent reads of the same list, and the map is by far the slowest.
+    // None of them throws, so none can lose another's result.
+    await Promise.all([
+      this.projects.loadStatuses(),
+      this.workflowMaps.load(),
+      this.presets.load(),
+    ]);
   }
 
   /**
@@ -331,11 +352,7 @@ export class DeckStore {
    * empty answer is a real state, and rendering one because a request failed would say every
    * project stopped being a repository.
    */
-  public async loadProjectStatuses(): Promise<void> {
-    const reply = await this.api.get(CORE_PROJECT_STATUS_PATH);
-    if (reply?.status !== 200) return;
-    this.set({ statuses: byProject(parseProjectStatusList(reply.body)) });
-  }
+  public loadProjectStatuses = (): Promise<void> => this.projects.loadStatuses();
 
   /**
    * Imports one folder by path — the owner's deliberate act (DECISIONS.md D26).
@@ -345,16 +362,9 @@ export class DeckStore {
    * core composed, so nothing displayed here came from the request.
    */
   public async importProject(path: string): Promise<boolean> {
-    this.set({ importRefusal: undefined });
-    const reply = await this.api.post(CORE_PROJECTS_PATH, { path });
-    if (reply?.status === 201) {
-      await this.loadProjects();
-      return true;
-    }
-    // `undefined` for a request that reached nobody, and for a 400 carrying a code this build does
-    // not know — both render as the generic sentence rather than as silence.
-    this.set({ importRefusal: parseImportRefusal(reply?.body) ?? 'empty' });
-    return false;
+    const imported = await this.projects.import(path);
+    if (imported) await this.loadProjects();
+    return imported;
   }
 
   /**
@@ -364,9 +374,7 @@ export class DeckStore {
    * and a deck that removed the row itself would be guessing at the outcome of a write.
    */
   public async forgetProject(path: string): Promise<void> {
-    const reply = await this.api.post(CORE_PROJECT_FORGET_PATH, { path });
-    if (reply === undefined) return;
-    await this.loadProjects();
+    if (await this.projects.forget(path)) await this.loadProjects();
   }
 
   /**
@@ -386,6 +394,21 @@ export class DeckStore {
       Object.entries(this.state.details).filter(([held]) => held !== key),
     );
     this.set({ details });
+  }
+
+  /** The one launch path. `cwd: ''` means core's own directory, which is what the form sends. */
+  private async start(request: PresetLaunch): Promise<string | undefined> {
+    this.set({ loading: true, error: undefined });
+    const reply = await this.api.post(CORE_SESSIONS_PATH, request);
+    const started = reply === undefined ? undefined : whatStarted(reply);
+    if (started !== undefined) {
+      this.set({ loading: false });
+      return started.sessionId;
+    }
+    // Not `coreUp: false`: the stream is the authority on that, and a refused launch says nothing
+    // about whether core is there — it usually means it answered.
+    this.set({ loading: false, error: whyNotLaunched(reply) });
+    return undefined;
   }
 
   private setDetail(key: string, detail: SessionDetail | undefined): void {
@@ -446,11 +469,6 @@ export class DeckStore {
     this.state = { ...this.state, ...changes };
     for (const listener of this.subscribers) listener();
   }
-}
-
-/** Readings by `projectKey`, which is the same key the panel draws its rows under. */
-function byProject(statuses: readonly ProjectStatus[]): Readonly<Record<string, ProjectStatus>> {
-  return Object.fromEntries(statuses.map((status) => [projectKey(status.path), status]));
 }
 
 /** Replaces the row if it is already known, appends it if not, and re-sorts either way. */

@@ -1165,3 +1165,68 @@ says "ANSI is rendered by xterm.js, never by hand" and that is a control rather 
 implementation detail. The frame uses six CSI finals and a reader of those six is about forty lines
 (G.34) — the argument for the library is not difficulty, it is that the seventh arrives silently.
 The deck receives plain text, ~1.8 KB instead of 330 KB, with nothing left in it to interpret.
+
+## D44 — a preset names a profile function, and the function is both the model and the subscription (decided 2026-09-20, P4-T1)
+
+**BUILD-PLAN §3 sketches `Preset` with `subscription`, `profileFn`, `model`, `agent` and `effort`.
+Three of those five are dropped, and the drop is D4 being kept rather than a feature being cut.**
+
+D4 settled that every spawn goes through `claude-365`, `claude-isg`, `claude-isg-ticket` or
+`claude-isg-orch`, so that "model routing changes in one file". Those functions already pin the
+model: `claude-isg-ticket` is `--model "opusplan[1m]"` plus `ANTHROPIC_DEFAULT_OPUS_MODEL` and
+`ANTHROPIC_DEFAULT_SONNET_MODEL`, and `claude-isg-orch` is `--model claude-sonnet-5 --agent
+orchestrator`. A preset carrying its own `--model` would be a second place model routing lives —
+which is exactly the `.bashrc` drift P4-T0 finished deleting four days ago. Wanting a different
+model is a new function in one file, which is what D4's "one file" means.
+
+`subscription` goes for a stronger version of the same reason: the function IS the config
+directory. `claude-365` exports `~\.claude-365` and the other three export `~\.claude-isg`, so a
+`subscription` field beside `profileFn` is a value that can disagree with the command line, and
+the command line is the half that wins. `subscriptionOfProfileFunction` derives it instead, and
+the badge on the deck cannot be wrong.
+
+**The consequence for P4-T3, named here so that task does not discover it.** Quota-aware routing
+can only choose between `claude-365` and `claude-isg` — `ROUTABLE_PROFILE_FUNCTIONS`. The other
+two are `~\.claude-isg` by construction, so "run this on whichever subscription has more headroom"
+is not a question that can be asked about a ticket or an orchestrator session at all. A picker
+offering the swap on those four would be offering something it cannot do.
+
+**Four profile functions, where SPEC §5.7 says five.** `claude-isg-agents` runs `claude agents …`,
+which opens the agents browser: it is a terminal UI over sessions, not a way to start one, and
+there is no `--bg` form of it. SEC-PROC-2 has allowlisted four since P0 for that reason, and
+SPEC's "all five" is about the ways the owner starts Claude today rather than about what a preset
+can encode. The fifth is reachable from the deck as the thing it actually is — the session list.
+
+**The plan-first prompt is COMPUTED from the ticket id, not stored.** It is lifted from
+`app-next/.claude/scripts/open-tab.mjs`, which is how the owner starts a ticket today, and it names
+the ticket three times — in the sentence and in the two paths it points at. Freezing one id into a
+stored string would make the preset good for exactly one ticket, so `promptSource` is a two-value
+union (`literal` | `ticket`) and `TicketPrompt` rebuilds the four sentences from whatever is in the
+name box. That prompt is model routing rather than politeness: with `opusplan[1m]`, "enter plan
+mode first" puts the planning turn on Fable 5.1 and `ExitPlanMode` returns to bypass, which is Opus
+5 for the edit. It is asked for in the prompt rather than passed as `--permission-mode plan`
+because that flag cannot be combined with `--dangerously-skip-permissions`, which every profile
+function passes (verified 2026-09-10, recorded in open-tab.mjs beside the line that works around
+it).
+
+**What is NOT lifted from open-tab.mjs is its `.replace(/['"]/g, '')`.** That script interpolates
+the prompt into a PowerShell `-Command` string, where an apostrophe ends the argument. Flightdeck
+never builds a command string — the prompt is an argv element today and the `FD_PROMPT`
+environment variable once P4-T2 lands (SEC-PROC-1) — so copying the strip would have carried a
+workaround for a bug this design does not have, and would have quietly mangled a ticket title.
+
+**Built-ins are computed, never seeded.** Importing a folder still writes exactly one row; the four
+presets it gets are derived from the project and the profile functions on every request
+(`PresetCatalogue`). That is D26's habit one layer up — the owner's database holds nothing they did
+not put there — and it means a build that changes a built-in changes it everywhere rather than
+leaving last month's copy behind. A saved preset SHADOWS the built-in whose id it shares, so
+"I want `ticket` to start in my worktree" is one save rather than a second button called
+`ticket (mine)`, and forgetting it brings the built-in back.
+
+**A preset cannot widen what core may read.** Its `cwd` is screened on the way in by
+`ProjectRegistry.resolveDirectory` — a third door beside `resolve` (may core OPEN this file) and
+`resolveRoot` (is this directory an imported project), because a launch target is neither: a
+worktree under `<project>\.claude\worktrees\<name>` is a good place to start a session and is not
+itself imported. It is then checked for containment in the project it is filed under, so a preset
+on `app-next` cannot start a session in `pdf-editor`. Verified against the live registry: a config
+directory, a file, another imported project and `C:\Windows\System32` are all `bad_cwd`.

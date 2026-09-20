@@ -21,6 +21,7 @@ export async function projectChecks(page, report, core) {
   await importChecks(page, report, core);
   await statusChecks(page, report, core);
   await mapChecks(page, report, core);
+  await presetChecks(page, report, core);
   await refusalChecks(page, report);
   await forgetChecks(page, report, core);
 }
@@ -212,6 +213,180 @@ async function mapChecks(page, report, core) {
   await page.locator('.project-map > summary').click();
 }
 
+/**
+ * The launch presets on a project row — P4-T1, SPEC §5.6.
+ *
+ * The hops no unit test can see: a FOURTH request goes out after the list, four presets appear for
+ * a folder nobody saved anything for, and pressing one produces a `POST /sessions` whose `cwd` is
+ * the project — the field core parsed and dropped from P2-T2 until this task.
+ *
+ * The check that would break first if somebody "tidied" the panel is the geometry one at the end.
+ * `.project` is a two-column grid and its own `forget` button sits in column 2 spanning every row;
+ * the preset editor is a grid of its own with buttons in it, so the rule that places that button is
+ * scoped to a DIRECT child. Written as a descendant selector it also claims the editor's start
+ * button and spans it down the whole editor. A check that read a class name would pass either way.
+ */
+async function presetChecks(page, report, core) {
+  report.group('Presets — the named ways to start a session (P4-T1)');
+
+  const asked = await waitFor(() =>
+    core.requests.some((request) => request.path === '/projects/presets'),
+  );
+  report.check('the deck asks core for the presets after the list', asked);
+
+  const section = page.locator('section.presets');
+  const drawn = await waitFor(async () => (await section.locator('.preset-chip').count()) === 4);
+  report.check('an imported folder has four presets before anything is saved', drawn);
+
+  const names = await section.locator('.preset-chip').allTextContents();
+  // Four, not five: `claude-isg-agents` opens the agents browser and starts nothing, so it has no
+  // preset (contracts/launch-preset.ts). Ordered by name, which is core's `byProjectThenName`.
+  report.check(
+    'they are the four profile functions that can start a session',
+    names.join(' ') === '365 isg orchestrator ticket',
+    names.join(' '),
+  );
+  report.check(
+    'nothing is open until one is pressed',
+    (await section.locator('.preset-editor').count()) === 0,
+  );
+
+  await presetStartChecks(page, report, core, section);
+  await presetSaveChecks(page, report, core, section);
+  await presetGeometryChecks(page, report, section);
+}
+
+/** Pressing `ticket`, typing the id, and watching what actually leaves the page. */
+async function presetStartChecks(page, report, core, section) {
+  await section.locator('.preset-chip', { hasText: 'ticket' }).click();
+  const opened = await waitFor(async () => (await section.locator('.preset-editor').count()) === 1);
+  report.check('pressing a preset opens one editor', opened);
+
+  report.check(
+    'the ticket preset has nothing to plan yet, so it cannot start',
+    (await page.inputValue('.preset-prompt')) === '' &&
+      (await section.locator('.preset-start').isDisabled()),
+  );
+
+  await page.fill('.preset-session-name', 'xweb-2019');
+  const prompt = await page.inputValue('.preset-prompt');
+  // The four sentences are the model routing, not politeness: `claude-isg-ticket` pins
+  // `opusplan[1m]`, so "enter plan mode first" is what puts the planning turn on Fable 5.1.
+  report.check(
+    'typing the ticket id writes the plan-first prompt, upper-cased',
+    prompt.startsWith('Enter plan mode first (EnterPlanMode)') && prompt.includes('XWEB-2019'),
+    prompt.slice(0, 60),
+  );
+  report.check(
+    'and the start button becomes pressable',
+    !(await section.locator('.preset-start').isDisabled()),
+  );
+
+  const before = core.launches.length;
+  await section.locator('.preset-start').click();
+  const started = await waitFor(() => core.launches.length === before + 1);
+  report.check('pressing start reaches core through the rewrite', started);
+
+  const body = core.launches.at(-1) ?? {};
+  // The field this task made real. `LaunchRequest` has carried a cwd since P2-T2 and nothing
+  // passed it to the process, so every session started from the deck began in core's directory.
+  report.check(
+    'the launch carries the project folder, which was parsed and dropped before this task',
+    body.cwd === PROJECT,
+    String(body.cwd),
+  );
+  report.check(
+    'it sends the computed prompt rather than anything stored',
+    typeof body.prompt === 'string' && body.prompt.includes('XWEB-2019'),
+  );
+  report.check(
+    'on the subscription the profile function exports, named by the ticket',
+    body.subscription === 'isg' && body.name === 'xweb-2019',
+    `${String(body.subscription)} - ${String(body.name)}`,
+  );
+}
+
+/** Saving what is in the boxes, and taking it away again. */
+async function presetSaveChecks(page, report, core, section) {
+  report.check(
+    'a built-in offers no forget — there is no row to remove',
+    (await section.locator('.preset-forget').count()) === 0,
+  );
+
+  await page.fill('.preset-save-name', 'morning triage');
+  await page.fill('.preset-group', 'morning');
+  await section.locator('.preset-save').click();
+
+  const saved = await waitFor(() => core.presets.size === 1);
+  report.check('saving reaches core', saved);
+  const held = [...core.presets.values()][0] ?? {};
+  report.check(
+    'with the id derived from the name, and the group P6-T4 will launch by',
+    held.id === 'morning-triage' && held.group === 'morning',
+    `${String(held.id)} - ${String(held.group)}`,
+  );
+  report.check(
+    'and the folder it was filed under, from an empty box meaning the project root',
+    held.cwd === PROJECT,
+    String(held.cwd),
+  );
+
+  const five = await waitFor(async () => (await section.locator('.preset-chip').count()) === 5);
+  report.check('the saved preset appears beside the four built-ins', five);
+
+  // Found by running it: a saved preset that SHADOWS a built-in is the same word on the same chip,
+  // so until you open one there is nothing to tell them apart. The title is that one thing.
+  const titles = await section
+    .locator('.preset-chip')
+    .evaluateAll((chips) => chips.map((chip) => chip.title));
+  report.check(
+    'a saved preset says so, and every chip says which function and folder it means',
+    titles.filter((title) => title.startsWith('saved · ')).length === 1 &&
+      titles.every((title) => title.includes('claude-') && title.includes('project root')),
+    titles.join(' | '),
+  );
+
+  await section.locator('.preset-chip', { hasText: 'morning triage' }).click();
+  const offers = await waitFor(async () => (await section.locator('.preset-forget').count()) === 1);
+  report.check('a saved preset offers forget', offers);
+
+  await section.locator('.preset-forget').click();
+  const back = await waitFor(async () => (await section.locator('.preset-chip').count()) === 4);
+  report.check('forgetting it leaves the four built-ins and removes the row at core', back);
+  report.check('core holds no saved preset afterwards', core.presets.size === 0);
+}
+
+/**
+ * Where the boxes actually land — the half a class-name assertion cannot see.
+ *
+ * Two facts, both of which a CSS change can break silently, and **both have been watched fail**
+ * (RESEARCH.md G.29): dropping `grid-column: 1` from `.presets` moves the section into the forget
+ * button's column and the first check reports `327 <= 82`; widening `.project > button` to a
+ * descendant selector moves the start button to the editor's first row and the second reports
+ * `start y 212 vs name y 263`. A third check — that the button is one control tall — was written
+ * and then deleted, because neither sabotage moved it: it read as a guard and was not one.
+ */
+async function presetGeometryChecks(page, report, section) {
+  await section.locator('.preset-chip', { hasText: 'ticket' }).click();
+  await waitFor(async () => (await section.locator('.preset-editor').count()) === 1);
+
+  const presets = await section.boundingBox();
+  const rowForget = await page.locator('.project > button').boundingBox();
+  report.check(
+    'the presets stay in the row’s first column, clear of the forget button',
+    presets.x + presets.width <= rowForget.x + 1,
+    `${String(Math.round(presets.x + presets.width))} <= ${String(Math.round(rowForget.x))}`,
+  );
+
+  const name = await section.locator('.preset-session-name').boundingBox();
+  const start = await section.locator('.preset-start').boundingBox();
+  report.check(
+    'the start button sits beside the name box, on its row',
+    start.x >= name.x + name.width - 1 && Math.abs(start.y - name.y) < name.height,
+    `start y ${String(Math.round(start.y))} vs name y ${String(Math.round(name.y))}`,
+  );
+}
+
 async function refusalChecks(page, report) {
   await page.fill('#project-path', MISSING);
   await page.locator('.project-add button').click();
@@ -234,7 +409,10 @@ async function refusalChecks(page, report) {
 }
 
 async function forgetChecks(page, report, core) {
-  await page.locator('.project button', { hasText: 'forget' }).click();
+  // The DIRECT child. P4-T1 put a `forget` button inside the preset editor as well, and a
+  // descendant selector here would match two elements and fail on strict mode rather than on the
+  // thing being tested.
+  await page.locator('.project > button', { hasText: 'forget' }).click();
 
   const withdrawn = await waitFor(() => core.projects.size === 0);
   report.check('forget reaches core and removes the row there', withdrawn);

@@ -209,16 +209,35 @@ function lifecycleActions(
   };
 }
 
-/** The registry's two, which no other part of the deck touches (P3-T1). */
+/**
+ * The registry's two and the presets' three, which no other part of the deck touches (P3-T1, P4-T1).
+ *
+ * Together in one function because they are one panel's worth of verbs and `deck-view.tsx` has a
+ * line limit it has already been split for twice. `onLaunchPreset` is the odd one: it starts a
+ * session, so it could as well live in `lifecycleActions` — it is here because what makes it
+ * different from the launch form is a PROJECT, and this is the function that knows about those.
+ */
 function projectActions(
   store: DeckStore,
-): Pick<DeckActions, 'onImportProject' | 'onForgetProject'> {
+): Pick<
+  DeckActions,
+  'onImportProject' | 'onForgetProject' | 'onLaunchPreset' | 'onSavePreset' | 'onForgetPreset'
+> {
   return {
     onImportProject: (path: string) => {
       void store.importProject(path);
     },
     onForgetProject: (path: string) => {
       void store.forgetProject(path);
+    },
+    onLaunchPreset: (request) => {
+      void store.launchPreset(request);
+    },
+    onSavePreset: (draft) => {
+      void store.savePreset(draft);
+    },
+    onForgetPreset: (ref) => {
+      void store.forgetPreset(ref);
     },
   };
 }

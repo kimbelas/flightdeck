@@ -30,6 +30,7 @@ import {
   type ImportRefusal,
   type ProjectRecord,
 } from '../../contracts/project.ts';
+import { isUnder } from '../../contracts/windows-path.ts';
 import { ProjectImport } from '../domain/project-import.ts';
 import { ReadPolicy } from '../domain/read-policy.ts';
 import type { Clock } from '../ports/clock.ts';
@@ -179,6 +180,35 @@ export class ProjectRegistry {
     if (!this.held.some((project) => projectKey(project.path) === key)) {
       this.parts.logger.warn('project_root_refused', { refusal: 'not an imported project' });
       return err('not an imported project');
+    }
+    return ok(canonical.path);
+  }
+
+  /**
+   * A DIRECTORY core has been asked to start a session in — P4-T1.
+   *
+   * The third door, and it exists because the first two answer different questions. `resolve` asks
+   * whether core may OPEN a path and refuses a directory outright; `resolveRoot` asks whether a
+   * directory IS an imported project and refuses everything below one. A launch target is neither:
+   * a worktree under `<project>\.claude\worktrees\<name>` is a perfectly good place to start a
+   * session and is not itself imported (P3-T4). Making one of the other two answer this would have
+   * meant loosening it, which is the mistake G.26 and G.28 each cost a live bug to learn.
+   *
+   * Containment, not membership, and canonicalised FIRST — which is the junction defence again: a
+   * folder that is a junction out of the tree resolves to somewhere that is under no root and is
+   * refused (SEC-FS-1). `isUnder` rather than a bare `startsWith`, so `…pp-next-backup` is not
+   * read as being inside `…pp-next`.
+   *
+   * @returns the directory to start in, or why it may not be started in.
+   */
+  public async resolveDirectory(path: string): Promise<Result<string, string>> {
+    const canonical = await this.parts.paths.canonicalise(path);
+    if (canonical === undefined) return err('no such path');
+    if (!canonical.isDirectory) return err('not a directory');
+    const key = projectKey(canonical.path);
+    if (!this.held.some((project) => isUnder(key, projectKey(project.path)))) {
+      this.parts.logger.warn('project_directory_refused', { refusal: 'outside every project' });
+      return err('outside every imported project');
     }
     return ok(canonical.path);
   }

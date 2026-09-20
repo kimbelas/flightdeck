@@ -152,3 +152,22 @@ export const CORE_PROJECT_STATUS_PATH = `${CORE_PROJECTS_PATH}/status`;
  * nothing moves one, so the deck may ask whenever it draws the panel.
  */
 export const CORE_PROJECT_MAP_PATH = `${CORE_PROJECTS_PATH}/map`;
+
+/**
+ * The named ways to start a session in each imported folder — `GET` to read, `POST` to save one.
+ *
+ * A fourth project route, and the cheapest of the four: it opens nothing and spawns nothing. The
+ * list is the registry's four built-ins per folder merged with whatever the owner saved
+ * (`PresetBook`), so it moves only when somebody imports, forgets or saves — which is why it is a
+ * request and not a stream frame, exactly as the registry itself is.
+ */
+export const CORE_PRESETS_PATH = `${CORE_PROJECTS_PATH}/presets`;
+
+/**
+ * Removing one saved preset — `POST`, at its own literal path.
+ *
+ * Spelled here rather than composed at the call site, for `CORE_PROJECT_FORGET_PATH`'s reason: the
+ * deck and `ForgetPresetRoute` must not be able to drift apart. A BUILT-IN preset has no row and
+ * cannot be forgotten; forgetting a saved one brings the built-in it shadowed back.
+ */
+export const CORE_PRESET_FORGET_PATH = `${CORE_PRESETS_PATH}/forget`;

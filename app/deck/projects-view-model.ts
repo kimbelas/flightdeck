@@ -16,10 +16,12 @@
 // naming: a repository with nothing in any of the four counts says so out loud rather than
 // rendering an empty space that reads as "not loaded yet".
 import type { GitStatus } from '../../contracts/git-status.ts';
+import type { LaunchPreset, PresetRefusal } from '../../contracts/launch-preset.ts';
 import type { ProjectStatus, StackLabel } from '../../contracts/project-status.ts';
 import type { ImportRefusal, ProjectRecord } from '../../contracts/project.ts';
 import { projectKey } from '../../contracts/project.ts';
 import type { WorkflowMap } from '../../contracts/workflow-map.ts';
+import { PresetsViewModel } from './presets-view-model.ts';
 import { WorkflowMapViewModel } from './workflow-map-view-model.ts';
 
 /**
@@ -63,6 +65,33 @@ export interface ProjectLine {
    * the panel has to keep aligned with this one by key.
    */
   readonly map: WorkflowMapViewModel;
+  /**
+   * The named ways to start a session in this folder — P4-T1.
+   *
+   * Nested for `map`'s reason and with the same always-here rule: a project with no presets yet is
+   * one whose list has not arrived, and the panel draws no section for it. Every imported folder
+   * has four the moment core answers, because they are computed rather than seeded
+   * (`PresetCatalogue`).
+   */
+  readonly presets: PresetsViewModel;
+}
+
+/**
+ * What the panel is built from — P4-T1 turned four positional parameters into one object.
+ *
+ * Six of them would have been three too many (`max-params` is 4, and the rule is there because
+ * `new ProjectsViewModel(a, b, c, d, e, f)` is unreadable at the call site). The three readings are
+ * optional because each arrives on its own route with its own cost and a row draws with whichever
+ * of them has come back; `refusal` is required and nullable because "no refusal" is a state the
+ * panel renders differently from "not asked".
+ */
+export interface ProjectsInput {
+  readonly projects: readonly ProjectRecord[];
+  readonly refusal: ImportRefusal | undefined;
+  readonly statuses?: Readonly<Record<string, ProjectStatus>>;
+  readonly maps?: Readonly<Record<string, WorkflowMap>>;
+  readonly presets?: readonly LaunchPreset[];
+  readonly presetRefusal?: PresetRefusal | undefined;
 }
 
 /** What a repository with nothing outstanding says. Named, because blank would read as unread. */
@@ -86,17 +115,16 @@ export class ProjectsViewModel {
   private readonly refusal: ImportRefusal | undefined;
   private readonly statuses: Readonly<Record<string, ProjectStatus>>;
   private readonly maps: Readonly<Record<string, WorkflowMap>>;
+  private readonly presets: readonly LaunchPreset[];
+  private readonly presetRefusal: PresetRefusal | undefined;
 
-  constructor(
-    projects: readonly ProjectRecord[],
-    refusal: ImportRefusal | undefined,
-    statuses: Readonly<Record<string, ProjectStatus>> = {},
-    maps: Readonly<Record<string, WorkflowMap>> = {},
-  ) {
-    this.projects = projects;
-    this.refusal = refusal;
-    this.statuses = statuses;
-    this.maps = maps;
+  constructor(input: ProjectsInput) {
+    this.projects = input.projects;
+    this.refusal = input.refusal;
+    this.statuses = input.statuses ?? {};
+    this.maps = input.maps ?? {};
+    this.presets = input.presets ?? [];
+    this.presetRefusal = input.presetRefusal;
   }
 
   /**
@@ -120,6 +148,7 @@ export class ProjectsViewModel {
         gitSummary: git === undefined ? undefined : summarise(git),
         progress: git?.progress,
         map: new WorkflowMapViewModel(this.maps[key]),
+        presets: new PresetsViewModel(this.presets, project.path, this.presetRefusal),
       };
     });
   }

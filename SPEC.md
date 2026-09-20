@@ -390,16 +390,23 @@ The toast is what actually kills alt-tabbing: you stop *checking*.
   spend today, Claude Code version, core health.
 - **Project groups** (`app-core` + `app-next` + worktrees). **Worktree-aware** launch targets.
 - **Duplicate warning:** same cwd under both subscriptions.
-- **Launch presets** per project: subscription + profile fn + model + agent + effort + opening
-  prompt + name — encodes `claude-isg-ticket` / `claude-isg-orch` and the plan-first ticket prompt
-  from `open-tab.mjs` as one click. **Preset groups** ("morning") launch several (D17).
+- **Launch presets** per project — **built in P4-T1, with three of this line's fields dropped**
+  (D44). A preset is a profile function + folder + session name + opening prompt: the function is
+  both the subscription and the model, so `subscription`, `model`, `agent` and `effort` would be
+  second opinions the command line would contradict (D4). Every imported folder has four the
+  moment it is imported — one per launchable profile function, **four rather than five, because
+  `claude-isg-agents` opens the agents browser and starts nothing** — computed rather than seeded,
+  and a saved preset shadows the built-in whose name it takes. The plan-first ticket prompt from
+  `open-tab.mjs` is one of the four and is COMPUTED from the ticket id rather than stored.
+  **Preset groups** ("morning") are a label on a saved preset; launching one is P6-T4 (D17).
 
 ### 5.7 F7 — One browser, zero terminals
 
 1. **Sessions survive everything** — `--bg`; the daemon retires idle ones but keeps the
    conversation; resume is one click.
-2. **The launcher covers every way you start Claude today** — all five profile functions, every
-   imported project, every worktree, forced naming (no more `development-63`).
+2. **The launcher covers every way you start Claude today** — the four profile functions that can
+   START a session (the fifth, `claude-isg-agents`, is the agents browser — D44), every imported
+   project, every worktree, forced naming (no more `development-63`).
 3. **A plain PowerShell pane** in the same grid for `git`, `npm`, `pnpm` — or the goal fails at the
    first `git status`.
 4. **Pop-out to Windows Terminal** as a deliberate escape hatch, exclusivity-aware.

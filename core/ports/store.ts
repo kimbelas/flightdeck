@@ -26,6 +26,7 @@
 // the next reader might miss. That is a different kind of state, and it is admitted here rather
 // than smuggled in as an event whose absence somebody has to compute.
 import type { AuditRow, DraftAuditRow } from '../../contracts/audit-row.ts';
+import type { LaunchPreset } from '../../contracts/launch-preset.ts';
 import type { DraftEvent, FdEvent } from '../../contracts/fd-event.ts';
 import type { ProjectRecord } from '../../contracts/project.ts';
 import type { DraftVitalsSnapshot, VitalsSnapshot } from '../../contracts/vitals-snapshot.ts';
@@ -84,11 +85,47 @@ export interface Store {
   projects(): readonly ProjectRecord[];
 
   /**
-   * Removes one project by path, canonical or not.
+   * Removes one project by path, canonical or not, **and every preset filed under it**.
    *
-   * @returns whether a row was actually removed, so the caller can tell "withdrawn" from "was
-   * never there" — they are different audit rows and different things to say in the deck.
+   * The cascade is here rather than in `ProjectRegistry` because it is one storage concern and
+   * because the alternative is a caller that has to remember: a preset names a folder to start a
+   * session in, and a folder that is no longer imported is one core may not read (SEC-FS-1). An
+   * orphaned launch button is worse than an absent one.
+   *
+   * @returns whether a PROJECT row was actually removed, so the caller can tell "withdrawn" from
+   * "was never there" — they are different audit rows and different things to say in the deck.
+   * Presets going with it does not change that answer.
    * @throws as `rememberProject`.
    */
   forgetProject(path: string): boolean;
+
+  /**
+   * Records one launch preset, keyed by `(projectKey, id)` — P4-T1.
+   *
+   * Idempotent by construction, exactly as `rememberProject` is: the id is derived from the name
+   * (`presetId`), so saving `ticket` twice replaces the row rather than adding a second one — and
+   * saving one called `ticket` is how the built-in of that name is shadowed.
+   *
+   * @returns the stored record, read back rather than echoed.
+   * @throws if the store cannot be written.
+   */
+  savePreset(preset: LaunchPreset): LaunchPreset;
+
+  /**
+   * Every SAVED preset, across every project, ordered by project then name.
+   *
+   * The built-ins are not in here and never will be: they are computed from the project and the
+   * four profile functions on every request (`PresetCatalogue`), so nothing is seeded into the
+   * owner's database when a folder is imported. Every row this answers with has `builtIn: false`.
+   */
+  savedPresets(): readonly LaunchPreset[];
+
+  /**
+   * Removes one saved preset. A built-in cannot be removed — there is no row to remove.
+   *
+   * @param projectKeyValue `projectKey(path)`, already canonical.
+   * @returns whether a row was removed.
+   * @throws as `savePreset`.
+   */
+  forgetPreset(projectKeyValue: string, id: string): boolean;
 }

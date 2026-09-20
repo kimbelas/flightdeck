@@ -37,6 +37,8 @@ export class ExecFileProcessRunner implements ProcessRunner {
       {
         timeout: request.timeoutMs,
         env: { ...request.env },
+        // Absent means "inherit core's", which is what every caller but the launcher wants.
+        cwd: request.cwd,
         // A listing of a dozen sessions is a few KB; this is a backstop, not a budget.
         maxBuffer: 8 * 1024 * 1024,
         windowsHide: true,
