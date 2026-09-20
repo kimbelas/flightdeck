@@ -160,7 +160,15 @@ function buildMapReader(
       },
     }),
     assets: new ClaudeAssetReader({ paths: registry, files }),
-    worktrees: new WorktreeReader({ paths: registry, locator, files, logger: parts.logger }),
+    // Both doors of the same registry: `resolve` for a tree inside a project, `resolveRoot` for
+    // one that IS a project — which a main checkout usually is (P3-T4, G.28).
+    worktrees: new WorktreeReader({
+      paths: registry,
+      roots: registry,
+      locator,
+      files,
+      logger: parts.logger,
+    }),
     files,
     clock: parts.clock,
     logger: parts.logger,

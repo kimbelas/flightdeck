@@ -81,6 +81,7 @@ function build(records: ProjectRecord[]): Harness {
     // folder outside a repository should say.
     worktrees: new WorktreeReader({
       paths,
+      roots: paths,
       locator: new GitDirectoryLocator(paths, files, logger),
       files,
       logger,

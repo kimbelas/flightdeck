@@ -2226,3 +2226,45 @@ an open 15-hook timeline into a scroll strip a few rows tall. Neither suite can 
 assert on text content, which is present either way. The cap now lifts to `60vh` only while
 something is open (`.project-list:has(details[open])`), so the closed panel and the launcher
 beneath it are exactly where they were.
+
+### G.28 Every main checkout vanished from the worktree row, past 1 691 green tests (P3-T4, 2026-09-20)
+
+`WorktreeReader` shipped its first version screening every tree through `ProjectPaths.resolve`.
+The unit suite was green, the 120 smoke checks were green, and running it against the three
+imported projects answered:
+
+```
+pdf-editor -> []
+xpert-new  -> [{"id":"dms-rework", ... ,"isMain":false}]
+claude-kit -> []
+```
+
+One linked worktree and not a single main checkout. The core log had the reason three times over:
+
+```
+{"level":"warn","event":"worktree_main_refused","refusal":"the project directory itself is not a file"}
+```
+
+`ProjectRegistry.resolve` answers whether a FILE may be opened and refuses a project root
+outright; `resolveRoot` is the door for "is this directory still an imported project". A main
+checkout is almost always an imported project, so it needed the second door and was being asked
+the first. A linked worktree under `.claude\worktrees` is a directory INSIDE a project, so it
+needed the first and got it — which is why exactly the rows that worked, worked, and made the
+output look like a partial success rather than a broken screen.
+
+**This is the third time the same distinction has cost a task.** G.26 was an hour on it in P3-T2
+and G.27 was a variant of it in P3-T3. What let it through a third time was not the source: it was
+`FakeProjectPaths`, whose `resolve` happily returned a project root. Every test that mattered
+asserted against a fake that was LOOSER than the thing it stood for, so the assertions were true
+and the behaviour was wrong.
+
+The fix is in two places and only one of them is the reader. `WorktreeReader.treePath` now asks
+`resolveRoot` first and `resolve` second, so a tree is readable if it is an imported project or
+lies inside one. And `FakeProjectPaths.resolve` now refuses an exact root with the registry's own
+wording, and grew the `resolveRoot` the registry has. Reverting the reader alone now fails the
+suite, which is the property the previous two entries asked for and did not get.
+
+**The lesson is narrower than "run it", which §G already says.** It is that a fake looser than its
+subject converts a test suite into a rubber stamp, and the cheapest moment to notice is when a
+fake and a real implementation disagree about a refusal. Three tasks in a row have been caught by
+the same pair of methods; the fake now tells them apart.

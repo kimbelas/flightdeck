@@ -1739,10 +1739,19 @@ phases:
           falling back to the common directory's mtime, which every commit moves and which would
           tie a thirty-read recompute to how often the owner commits. The stated cost is that a
           repository's first worktree appears within the 300 s TTL and every later one at once.
-          One bug caught by its own test: `lastSegment('C:\')` answered `'C:'`, a drive reference
-          rather than a name, so a project imported at a drive root would have been a worktree
-          called `C:`. `parentDirectory` already made that special case in the other direction,
-          which is why both halves of the rule now live in one file.
+          Two bugs. The cheap one was caught by its own test: `lastSegment` of a drive root
+          answered `C:`, a drive reference rather than a name, so a project imported at a drive
+          root would have been a worktree called `C:` — `parentDirectory` already made that special
+          case in the other direction, which is why both halves now live in one file.
+          The expensive one is RESEARCH.md G.28 and only running it found it. Screened through
+          `resolve` alone, every MAIN checkout on the machine was refused with `the project
+          directory itself is not a file`, so the live route answered one linked worktree and
+          nothing else while 1 691 tests and 120 smoke checks stayed green. `resolve` is the door
+          for a file inside a project and `resolveRoot` is the door for a directory that IS one; a
+          tree can be either, so it is screened through both. The third task in a row to pay for
+          that distinction (G.26, G.27) — so the fix is also in `FakeProjectPaths`, which was
+          LOOSER than the registry it stands for and now refuses a root exactly as it does.
+          Reverting the reader alone now fails the suite.
         security: [SEC-FS-1, SEC-PROC-5]
       - id: P3-T5
         title: Observed behaviour — aggregate both subscriptions' transcripts per slug (sessions, cost, tools, skills, files, compactions)

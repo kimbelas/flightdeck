@@ -29,10 +29,32 @@ export class FakeProjectPaths implements ProjectPaths {
     return this;
   }
 
+  /**
+   * The registry's OTHER door: is this directory still an imported project (P3-T4).
+   *
+   * Membership, not containment — `ProjectRegistry.resolveRoot`'s rule, and the one a fake must
+   * not blur. G.26 cost an hour to the same distinction and G.28 shipped past a green suite on it.
+   */
+  public resolveRoot(path: string): Promise<Result<string, string>> {
+    this.asked.push(path);
+    const resolved = this.links.get(canonicalWindowsPath(path)) ?? path;
+    if (!this.roots.includes(canonicalWindowsPath(resolved))) {
+      return Promise.resolve(err('not an imported project'));
+    }
+    return Promise.resolve(ok(resolved.replaceAll('/', WINDOWS_SEPARATOR)));
+  }
+
   public resolve(path: string): Promise<Result<string, string>> {
     this.asked.push(path);
     const resolved = this.links.get(canonicalWindowsPath(path)) ?? path;
     const candidate = canonicalWindowsPath(resolved);
+    // The real registry refuses a project root here — `resolve` answers whether a FILE may be
+    // opened — and a fake that allowed it is what let G.28 ship: every main checkout on the
+    // machine vanished behind `the project directory itself is not a file` while 1 691 tests
+    // stayed green.
+    if (this.roots.includes(candidate)) {
+      return Promise.resolve(err('the project directory itself is not a file'));
+    }
     if (!this.roots.some((root) => isUnder(candidate, root))) {
       return Promise.resolve(err('outside the config directories and every project'));
     }

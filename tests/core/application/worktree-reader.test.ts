@@ -48,6 +48,7 @@ function build(roots: readonly string[]): Harness {
   for (const root of roots) paths.root(root);
   const reader = new WorktreeReader({
     paths,
+    roots: paths,
     locator: new GitDirectoryLocator(paths, files, logger),
     files,
     logger,
@@ -93,6 +94,16 @@ describe('a repository with only a main checkout', () => {
 
   it('signs on the administrative directory, so adding a first worktree moves it', async () => {
     expect(await harness.reader.signature(MAIN)).toBe(String(ADMIN_MTIME));
+  });
+
+  it('finds the main checkout through the ROOT door, not the file one (G.28)', async () => {
+    // `resolve` answers whether a FILE may be opened and refuses a project root outright. Shipped
+    // asking only that, every main checkout on the machine vanished behind `the project directory
+    // itself is not a file` — with 1 691 tests green, because the fake was looser than the
+    // registry. It is not any more, so this asserts the door rather than only the outcome.
+    await harness.reader.read(MAIN);
+
+    expect(harness.logger.logged('worktree_main_refused')).toBe(false);
   });
 });
 

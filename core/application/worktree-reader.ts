@@ -18,11 +18,20 @@
 // nowhere else, so a git directory whose parent is named `worktrees` IS a linked worktree's, and
 // its grandparent is the common one. Two string operations against two spawns.
 //
-// **Every path goes back through `resolve`.** The `gitdir` files name folders this class has never
-// screened and that the imported repository's own contents chose — exactly the position
+// **Every path goes back through the registry.** The `gitdir` files name folders this class has
+// never screened and that the imported repository's own contents chose — exactly the position
 // `GitDirectoryLocator.followPointer` is in, and the same answer: compose, then re-resolve
 // (SEC-FS-1). A tree outside every imported root is dropped rather than listed, because the map is
 // a catalogue of places a session can be started and core cannot start one where it may not read.
+//
+// **A tree is screened through BOTH doors, and that is not belt-and-braces.** `resolve` answers
+// whether a file may be opened and refuses a project root outright; `resolveRoot` answers whether
+// a directory is still an imported project. A tree can be either — the main checkout is usually an
+// imported project (`resolveRoot`), and a worktree under `.claude\worktrees` is a directory inside
+// one (`resolve`) — so asking only one of them drops half the real cases. This was shipped asking
+// only `resolve`, and every main checkout on the machine vanished behind
+// `the project directory itself is not a file`: G.26's distinction, met for the third time
+// (RESEARCH.md G.28).
 //
 // **A dropped tree is logged, not reported.** `git worktree list` calls a registration whose tree
 // is gone "prunable" and still prints it. This does not: a stale administrative directory is the
@@ -38,6 +47,7 @@ import {
 } from '../../contracts/worktree.ts';
 import type { Logger } from '../ports/logger.ts';
 import type { ProjectFiles } from '../ports/project-files.ts';
+import type { Result } from '../shared/result.ts';
 import type { GitDirectoryLocator, ProjectPaths } from './git-directory-locator.ts';
 
 /**
@@ -56,8 +66,19 @@ const MAX_ADMIN_BYTES = 4096;
 const GITDIR_FILE = 'gitdir';
 const HEAD_FILE = 'HEAD';
 
+/**
+ * The registry's OTHER door, narrowed to the one method.
+ *
+ * `ProjectPaths.resolve` cannot answer for a directory that is itself an imported project, which
+ * is what a main checkout usually is. See the header on why both are needed.
+ */
+export interface ProjectRoots {
+  resolveRoot(path: string): Promise<Result<string, string>>;
+}
+
 export interface WorktreeParts {
   readonly paths: ProjectPaths;
+  readonly roots: ProjectRoots;
   readonly locator: GitDirectoryLocator;
   readonly files: ProjectFiles;
   readonly logger: Logger;
@@ -132,17 +153,31 @@ export class WorktreeReader {
    * place this build may start a session.
    */
   private async mainTree(root: string, common: string): Promise<Worktree | undefined> {
-    const resolved = await this.parts.paths.resolve(root);
-    if (!resolved.ok) {
-      this.parts.logger.warn('worktree_main_refused', { refusal: resolved.error });
+    const path = await this.treePath(root);
+    if (path === undefined) {
+      this.parts.logger.warn('worktree_main_refused', { root: lastSegment(root) ?? '' });
       return undefined;
     }
     return {
       id: MAIN_TREE_ID,
-      path: resolved.value,
+      path,
       branch: branchOfHead(await this.text(childPath(common, HEAD_FILE))),
       isMain: true,
     };
+  }
+
+  /**
+   * A tree's canonical path, or `undefined` when core may not read it.
+   *
+   * Both doors, root first: a main checkout is usually an imported project, and `resolve` refuses
+   * one outright. See the header — this is G.26's distinction, and asking only one door is the bug
+   * this method exists to stop anybody writing again.
+   */
+  private async treePath(path: string): Promise<string | undefined> {
+    const asRoot = await this.parts.roots.resolveRoot(path);
+    if (asRoot.ok) return asRoot.value;
+    const inside = await this.parts.paths.resolve(path);
+    return inside.ok ? inside.value : undefined;
   }
 
   /** Every registration under `<common>\worktrees`, in the directory's own order. */
@@ -166,17 +201,16 @@ export class WorktreeReader {
     const admin = childPath(worktreesDir, name);
     // `<tree>\.git` — the pointer back, written absolute by `git worktree add`.
     const pointer = firstLine(await this.text(childPath(admin, GITDIR_FILE)));
-    const treePath = pointer === undefined ? undefined : parentDirectory(pointer);
-    if (treePath === undefined) return undefined;
-    const resolved = await this.parts.paths.resolve(treePath);
-    if (!resolved.ok) {
+    const target = pointer === undefined ? undefined : parentDirectory(pointer);
+    const treePath = target === undefined ? undefined : await this.treePath(target);
+    if (treePath === undefined) {
       // Prunable, or outside every imported root. See the header on why neither is listed.
-      this.parts.logger.warn('worktree_dropped', { refusal: resolved.error });
+      this.parts.logger.warn('worktree_dropped', { name });
       return undefined;
     }
     return {
-      id: lastSegment(resolved.value) ?? name,
-      path: resolved.value,
+      id: lastSegment(treePath) ?? name,
+      path: treePath,
       branch: branchOfHead(await this.text(childPath(admin, HEAD_FILE))),
       isMain: false,
     };
