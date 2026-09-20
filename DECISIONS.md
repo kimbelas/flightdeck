@@ -925,3 +925,46 @@ or a convention folder moves the directory's mtime, editing the hooks or the per
 file's, and the TTL covers the one neither can see, which is a description rewritten inside an
 existing `agents/*.md`. Two stats against roughly thirty reads. Nothing it produces is stored: D37's
 line holds, and a workflow map is a reading rather than an observation.
+
+## D39 — Worktrees are read off git's own administrative files, and the port rule is a prohibition (P3-T4)
+
+SPEC §5.1(a)'s table names `git worktree list` for this row, and it is not what P3-T4 runs. The
+trees are read from `<common>\worktrees\<name>\gitdir` and `HEAD` — the files git itself reads to
+answer that command — for the reason `ProjectGitReader` already gives about the in-progress state:
+it is cheaper than a process, and it is what makes the answer worktree-safe, because a spawn only
+ever answers about the directory it ran in. Four projects on an open panel would otherwise be four
+`git` processes to learn something that changes a few times a month.
+
+The same argument settles how a linked worktree is recognised. `lib/tree.mjs` asks git twice
+(`--absolute-git-dir` against `--git-common-dir`) and calls them different a worktree. The fact is
+already on disk: git puts a linked worktree's administrative directory at `<common>\worktrees\<name>`
+and nowhere else, so a git directory whose parent is named `worktrees` is one, and its grandparent
+is the common directory. Two string operations replacing two spawns, and the shape is the one
+`GitDirectoryLocator` was already built to follow from the other end (P3-T2).
+
+**The identity is the tree's directory name, not git's registration name.** They agree until a tree
+is moved, and then `tree.mjs`'s `treeId` — the directory — is the one the owner sees in their shell
+prompt and the one every hook in the reference repository keys its state by. An administrative
+record nobody else reads would be a second vocabulary on screen.
+
+**A tree core may not read is dropped rather than listed.** `git worktree list` prints a
+registration whose tree is gone and calls it prunable. This does not, because the map is a
+catalogue of places a session can be started (P4), and a launch target that cannot be opened is
+worse than an absent row. The refusal is logged, which is the half worth knowing about: outside
+every imported root is SEC-FS-1 working, and prunable is the repository's own housekeeping.
+
+**The 4200/4201 rule is taken as a prohibition and not as a port plan.** `tree.mjs` carries both
+halves — 4200 for main, 4210-4213 for the worktrees, and 4201 blacklisted because a session once
+read that port's 200 as its own app being up and killed the process holding it. Flightdeck does not
+serve these trees and has no business choosing ports for them, so there is nothing here to assign.
+`NEVER_TOUCH_PORTS` lives in `contracts/worktree.ts`, beside the trees it is about, so SEC-PROC-5
+and SPEC §9 R11 have one place to be consulted from rather than a sentence in a document to
+remember.
+
+**The trees are in `WorkflowMap` rather than on `ProjectStatus`,** which keeps D37's line: a
+worktree is a place to start a session and the map is the catalogue of what a session in this
+folder would be. It costs the map's signature one more stat — `mtime(<common>\worktrees)` — and
+that stat is deliberately not a fallback to the common directory's own mtime, which every commit
+moves and which would tie a thirty-read recompute to how often the owner commits. The consequence
+is stated rather than hidden: a repository's FIRST worktree appears within the 300 s TTL, and every
+one after it at once.

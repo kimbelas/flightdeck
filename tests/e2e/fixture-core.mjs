@@ -444,6 +444,14 @@ function workflowMap(project) {
       { folder: 'rules', files: 6 },
       { folder: 'specs', files: 9 },
     ],
+    // P3-T4. Three trees so the panel has all three cases in one row: the main checkout, a
+    // worktree whose branch repeats its name (drawn without the bracket), and one whose branch
+    // differs (drawn with it). Sent linked-first so the smoke proves the deck re-orders.
+    worktrees: [
+      { id: 'XWEB-1853', path: `${project.path}\\..\\XWEB-1853`, branch: 'XWEB-1853' },
+      { id: 'XWEB-1854', path: `${project.path}\\..\\XWEB-1854`, branch: 'feat/rework-the-picker' },
+      { id: 'main', path: project.path, branch: 'feat/smoke', isMain: true },
+    ],
     configured: true,
   };
 }

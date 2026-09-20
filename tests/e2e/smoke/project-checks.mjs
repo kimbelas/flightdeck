@@ -187,12 +187,26 @@ async function mapChecks(page, report, core) {
   );
 
   const names = await page.locator('.map-names .map-badge').allTextContents();
-  // A server's name and transport, never its command line (SEC-FS-2's habit).
+  // A server's name and transport, never its command line (SEC-FS-2's habit). The worktrees lead
+  // because their section is drawn outside `Configured` — P3-T4, a git fact rather than a
+  // `.claude` one.
   report.check(
     'servers, plugins, marketplaces and conventions are drawn as labels',
     names.join(' | ') ===
-      'chrome-devtools (stdio) | context-hygiene@claude-kit | claude-kit | rules 6 | specs 9',
+      'main (feat/smoke) | XWEB-1853 | XWEB-1854 (feat/rework-the-picker) | ' +
+        'chrome-devtools (stdio) | context-hygiene@claude-kit | claude-kit | rules 6 | specs 9',
     names.join(' | '),
+  );
+
+  // P3-T4's three cases in one assertion: main is first however core sent them; a tree whose
+  // branch repeats its name is not drawn twice; and a tree whose branch differs says both — which
+  // includes main, whose branch is the one thing a person standing in a worktree cannot see from
+  // the project row above.
+  const trees = names.slice(0, 3).join(' | ');
+  report.check(
+    'the worktrees are drawn main-first, without repeating a branch that is the id',
+    trees === 'main (feat/smoke) | XWEB-1853 | XWEB-1854 (feat/rework-the-picker)',
+    trees,
   );
 
   await page.locator('.project-map > summary').click();

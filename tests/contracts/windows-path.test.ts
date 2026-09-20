@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   canonicalWindowsPath,
   isUnder,
+  lastSegment,
   parentDirectory,
   WINDOWS_SEPARATOR,
 } from '../../contracts/windows-path.ts';
@@ -79,5 +80,30 @@ describe('parentDirectory', () => {
     let path: string | undefined = '\\\\?\\C:\\Users\\belas\\repo';
     for (let steps = 0; steps < 100 && path !== undefined; steps += 1) path = parentDirectory(path);
     expect(path).toBeUndefined();
+  });
+});
+
+describe('lastSegment', () => {
+  it('answers the folder or file name', () => {
+    expect(lastSegment('C:\\Users\\belas\\repo\\.git')).toBe('.git');
+  });
+
+  it('folds forward slashes, because a `.git` pointer file is written with them', () => {
+    // The one caller that matters reads a path out of a file git wrote, and git writes forward
+    // slashes on Windows — P3-T4, and `GitDirectoryLocator`'s header before it.
+    expect(lastSegment('C:/Users/belas/repo/.git/worktrees')).toBe('worktrees');
+  });
+
+  it('ignores a trailing separator, which is decoration', () => {
+    expect(lastSegment('C:\\Users\\belas\\repo\\')).toBe('repo');
+  });
+
+  it('answers nothing at a drive root', () => {
+    expect(lastSegment('C:\\')).toBeUndefined();
+  });
+
+  it('preserves casing, because the answer is shown to a person', () => {
+    // The worktree id is the name the owner typed when they created the tree (P3-T4).
+    expect(lastSegment('C:\\Users\\belas\\worktrees\\XWEB-1853')).toBe('XWEB-1853');
   });
 });

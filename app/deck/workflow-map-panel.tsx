@@ -36,6 +36,14 @@ export function WorkflowMapPanel({ model, project }: WorkflowMapPanelProps): JSX
         <Summary model={model} />
       </summary>
       <Stack model={model} />
+      {/*
+        Outside `Configured` on purpose (P3-T4): a worktree is a fact about the repository, not
+        about its `.claude`, so a repo that configures nothing and has three checkouts still says
+        so. It is also why it is not folded into the closed summary — that line is the shape of the
+        config, and the P3 gate's second half is that a folder with no `.claude` collapses to one
+        sentence rather than to a row of counts.
+      */}
+      <Names title="worktrees" names={model.worktrees} />
       {model.isConfigured ? <Configured model={model} /> : null}
     </details>
   );

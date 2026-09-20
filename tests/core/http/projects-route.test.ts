@@ -215,6 +215,7 @@ describe('WorkflowMapRoute', () => {
     marketplaces: [],
     permissions: { allow: [], deny: [], ask: [], defaultMode: undefined },
     conventions: [],
+    worktrees: [],
     configured: false,
   };
 
