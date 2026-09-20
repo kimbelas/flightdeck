@@ -48,6 +48,30 @@ export function parseSessionRef(query: Readonly<Record<string, string>>): Sessio
   return { sessionId, shortId, subscription };
 }
 
+/**
+ * The same reference, reached from a JSON body instead of a query string — P4-T2b.
+ *
+ * `parsePtyTarget` and `parseTargetPayload` are the same pair for the same reason: a value that
+ * arrives by two routes needs one rule, and the rule is the shape. `POST /sessions/stop` carries a
+ * ref in its body because a POST does, and it is screened exactly as hard — `shortId` reaches a
+ * command line there rather than a path, which is if anything the stricter case.
+ */
+export function parseSessionRefPayload(value: unknown): SessionRef | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const fields: Readonly<Record<string, unknown>> = Object.fromEntries(Object.entries(value));
+  const query: Record<string, string> = {};
+  for (const [key, name] of [
+    ['sessionId', SESSION_REF_PARAMS.sessionId],
+    ['shortId', SESSION_REF_PARAMS.shortId],
+    ['subscription', SESSION_REF_PARAMS.subscription],
+  ] as const) {
+    const held = fields[key];
+    if (typeof held !== 'string') return undefined;
+    query[name] = held;
+  }
+  return parseSessionRef(query);
+}
+
 /** The query string for one reference, without the `?`. The deck's half of the same agreement. */
 export function sessionRefQuery(ref: SessionRef): string {
   return new URLSearchParams({

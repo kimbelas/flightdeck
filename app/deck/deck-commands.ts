@@ -45,6 +45,7 @@ export interface DeckActions {
   readonly onImportProject: (path: string) => void;
   readonly onForgetProject: (path: string) => void;
   readonly onResume: (row: SessionRowViewModel) => void;
+  readonly onStop: (row: SessionRowViewModel) => void;
 }
 
 export interface CommandTargets extends DeckActions {
@@ -142,31 +143,51 @@ function rowCommands(row: SessionRowViewModel, targets: CommandTargets): readonl
   // The two are mutually exclusive by construction: a row is attachable only while it is live,
   // and resumable only while it is not. Neither is offered for an interactive session, which is
   // permanently neither (SPEC §5.2).
+  return [jump, ...lifecycleCommands(row, targets, hint)];
+}
+
+/**
+ * The verbs one row offers, which is never more than what its state allows.
+ *
+ * A live background row can be opened in a pane and stopped; a stopped one can be resumed; an
+ * interactive one can be neither, permanently (SPEC §5.2). A palette entry that did nothing is
+ * worse than an absent one — the first no-op teaches you not to trust the entries beside it.
+ */
+function lifecycleCommands(
+  row: SessionRowViewModel,
+  targets: CommandTargets,
+  hint: string,
+): readonly DeckCommand[] {
+  const commands: DeckCommand[] = [];
   if (row.canOpenPane) {
-    return [
-      jump,
-      {
-        id: `pane:${row.key}`,
-        label: `Open a pane for ${row.title}`,
-        hint,
-        run: () => {
-          targets.onOpenPane(row);
-        },
+    commands.push({
+      id: `pane:${row.key}`,
+      label: `Open a pane for ${row.title}`,
+      hint,
+      run: () => {
+        targets.onOpenPane(row);
       },
-    ];
+    });
+  }
+  if (row.canStop) {
+    commands.push({
+      id: `stop:${row.key}`,
+      label: `Stop ${row.title}`,
+      hint: `${hint} · keeps the session; resume wakes it`,
+      run: () => {
+        targets.onStop(row);
+      },
+    });
   }
   if (row.canResume) {
-    return [
-      jump,
-      {
-        id: `resume:${row.key}`,
-        label: `Resume ${row.title}`,
-        hint: `${hint} · wakes it under its own id`,
-        run: () => {
-          targets.onResume(row);
-        },
+    commands.push({
+      id: `resume:${row.key}`,
+      label: `Resume ${row.title}`,
+      hint: `${hint} · wakes it under its own id`,
+      run: () => {
+        targets.onResume(row);
       },
-    ];
+    });
   }
-  return [jump];
+  return commands;
 }

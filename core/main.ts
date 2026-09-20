@@ -14,6 +14,7 @@ import { PaneRegistry } from './application/pane-registry.ts';
 import { type Reconciler } from './application/reconciler.ts';
 import { SessionLauncher } from './application/session-launcher.ts';
 import { SessionResumer } from './application/session-resumer.ts';
+import { SessionStopper } from './application/session-stopper.ts';
 import { AuditLog } from './application/audit-log.ts';
 import { StatusReport } from './application/status-report.ts';
 import { type TranscriptReader } from './application/transcript-reader.ts';
@@ -266,6 +267,7 @@ function buildHttp(parts: HttpParts): HttpSide {
         // need to run one (SessionResumer's header says why they are two classes at all).
         launcher: new SessionLauncher(sessionParts),
         resumer: new SessionResumer(sessionParts),
+        stopper: new SessionStopper(sessionParts),
         tickets,
         limiter,
         install,

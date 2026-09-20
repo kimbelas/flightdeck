@@ -168,14 +168,26 @@ function useDeckActions(store: DeckStore, openPane: (pane: OpenPane) => void): D
     void store.refresh();
   }, [store]);
 
-  const onResume = useCallback(
-    (row: SessionRowViewModel) => {
+  return {
+    onOpenShell,
+    onOpenPane,
+    onLaunch,
+    onRefresh,
+    ...lifecycleActions(store),
+    ...projectActions(store),
+  };
+}
+
+/** Start, stop, wake — the three that change what a session IS rather than what is on screen. */
+function lifecycleActions(store: DeckStore): Pick<DeckActions, 'onResume' | 'onStop'> {
+  return {
+    onResume: (row: SessionRowViewModel) => {
       void store.resume(row.ref.subscription, row.ref.sessionId);
     },
-    [store],
-  );
-
-  return { onOpenShell, onOpenPane, onLaunch, onRefresh, onResume, ...projectActions(store) };
+    onStop: (row: SessionRowViewModel) => {
+      void store.stop(row.ref);
+    },
+  };
 }
 
 /** The registry's two, which no other part of the deck touches (P3-T1). */

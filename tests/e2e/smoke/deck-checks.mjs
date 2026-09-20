@@ -19,6 +19,48 @@ export async function deckChecks(page, report, core) {
   await streamChecks(page, report, core);
   await launchChecks(page, report, core);
   await resumeChecks(page, report, core);
+  await stopChecks(page, report, core);
+}
+
+/**
+ * The other half of the lifecycle - P4-T2b.
+ *
+ * `fixture-alpha` is a live background row, so it is the one that can be stopped; the stopped row
+ * offers resume instead and the interactive rows offer neither. What matters on the wire is that
+ * BOTH ids go over: `stop` takes the SHORT one (RESEARCH.md F.2.8b) and the deck does not derive
+ * it, so a row that sent only the uuid is a row core refuses.
+ */
+async function stopChecks(page, report, core) {
+  const live = page.locator('article.row', { hasText: 'fixture-alpha' });
+  const button = live.locator('button', { hasText: 'stop' });
+  report.check(
+    'a live background row offers stop beside its pane button',
+    (await button.count()) === 1 &&
+      (await live.locator('button', { hasText: 'open pane' }).count()) === 1,
+  );
+
+  const stopped = page.locator('article.row', { hasText: 'fixture-foxtrot' });
+  const interactive = page.locator('article.row', { hasText: 'fixture-delta' });
+  report.check(
+    'and neither a stopped nor an interactive row does',
+    (await stopped.locator('button', { hasText: 'stop' }).count()) === 0 &&
+      (await interactive.locator('button', { hasText: 'stop' }).count()) === 0,
+  );
+
+  const before = core.stops.length;
+  await button.click();
+  const sent = await waitFor(async () => core.stops.length > before);
+  const last = core.stops.at(-1);
+  report.check('clicking it reaches core', sent, JSON.stringify(last ?? {}));
+  report.check(
+    'with BOTH ids - the short one is what the CLI takes (F.2.8b)',
+    last?.shortId === 'a1b2c3d4' && last.sessionId === 'a1b2c3d4-0000-4000-8000-000000000001',
+    JSON.stringify(last ?? {}),
+  );
+  report.check(
+    'and no error banner for a stop core accepted',
+    (await page.locator('.banner-bad').count()) === 0,
+  );
 }
 
 /**
