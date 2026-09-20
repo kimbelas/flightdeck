@@ -860,6 +860,15 @@ button.ghost {
   font-size: 12px;
 }
 
+/* P5a-T8. A pasted image's progress or refusal. Its own line rather than .pane-detail's, because
+   that one belongs to the pane's STATUS and a paste must not overwrite "evicted". */
+.pane-note {
+  margin: 0;
+  padding: 4px 8px;
+  color: var(--dim);
+  font-size: 12px;
+}
+
 /* The terminal host must have a real size for fit() to measure — see .pane above. */
 .pane-host {
   flex: 1;

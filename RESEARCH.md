@@ -2448,3 +2448,70 @@ fallback; `app/spike/xterm/` and `scripts/xterm-spike-cli.ts` go with them, beca
 still activates the addon would still report `renderer: 'webgl'` over an unpainted canvas. F.5.2's
 numbers (40 / 76 contexts) and F.5.3's 3036 ms are kept — they are measurements of Chromium and of
 the addon, and they stay true whether or not this app uses them.
+
+### G.31 A pane swallowed the first two characters of a paste, and xterm was right (P5a-T8, 2026-09-20)
+
+The new smoke check for the image paste asserted that the path typed into the pane was quoted. It
+failed, and what the terminal had painted was:
+
+```
+fixture shell - echo only, no PTY was spawned$ firstjjkk//??:\Users\Ada Lovelace\...\paste-...png"
+```
+
+The path is there, the closing quote is there, and `"C` - the opening quote and the drive letter -
+is not. **Exactly two characters, from the front, every run.** That is the shape of a real defect:
+G.5's lost first keystroke was the same story and turned out to be a genuine dropped frame.
+
+**It was not dropped.** The fixture now records every `input` frame the PTY socket receives, and it
+had received the whole thing, opening quote included, trailing space and all.
+
+So the wire was correct and the *terminal* ate two bytes. The cause is the check that ran before
+it. `escapeChecks` presses Esc; the fixture echoes input verbatim, so a bare `ESC` comes back as
+output; and xterm's parser then sits in the escape state waiting for a sequence that never
+arrives. The next two characters written to that terminal are consumed as its intermediate and
+final bytes - and `ESC " C` is a real one (DECSCL's shape). The terminal did exactly what a
+terminal does.
+
+**Measured rather than reasoned:** moving `pasteChecks` ahead of `escapeChecks` and changing
+nothing else, the same run paints `??"C:\Users\Ada Lovelace\...` - quote, drive letter and all.
+That is the whole diagnosis, and it took one reordering to get.
+
+Two things follow, and the first is the reason this is written down:
+
+- **A rendered-text assertion that runs after a bare Esc is measuring xterm's parser state**, not
+  the feature. The order in `paneChecks` is now load-bearing and says so where it is.
+- **The quoting assertion moved off the screen and onto the wire.** `core.typed` is what the pane
+  SENT, which is the question that check was really asking; the rendering is covered separately by
+  the check that waits for the file name. Screen text was the wrong instrument for it twice over -
+  xterm also pads every row div to the terminal's width, so a path that wraps carries runs of
+  spaces inside it, and `includes('"C:')` would have been fragile even with the parser idle.
+
+Left alone deliberately: the fixture still echoes a bare Esc, because that is what makes
+`escapeChecks` a test of anything. A fixture that filtered control bytes would be a fixture that
+could not be typed at.
+
+### G.32 `preventDefault` does not stop an xterm paste, and the check for it passed anyway (P5a-T8, 2026-09-20)
+
+The image-paste handler must take over a paste that carries an image and leave a text paste alone,
+so the smoke asserts both. The second assertion was verified the way G.29 says to — by putting the
+bug back — and it did not fail.
+
+**The sabotage:** `preventDefault()` on every paste, image or not. **The result:** every text paste
+still reached the terminal and the check still passed.
+
+xterm's paste handler does not wait for the browser to insert anything. It reads `clipboardData`
+off the event itself and feeds the terminal directly, so `preventDefault` — which cancels only the
+browser's own default action — changes nothing it does. **`stopPropagation` in the capture phase
+is the call that keeps a paste away from it**, and the handler had both all along, which is why
+the feature worked and the check looked convincing.
+
+Re-run with `stopPropagation()` added to the sabotage, the check fails, and so do three others
+that paste text to get their input in. That is the version worth having.
+
+Both calls stay in the handler and the code now says which does what: `stopPropagation` stops
+xterm, `preventDefault` stops the browser from inserting a dropped file's NAME into the textarea.
+Two calls, two different defaults, and only one of them was under test.
+
+The general form, which is the third time this file has recorded it: **a sabotage is only evidence
+if it removes the mechanism the check depends on.** Deleting a line that was never load-bearing
+proves the check is insensitive to that line and nothing more.

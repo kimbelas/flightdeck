@@ -2209,7 +2209,81 @@ phases:
         security: [SEC-FS-3]
       - id: P5a-T8
         title: Scrollback cap and image-paste handler
-        status: todo
+        status: done
+        done_on: 2026-09-20
+        security: [SEC-FS-5, SEC-HTTP-4, SEC-HTTP-6, SEC-WS-3]
+        deliverables:
+          [
+            contracts/pasted-image.ts,
+            contracts/pasted-image-file.ts,
+            core/domain/pasted-image.ts,
+            core/application/paste-inbox.ts,
+            core/ports/pasted-image-store.ts,
+            core/adapters/node/fs-pasted-image-store.ts,
+            core/http/paste-route.ts,
+            core/http/limits.ts,
+            app/panes/terminal-pane.ts,
+            app/panes/image-paste.ts,
+            app/panes/paste-upload.ts,
+            app/panes/pane-socket.ts,
+            app/deck/pane-view.tsx,
+            tests/contracts/pasted-image.test.ts,
+            tests/core/domain/pasted-image.test.ts,
+            tests/core/application/paste-inbox.test.ts,
+            tests/core/http/paste-route.test.ts,
+            tests/core/adapters/fs-pasted-image-store.test.ts,
+            tests/e2e/smoke/pane-checks.mjs,
+            SECURITY.md SEC-FS-5,
+            RESEARCH.md G.31,
+            RESEARCH.md G.32,
+          ]
+        notes: >-
+          Two halves, and only one of them is a line of code.
+          SCROLLBACK: `scrollback: 5_000`, SPEC §5.3's number. xterm's default is 1 000, which a
+          single `npm install` clears. The cap is about where history BELONGS rather than about
+          memory — the transcript is the full record and is searchable (§5.8), so a pane holds the
+          last few screens instead of nine private archives.
+          IMAGE PASTE is SPEC §3.2 item 2, and its "~50 lines" is the estimate that was wrong,
+          because the interesting part is not the handler. The page cannot write a file, so core
+          grew its FIRST route that turns a browser byte stream into a file on disk — SEC-FS-5,
+          written for this task, is the row that says how narrow that is. Every degree of freedom
+          is taken off it: core names the file (timestamp, counter, extension chosen from the
+          kind), so no character from the wire reaches a name that is about to be TYPED INTO A LIVE
+          SESSION; the kind is checked against the first bytes rather than believed, so a `.png`
+          there is a PNG; 6 MB decoded, 8 MB on the wire, newest 64 kept, trimmed on write,
+          temp-then-rename. `paste` is a third row in limits.ts because neither existing budget
+          fits: `control`'s 64 KB refuses a screenshot and `ingest`'s 600/min is a budget for a
+          machine rather than for Ctrl+V.
+          **JSON with base64, not multipart, and that is SEC-HTTP-4 rather than taste**:
+          `multipart/form-data` is a SIMPLE request, the one shape a page on another origin can
+          post without the preflight core never answers. The third base64 adds is the control
+          working.
+          **Nothing in core writes to a PTY** (SEC-WS-3). The route answers with a path; the page
+          types it over the socket bound to that pane, through the same `sendInput` a keystroke
+          takes — so an image pasted mid-handshake is held and delivered on `ready`, exactly as a
+          keystroke is.
+          The handler listens on the pane host in the CAPTURE phase, because xterm's own paste
+          handler is on the textarea inside it, and it takes over ONLY for an image — a text paste
+          is never touched. It reads `clipboardData.files`, not `.items`: a copied web image brings
+          `text/html` and `text/plain` flavours along, and taking the first item turns "paste this
+          picture" into "paste some markup". The path is quoted when it contains a space, which is
+          not hypothetical — `%LOCALAPPDATA%` carries the account name.
+          RESEARCH.md G.31 is what this task cost: a smoke check that failed because the pane had
+          swallowed `"C` off the front of the path. Not a dropped frame — the fixture received the
+          whole string — but the Esc pressed by the check BEFORE it, echoed back, leaving xterm's
+          parser waiting for a sequence, which then ate `ESC " C`. The order in `paneChecks` is now
+          load-bearing, and the quoting assertion moved off the screen and onto the wire.
+          G.32 is the other thing it cost, and it is the sharper one: the check that a TEXT paste
+          still reaches xterm passed against a build that intercepted every paste. `preventDefault`
+          does not stop xterm — it reads `clipboardData` itself — so the sabotage had removed a
+          line the check never depended on. With `stopPropagation` in the sabotage it fails, and so
+          do three others. A sabotage is only evidence if it removes the mechanism under test.
+          The scrollback check took the same treatment and needed two goes for a different reason:
+          xterm 6 does not size `.xterm-viewport` to the buffer — `scrollHeight` equals
+          `clientHeight` however much history there is — so `scrollTop = 0` reported fifty lines of
+          history on a terminal holding five thousand. Shift+PageUp is what moves it. The band is
+          two-sided (900-1000) so that xterm's own default of 1 000 fails it too: with the option
+          removed the oldest surviving line is L04950, measured.
 
   - id: P5b
     name: Tauri shell

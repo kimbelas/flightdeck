@@ -101,6 +101,17 @@ export class PaneSocket {
     });
   }
 
+  /**
+   * Types `text` into the PTY as though it had been typed — the image paste's last step (P5a-T8).
+   *
+   * Deliberately the same path as a keystroke, cap and pending buffer included, rather than a
+   * second way in: an image pasted during the handshake is held and delivered on `ready`, exactly
+   * as the first character of a password would be.
+   */
+  public paste(text: string): void {
+    this.sendInput(text);
+  }
+
   /** Refits the terminal and tells the PTY its new size. */
   public resize(): void {
     this.pane.fit();

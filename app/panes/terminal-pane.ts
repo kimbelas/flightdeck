@@ -31,6 +31,11 @@ export class TerminalPane {
       fontSize: 13,
       allowProposedApi: true,
       convertEol: true,
+      // SPEC §5.3, P5a-T8. xterm's default is 1 000 lines, which a `npm install` clears on its own.
+      // The cap is not about memory so much as about where history BELONGS: the transcript is the
+      // full record and it is searchable (§5.8), so scrollback is the last few screens rather than
+      // an archive nine panes are each keeping a private copy of.
+      scrollback: 5_000,
     });
     this.fitAddon = new FitAddon();
   }

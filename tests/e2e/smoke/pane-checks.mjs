@@ -18,6 +18,14 @@ import { waitFor } from './report.mjs';
 /** Every single-character deck binding, typed at a shell. None of them may reach the deck. */
 const AT_THE_SHELL = 'jjkk//??';
 
+/** A one-pixel PNG and a GIF header — P5a-T8. The GIF is pasted while CLAIMING to be a PNG. */
+const PNG_BYTES = [
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+  0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+  0x89,
+];
+const GIF_BYTES = [0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00];
+
 export async function paneChecks(page, report, core, { dev = false } = {}) {
   report.group('A pane, and the keys that must and must not escape it');
 
@@ -46,10 +54,17 @@ export async function paneChecks(page, report, core, { dev = false } = {}) {
   );
   report.check('and none of them reached the deck', (await page.locator('.sheet').count()) === 0);
 
+  // BEFORE escapeChecks, and that is load-bearing rather than tidy: pressing Esc sends a bare
+  // ``, the fixture echoes it, and xterm's parser then sits in the escape state waiting for
+  // the rest of a sequence it will never get. The next two characters written to that terminal are
+  // swallowed as its intermediate and final bytes — measured: with the order reversed, a path
+  // starting `"C:` renders as `:`, because `ESC " C` is a sequence (RESEARCH.md G.31).
+  await pasteChecks(page, report, core);
   await escapeChecks(page, report);
   await claimedKeyChecks(page, report);
   await digitChecks(page, report);
   await layoutChecks(page, report);
+  await scrollbackChecks(page, report);
 
   await closeEveryPane(page);
   const closed = await waitFor(async () => (await page.locator('.pane-card').count()) === 0);
@@ -455,6 +470,144 @@ async function digitChecks(page, report) {
   report.check(
     'a digit past the open panes does nothing rather than guessing',
     !(await focused(page)).cls.includes('xterm-helper-textarea'),
+  );
+}
+
+/**
+ * Ctrl+V of an image, all the way through — P5a-T8.
+ *
+ * Every layer is the real one: a real `ClipboardEvent` carrying a real `File`, the real handler on
+ * the pane host, a real POST through the rewrite, the fixture screening it with core's OWN
+ * `PastedImage`, and the path arriving in the terminal over the same socket a keystroke uses.
+ *
+ * The assertions are about what the PANE SHOWS and what CORE RECEIVED, never about the handler's
+ * own state — G.29's lesson. Removing the `preventDefault` fails the text check (xterm pastes
+ * nothing and the path never arrives); removing the quoting fails it too, because the fixture's
+ * directory has a space in it.
+ */
+async function pasteChecks(page, report, core) {
+  await page.locator('.pane-card .xterm-helper-textarea').first().focus();
+
+  const before = core.pasted.length;
+  await pasteImage(page, 'image/png', PNG_BYTES);
+  const accepted = await waitFor(async () => core.pasted.length > before);
+  report.check(
+    'a pasted PNG reached core, and core recognised it as a PNG',
+    accepted && core.pasted.at(-1)?.kind === 'png',
+    JSON.stringify(core.pasted.at(-1) ?? {}),
+  );
+
+  const typed = await waitFor(async () => (await painted(page)).includes('paste-20260920'));
+  report.check('and its path was typed into the pane', typed, (await painted(page)).slice(-80));
+
+  // The fixture's directory has a space in it on purpose. A bare path here would be two arguments
+  // at a shell and half a filename to Claude Code.
+  //
+  // Asserted on the FLATTENED text, because xterm pads every row div to the terminal's width: a
+  // path that wraps has runs of spaces inside it, and `"C:` is split across two rows. Flattening
+  // costs nothing here — the pane holds no other quotation mark, so a build that stopped quoting
+  // fails this line rather than merely reading differently.
+  // Asserted on what the pane SENT rather than on what the terminal shows. The rendering is
+  // already covered by the check above, and it is the wrong instrument for this question: xterm
+  // pads every row to the terminal width, so a wrapped path carries runs of spaces inside it.
+  const sent = core.typed.at(-1) ?? '';
+  report.check(
+    'quoted, because the path it wrote has a space in it',
+    /^"C:[^"]+\.png" $/u.test(sent),
+    JSON.stringify(sent),
+  );
+
+  // The refusal path: the bytes are a GIF, the claim is PNG, and the check is core's, not the
+  // page's. Nothing should be typed, and the pane should say so rather than go quiet.
+  const refusedBefore = core.pasted.length;
+  await pasteImage(page, 'image/png', GIF_BYTES);
+  const noted = await waitFor(async () =>
+    ((await page.locator('[data-pane-note]').textContent()) ?? '').includes('not_that_kind'),
+  );
+  report.check(
+    'an image whose bytes are not what it claims is refused, and the pane says why',
+    noted && core.pasted.length === refusedBefore,
+    (await page.locator('[data-pane-note]').textContent()) ?? '(no note)',
+  );
+
+  // And a TEXT paste still belongs to xterm: the handler must only take over for an image.
+  await page.evaluate(() => {
+    // On the TEXTAREA, which is where a real paste lands: the handler under test listens on the
+    // host in the CAPTURE phase, so it still sees this first — and must let it through.
+    const target = document.querySelector('.pane-card .xterm-helper-textarea');
+    const data = new DataTransfer();
+    data.setData('text/plain', 'plain-text-paste');
+    target?.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }));
+  });
+  const text = await waitFor(async () => (await painted(page)).includes('plain-text-paste'));
+  report.check('a text paste still reaches the terminal untouched', text);
+}
+
+/**
+ * The 5 000-line scrollback cap — P5a-T8, SPEC §5.3.
+ *
+ * Asserted as "how much history SURVIVED", which is the only thing anyone can observe: the buffer
+ * length is xterm's and the page never holds a reference to the terminal. 6 000 numbered lines go
+ * in through a TEXT paste — the one this task's handler deliberately does not touch — and the
+ * viewport is then scrolled to the top to see what the oldest surviving line is.
+ *
+ * The band is two-sided on purpose. 6 000 written and 5 000 kept plus a viewport leaves the oldest
+ * line somewhere near 960; a build with NO cap keeps line 1, and a build on xterm's default 1 000
+ * keeps line 4 961. A one-sided "more than 500" would pass against both of those, which is the
+ * shape of check G.29 is about.
+ */
+async function scrollbackChecks(page, report) {
+  const pane = page.locator('.pane-card').first();
+  await pane.locator('.xterm-helper-textarea').focus();
+
+  const lines = Array.from(
+    { length: 6000 },
+    (unused, index) => `L${String(index + 1).padStart(5, '0')}`,
+  );
+  await page.evaluate(
+    (text) => {
+      const target = document.querySelector('.pane-card .xterm-helper-textarea');
+      const data = new DataTransfer();
+      data.setData('text/plain', text);
+      target?.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }));
+    },
+    lines.map((line) => `${line}\r`).join(''),
+  );
+
+  const arrived = await waitFor(
+    async () => ((await pane.locator('.xterm-rows').textContent()) ?? '').includes('L06000'),
+    { timeout: 30_000 },
+  );
+  report.check('6 000 lines of output arrive in the pane', arrived);
+
+  // Shift+PageUp, not `scrollTop`: xterm 6 does not size `.xterm-viewport` to the buffer — its
+  // scrollHeight equals its clientHeight however much history there is — so the DOM has no scroll
+  // to set. Measured, and it is why the first version of this check reported 50 lines of history
+  // on a terminal holding 5 040. Enough presses to hit the top from anywhere, which clamps.
+  await pane.locator('.xterm-helper-textarea').focus();
+  for (let page_ = 0; page_ < 200; page_ += 1) await page.keyboard.press('Shift+PageUp');
+  await page.waitForTimeout(250);
+
+  const oldest = Number(
+    /L(\d{5})/u.exec((await pane.locator('.xterm-rows').textContent()) ?? '')?.[1] ?? '0',
+  );
+  report.check(
+    'scrollback is capped, so the oldest line survived is near 1 000 and not line 1',
+    oldest >= 900 && oldest <= 1000,
+    `oldest surviving line L${String(oldest).padStart(5, '0')}`,
+  );
+}
+
+/** Dispatches a real `paste` on the pane host, carrying a real `File` of `bytes`. */
+function pasteImage(page, mediaType, bytes) {
+  return page.evaluate(
+    ([type, values]) => {
+      const target = document.querySelector('.pane-card .xterm-helper-textarea');
+      const data = new DataTransfer();
+      data.items.add(new File([new Uint8Array(values)], 'clip', { type }));
+      target?.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }));
+    },
+    [mediaType, bytes],
   );
 }
 
