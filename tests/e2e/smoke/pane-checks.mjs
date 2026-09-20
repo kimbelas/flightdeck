@@ -49,10 +49,197 @@ export async function paneChecks(page, report, core, { dev = false } = {}) {
   await escapeChecks(page, report);
   await claimedKeyChecks(page, report);
   await digitChecks(page, report);
+  await layoutChecks(page, report);
 
-  await page.locator('.pane-head button', { hasText: 'close' }).click();
+  await closeEveryPane(page);
   const closed = await waitFor(async () => (await page.locator('.pane-card').count()) === 0);
   report.check('closing the pane removes it', closed);
+}
+
+async function closeEveryPane(page) {
+  for (let guard = 0; guard < 12; guard += 1) {
+    const button = page.locator('.pane-card .pane-head button', { hasText: 'close' }).first();
+    if ((await button.count()) === 0) return;
+    await button.click();
+  }
+}
+
+/**
+ * The layouts, asserted as GEOMETRY rather than as class names - P5a-T5.
+ *
+ * A check that read `.panes-2` off the container would pass with the stylesheet deleted, which is
+ * exactly the failure G.29 spent a task on. So every assertion here measures where the cards
+ * actually are: two panes side by side share a `y` and differ in `x`, the same two stacked share an
+ * `x`, and focus mode makes one card far taller than the rest. The CSS is under test, not the JSX.
+ */
+async function layoutChecks(page, report) {
+  await openSecondPane(page, report);
+
+  await chooseLayout(page, '2');
+  const twoUp = await cardBoxes(page);
+  report.check(
+    '2-up puts the panes side by side',
+    twoUp.length === 2 && sameRow(twoUp[0], twoUp[1]) && twoUp[0].x < twoUp[1].x,
+    JSON.stringify(twoUp),
+  );
+
+  await chooseLayout(page, '1');
+  const oneUp = await cardBoxes(page);
+  report.check(
+    '1-up stacks them in one column',
+    oneUp.length === 2 && !sameRow(oneUp[0], oneUp[1]) && Math.abs(oneUp[0].x - oneUp[1].x) < 2,
+    JSON.stringify(oneUp),
+  );
+
+  // The pane the keyboard is pointing at is the one focus mode enlarges, so say which first.
+  await page.locator('.xterm-helper-textarea').first().focus();
+  await chooseLayout(page, 'focus');
+  const focus = await cardBoxes(page);
+  report.check(
+    'focus mode makes the focused pane large and the rest thumbnails',
+    focus.length === 2 && focus[0].height > focus[1].height * 1.5,
+    JSON.stringify(focus),
+  );
+
+  await movementChecks(page, report);
+  await persistenceChecks(page, report);
+}
+
+/** A second pane, so a layout has something to arrange. */
+async function openSecondPane(page, report) {
+  const openable = page.locator('.row button', { hasText: 'open pane' }).first();
+  if ((await openable.count()) > 0) await openable.click();
+  const two = await waitFor(async () => (await page.locator('.pane-card').count()) >= 2, {
+    timeout: 20_000,
+  });
+  report.check(
+    'a second pane opens alongside the first',
+    two,
+    `${String(await page.locator('.pane-card').count())} card(s)`,
+  );
+  await waitFor(async () => (await page.locator('.pane-card .chip-live').count()) >= 2, {
+    timeout: 20_000,
+  });
+}
+
+async function chooseLayout(page, option) {
+  await page.locator(`[data-pane-layout-option="${option}"]`).click();
+  await page.waitForFunction(
+    (want) => document.querySelector('.panes')?.dataset['paneLayout'] === want,
+    option,
+  );
+  await settle(page);
+}
+
+/** `[` and `]` reorder, and the pane that moves must keep its terminal rather than respawn. */
+async function movementChecks(page, report) {
+  await chooseLayout(page, '2');
+  const before = await paneTitles(page);
+  const mountsBefore = await paneMounts(page);
+
+  await page.locator('.xterm-helper-textarea').first().focus();
+  await page.locator('h1').click();
+  await press(page, ']');
+  const moved = await waitFor(
+    async () => JSON.stringify(await paneTitles(page)) !== JSON.stringify(before),
+  );
+  report.check(
+    '] moves the focused pane one place right',
+    moved,
+    `${JSON.stringify(before)} -> ${JSON.stringify(await paneTitles(page))}`,
+  );
+
+  // The important half. Reordering is a React key move, not a remount: a remount would dispose the
+  // terminal and close the socket, which for an attached session means killing a live PTY because
+  // somebody pressed an arrow. `data-pane-attempt` only changes when a lifecycle re-ran.
+  report.check(
+    'and neither pane was remounted, so no PTY was killed',
+    JSON.stringify([...(await paneMounts(page))].toSorted()) ===
+      JSON.stringify([...mountsBefore].toSorted()),
+    `${JSON.stringify(mountsBefore)} -> ${JSON.stringify(await paneMounts(page))}`,
+  );
+  report.check(
+    'and both panes are still live after the move',
+    (await page.locator('.pane-card .chip-live').count()) === 2,
+    `${String(await page.locator('.pane-card .chip-live').count())} live`,
+  );
+
+  await press(page, '[');
+  const back = await waitFor(
+    async () => JSON.stringify(await paneTitles(page)) === JSON.stringify(before),
+  );
+  report.check('[ moves it back', back, JSON.stringify(await paneTitles(page)));
+
+  await press(page, '[');
+  await settle(page);
+  report.check(
+    'and [ at the left-hand end does nothing rather than wrapping',
+    JSON.stringify(await paneTitles(page)) === JSON.stringify(before),
+    JSON.stringify(await paneTitles(page)),
+  );
+}
+
+/** The chosen layout outlives a reload - the one piece of deck state that does. */
+async function persistenceChecks(page, report) {
+  await chooseLayout(page, '6');
+  await page.reload({ waitUntil: 'networkidle' });
+  const restored = await waitFor(
+    async () => (await page.locator('.panes').getAttribute('data-pane-layout')) === '6',
+  );
+  report.check(
+    'the chosen layout survives a reload',
+    restored,
+    String(await page.locator('.panes').getAttribute('data-pane-layout')),
+  );
+  report.check(
+    'and the chooser says so on the way back in',
+    (await page.locator('[data-pane-layout-option="6"]').getAttribute('aria-pressed')) === 'true',
+  );
+  // Put it back, so the reload this leaves behind is not a layout the next group has to expect.
+  await chooseLayout(page, '2');
+}
+
+function cardBoxes(page) {
+  return page.locator('.pane-card').evaluateAll((cards) =>
+    cards.map((card) => {
+      const box = card.getBoundingClientRect();
+      return { x: Math.round(box.x), y: Math.round(box.y), height: Math.round(box.height) };
+    }),
+  );
+}
+
+function paneTitles(page) {
+  return page.locator('.pane-card .pane-title').allTextContents();
+}
+
+/**
+ * Each card's `data-pane-mount` - a counter kept OUTSIDE React, so it survives nothing.
+ *
+ * The obvious detector, `data-pane-attempt`, is component state and a remount resets it to 0, so
+ * the first version of this check compared ["0","0"] with ["0","0"] and passed against a build
+ * that rebuilt both terminals on every move. A page-wide counter is the only one that cannot be
+ * reset by the event it is watching for.
+ */
+function paneMounts(page) {
+  return page
+    .locator('.pane-card')
+    .evaluateAll((cards) => cards.map((card) => card.dataset['paneMount'] ?? '?'));
+}
+
+/** One animation frame, so the grid has been laid out before anything measures it. */
+function settle(page) {
+  return page.evaluate(
+    () =>
+      new Promise((done) => {
+        requestAnimationFrame(() => {
+          done(undefined);
+        });
+      }),
+  );
+}
+
+function sameRow(a, b) {
+  return Math.abs(a.y - b.y) < 2;
 }
 
 /** Typed into the pane before it is live, which is the only place G.5's dropped keystroke shows. */

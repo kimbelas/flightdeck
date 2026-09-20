@@ -711,16 +711,59 @@ button.ghost {
   resize: vertical;
 }
 
-/* Layouts 1/2/4 — the grid the panes sit in (P5a-T5). */
+/* ---- the pane area: chooser, then the grid (P5a-T5) ---- */
+
+.pane-area {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pane-bar {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.pane-bar-label {
+  color: var(--dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.pane-bar button {
+  min-width: 30px;
+}
+
+/* The chosen layout, said once. `aria-pressed` carries it for a screen reader; this is the eye's
+   half, and both come from the same `option === layout` so they cannot disagree. */
+.pane-bar button.is-on {
+  color: var(--good);
+  border-color: var(--good);
+}
+
+.pane-bar-count {
+  margin-left: auto;
+  font-size: 11px;
+}
+
+/* Layouts 1/2/4/6/9 plus focus — SPEC §5.3. `grid-auto-rows: 1fr` rather than a fixed row count
+   per layout: a 9-up holding four panes should give them the two rows they need and not leave a
+   third of the screen empty, and `1fr` on auto rows is what makes every row share the height. */
 .panes {
   display: grid;
   gap: 8px;
   padding: 8px;
   overflow: auto;
   min-height: 0;
+  flex: 1;
+  grid-auto-rows: 1fr;
 }
 
-.panes-0,
 .panes-1 {
   grid-template-columns: 1fr;
 }
@@ -729,10 +772,51 @@ button.ghost {
   grid-template-columns: 1fr 1fr;
 }
 
-.panes-3,
 .panes-4 {
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
+}
+
+.panes-6 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.panes-9 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+/* Focus mode — one large pane and a strip of the rest.
+
+   Eight explicit columns so the focused card can span `1 / -1`, and eight because nine panes means
+   at most eight thumbnails. The strip row is `auto` rather than a fixed height so that with one
+   pane open there is no empty band under it; the thumbnails get their height from the card. */
+.panes-focus {
+  grid-template-columns: repeat(8, 1fr);
+  grid-template-rows: 1fr auto;
+  grid-auto-rows: auto;
+}
+
+.panes-focus > .pane-card {
+  grid-row: 2;
+  height: 150px;
+}
+
+.panes-focus > .pane-card.is-focused {
+  grid-row: 1;
+  grid-column: 1 / -1;
+  height: auto;
+}
+
+/* Nothing is focused yet: the first card stands in, so focus mode never opens on a strip of
+   thumbnails with an empty stage above them. */
+.panes-focus:not(:has(> .pane-card.is-focused)) > .pane-card:first-of-type {
+  grid-row: 1;
+  grid-column: 1 / -1;
+  height: auto;
+}
+
+/* The empty-state sentence is not a pane and must not be cut into a grid cell. */
+.panes > .pad {
+  grid-column: 1 / -1;
 }
 
 .pane-card {
@@ -743,6 +827,10 @@ button.ghost {
   border: 1px solid var(--line);
   border-radius: 4px;
   background: var(--panel);
+}
+
+.pane-card.is-focused {
+  border-color: var(--good);
 }
 
 .pane-head {

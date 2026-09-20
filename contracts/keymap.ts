@@ -61,7 +61,8 @@ export type DeckAction =
   | { readonly kind: 'dismiss' }
   | { readonly kind: 'focus-search' }
   | { readonly kind: 'toggle-shortcuts' }
-  | { readonly kind: 'focus-pane'; readonly position: number };
+  | { readonly kind: 'focus-pane'; readonly position: number }
+  | { readonly kind: 'move-pane'; readonly delta: number };
 
 /** How the shortcut sheet groups the table. Presentation, but it belongs with the table. */
 export type KeySection = 'global' | 'sessions' | 'panes' | 'palette';
@@ -248,7 +249,39 @@ function sessionBindings(): readonly KeyBinding[] {
       ctrl: false,
       action: { kind: 'focus-search' },
     }),
+    ...paneBindings(),
+  ];
+}
+
+/**
+ * The panes: `1`-`9` to reach one, `[` and `]` to move it.
+ *
+ * All `deck`-only, and that is D34 rather than an oversight — `Ctrl+K` is the ONE key taken from a
+ * live pane, so rearranging happens from the deck and every bracket typed at a shell still reaches
+ * the shell. `[` and `]` because they are unshifted, adjacent, and directional in the way the
+ * digits already are.
+ */
+function paneBindings(): readonly KeyBinding[] {
+  return [
     new PaneDigitBinding(['deck']),
+    new ChordBinding({
+      label: '[',
+      description: 'Move the focused pane one place left',
+      section: 'panes',
+      contexts: ['deck'],
+      keys: ['['],
+      ctrl: false,
+      action: { kind: 'move-pane', delta: -1 },
+    }),
+    new ChordBinding({
+      label: ']',
+      description: 'Move the focused pane one place right',
+      section: 'panes',
+      contexts: ['deck'],
+      keys: [']'],
+      ctrl: false,
+      action: { kind: 'move-pane', delta: 1 },
+    }),
   ];
 }
 

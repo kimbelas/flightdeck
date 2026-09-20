@@ -34,7 +34,9 @@ export const PROJECT_PATH_ID = 'project-path';
 
 /** The session rows' expand buttons, in the order they are on screen. Filtering changes this. */
 const ROW_SELECTOR = '[data-deck-row]';
-const PANE_SELECTOR = '[data-deck-pane]';
+/** A pane card, by its position from the left — the attribute carries it (see `focusPane`). */
+const paneSelector = (position: number): string =>
+  `[data-deck-pane="${CSS.escape(String(position))}"]`;
 /** xterm's own hidden input. Focusing the pane's box does nothing; focusing this types into it. */
 const TERMINAL_INPUT = '.xterm-helper-textarea';
 
@@ -102,12 +104,15 @@ export function moveRowFocus(delta: number): void {
 /**
  * Types into pane `position`, counting from the left — `1`–`9`.
  *
- * Nothing happens above the number of open panes, which is the honest behaviour: SPEC §5.4 asks
- * for nine and the grid caps at four today, and a key that quietly focuses the last pane instead
- * would be worse than a key that does nothing.
+ * Nothing happens above the number of open panes, which is the honest behaviour: a key that
+ * quietly focused the last pane instead would be worse than a key that does nothing.
+ *
+ * **Resolved by the attribute's value, not by document order** (P5a-T5). The two agreed while
+ * every layout was a plain grid; focus mode puts the focused pane in a row of its own, and a digit
+ * that counted DOM children would renumber every pane the moment somebody clicked into one.
  */
 export function focusPane(position: number): void {
-  const pane = document.querySelectorAll<HTMLElement>(PANE_SELECTOR)[position - 1];
+  const pane = document.querySelector<HTMLElement>(paneSelector(position - 1));
   pane?.querySelector<HTMLTextAreaElement>(TERMINAL_INPUT)?.focus();
 }
 

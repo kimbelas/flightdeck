@@ -48,6 +48,8 @@ interface Live {
   readonly palette: CommandPaletteViewModel;
   readonly open: boolean;
   readonly sheetOpen: boolean;
+  /** In the ref for the same reason the palette is: `[`/`]` depend on which pane has focus. */
+  readonly actions: DeckKeyActions;
 }
 
 interface Controls {
@@ -59,7 +61,12 @@ interface Controls {
 
 type PaletteHandlers = Omit<DeckKeys, 'keymap' | 'palette' | 'paletteQuery' | 'sheetOpen'>;
 
-export function useDeckKeys(commands: readonly DeckCommand[]): DeckKeys {
+/** What the keyboard needs from the deck that is not the palette's — the pane grid, today. */
+export interface DeckKeyActions {
+  readonly onMovePane: (delta: number) => void;
+}
+
+export function useDeckKeys(commands: readonly DeckCommand[], actions: DeckKeyActions): DeckKeys {
   const keymap = useMemo(() => standardKeymap(), []);
   const [open, setOpen] = useState(false);
   const [sheetOpen, setSheet] = useState(false);
@@ -75,9 +82,9 @@ export function useDeckKeys(commands: readonly DeckCommand[]): DeckKeys {
     query,
     cursor,
   );
-  const live = useRef<Live>({ palette, open, sheetOpen });
+  const live = useRef<Live>({ palette, open, sheetOpen, actions });
   useEffect(() => {
-    live.current = { palette, open, sheetOpen };
+    live.current = { palette, open, sheetOpen, actions };
   });
 
   const onAction = useCallback(
@@ -157,6 +164,9 @@ function runAction(action: DeckAction, live: Live, controls: Controls): void {
       return;
     case 'focus-pane':
       focusPane(action.position);
+      return;
+    case 'move-pane':
+      live.actions.onMovePane(action.delta);
       return;
   }
 }
