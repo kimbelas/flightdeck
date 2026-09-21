@@ -3228,3 +3228,56 @@ pane, and the box says so while it is open. G.33's shape exactly, one task later
 paragraph): pressing `respawn` left the pane `evicted` with `stop` gone and `reattach` offered,
 because the session restarts under the same id and the reconciler had not swept yet. That is
 correct and it reads correctly, which is only knowable by watching it.
+
+### G.46 The check that passed with the mechanism removed (P3-T6, 2026-09-21)
+
+Five sabotages, each removing the mechanism its checks depend on (G.32), each verified to have
+LANDED before the result was read (G.38, G.40).
+
+| sabotage | what failed |
+| --- | --- |
+| drop the worktrees from a project's scope | 4 `ProjectScope` tests — **after the test was fixed; see below** |
+| match a folder with `startsWith` instead of `isUnder` | `does not put a sibling whose name merely starts the same in the project` |
+| key the pane layout without the project | smoke: `going back to all projects brings back the layout that was chosen THERE`, detail `all projects is 9-up, the project was 9` |
+| have the gates row say "8 passing" | smoke: `and never claims a verdict, because the file it read holds none (D12)` |
+| clear an unknown stored project instead of deriving the current one | smoke: both reload checks |
+
+**The first sabotage broke nothing, and that was the finding.** Removing the worktree list left all
+fourteen `ProjectScope` tests green, because the worktree in the fixture was
+`…\xpert-new\.claude\worktrees\ticket-41` — INSIDE the project root, so the root match already
+covered it. The test named the mechanism in its title and exercised none of it. `git worktree add
+../ticket-41` is the ordinary way to make one, so the tree moved beside its repository and the same
+sabotage now fails four tests. **A test whose fixture makes the feature redundant is a test that
+passes for the wrong reason**, and the only thing that showed it was removing the feature.
+
+**The current project was erased on every reload, and the cause was ordering.** The first version
+kept a "forgotten project" guard: an effect that cleared the stored key when it named no imported
+folder. The registry is fetched after the page mounts, so on every reload the guard ran against an
+empty registry and threw the choice away before the answer arrived. The fix is to keep the stored
+key and DERIVE the current one — `stored !== undefined && known(stored) ? stored : undefined` — so a
+registry that has not arrived draws all projects and a project that comes back is current again.
+The same shape as G.14's backup-first order: do not destroy the record, decide what to do with it.
+
+**The premise of a third of the task was wrong, and the file said so in one `cat`.** SPEC §5.1(a)
+asks Flightdeck to "show its verdict" for `.claude/gates.json`. The only such file on this machine
+(`groundwork`, 1 452 bytes) is `denyPaths`, `askPaths`, `lint`, `stopChecks`, `verify` — the gate
+definitions, with nothing resembling a result in them. Coach keeps the verdict in its own `brain`
+and renders it at `/plans/<project>`, keyed by NAME rather than by path, which is why the deep link
+is composed that way. G.43's lesson again, one phase over.
+
+**Two collisions found by running it, neither visible in a type.** The project's name became a
+`<button>`, and `.project > button` — a rule written in P4-T1 for the `forget` button, with its own
+comment about a selector that was widened once already — put it in the right-hand column on top of
+`forget`. The smoke then failed differently: `presetGeometryChecks` locates that button as
+`.project > button`, which now resolved to two elements and threw strict-mode. Both were fixed by
+saying which button is meant, in the CSS and in the check.
+
+**A Windows path in a CSS attribute selector matches nothing.** `[data-project-sessions="c:\users\
+owner\documents\ledger"]` is a selector full of CSS escapes — `\u` is a unicode escape — so three
+checks reported an absent element while the element was on screen. The bare attribute is both
+simpler and unambiguous when one project is imported, which is what the checks use.
+
+**Measured live, against the owner's real registry**: `xpert-new` reported `2 sessions · 1 live`,
+`14 sessions outside every imported folder` of 16, and focusing it narrowed the list to 2 while the
+header still said 16. `groundwork` was imported for one reading — `coach gates 8 · denies 5 · asks
+1`, which is exactly what its `gates.json` contains — and forgotten again.

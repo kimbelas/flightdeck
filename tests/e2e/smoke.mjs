@@ -33,6 +33,7 @@ import { keyboardChecks, keyboardHelperChecks } from './smoke/keyboard-checks.mj
 import { paneChecks } from './smoke/pane-checks.mjs';
 import { paneControlChecks } from './smoke/pane-control-checks.mjs';
 import { projectChecks } from './smoke/project-checks.mjs';
+import { projectViewChecks } from './smoke/project-view-checks.mjs';
 import { securityChecks } from './smoke/security-checks.mjs';
 import { LOOPBACK_ADDRESS, UI_PORT } from '../../contracts/origins.ts';
 
@@ -83,6 +84,9 @@ try {
   // After paneChecks, which ends with every pane closed: this group opens its own two and reloads
   // the page, and a reload in the middle of the key checks would throw their focus away.
   await paneControlChecks(page, report, core);
+  // Last, and it imports its own folder: `projectChecks` ends by forgetting the one it imported,
+  // so an empty registry is the state this group starts from rather than one it has to undo.
+  await projectViewChecks(page, report, core);
   if (DEV) devChecks(report, seen);
   else await securityChecks(page, report, core, seen);
   await page.screenshot({ path: SHOT });

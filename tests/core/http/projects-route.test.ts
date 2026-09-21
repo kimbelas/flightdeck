@@ -216,6 +216,7 @@ describe('WorkflowMapRoute', () => {
     permissions: { allow: [], deny: [], ask: [], defaultMode: undefined },
     conventions: [],
     worktrees: [],
+    gates: undefined,
     configured: false,
   };
 

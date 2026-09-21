@@ -33,6 +33,7 @@ import {
 } from '../../contracts/claude-settings.ts';
 import { readHookTimeline, MAX_SETTINGS_BYTES } from '../../contracts/hook-timeline.ts';
 import { INSTRUCTION_SOURCES } from '../../contracts/instruction-stack.ts';
+import { parseProjectGates } from '../../contracts/project-gates.ts';
 import { projectKey, type ProjectRecord } from '../../contracts/project.ts';
 import { childPath } from '../../contracts/windows-path.ts';
 import { CONVENTION_FOLDERS, type WorkflowMap } from '../../contracts/workflow-map.ts';
@@ -54,6 +55,10 @@ const CLAUDE_DIR = '.claude';
 
 /** The two files a repository declares its servers and its settings in. */
 const SETTINGS_FILE = 'settings.json';
+/** coach-core's gate definitions, when the project is coached at all (P3-T6, D12). */
+const GATES_FILE = 'gates.json';
+/** The one measured on this machine is 1 452 bytes; this is room for a much larger one. */
+const MAX_GATES_BYTES = 64 * 1024;
 const MCP_FILE = '.mcp.json';
 
 export interface WorkflowMapParts {
@@ -108,19 +113,22 @@ export class WorkflowMapReader {
   }
 
   /**
-   * The seven readings, in parallel, into one map.
+   * The eight readings, in parallel, into one map.
    *
    * The instruction stack is asked for whatever `.claude` turns out to be, because three of its
    * five sources are outside it — see the header.
    */
   private async compose(path: string, root: string, claudeDir: string): Promise<WorkflowMap> {
-    const [instructions, assets, conventions, settings, mcp, worktrees, configured] =
+    const [instructions, assets, conventions, settings, mcp, gates, worktrees, configured] =
       await Promise.all([
         this.parts.instructions.read(root),
         this.parts.assets.assets(claudeDir),
         this.parts.assets.conventions(claudeDir),
         this.json(childPath(claudeDir, SETTINGS_FILE), MAX_SETTINGS_BYTES),
         this.json(childPath(root, MCP_FILE), MAX_MCP_BYTES),
+        // P3-T6. Through the same door as the other two JSON files, so an unreadable or refused
+        // `gates.json` is `undefined` here and draws "not coached" rather than an error.
+        this.json(childPath(claudeDir, GATES_FILE), MAX_GATES_BYTES),
         // The stored path, not the resolved root: `WorktreeReader` climbs from it exactly as
         // `ProjectGitReader` does, and the climb is the part that has to start where the owner
         // pointed rather than one `realpath` further in.
@@ -139,6 +147,7 @@ export class WorkflowMapReader {
       permissions: readPermissions(settings),
       conventions,
       worktrees,
+      gates: parseProjectGates(gates),
       configured,
     };
   }
@@ -217,6 +226,7 @@ export class WorkflowMapReader {
       // A root core cannot resolve is one it cannot climb from either, so there is nothing to
       // report rather than nothing to say — the same answer as a folder outside a repository.
       worktrees: [],
+      gates: undefined,
       configured: false,
     };
   }

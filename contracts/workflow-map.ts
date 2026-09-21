@@ -33,6 +33,7 @@ import {
 import { parseHookSteps, type HookStep } from './hook-timeline.ts';
 import { parseInstructionStack, type InstructionFile } from './instruction-stack.ts';
 import { MAX_PROJECT_PATH_CHARS } from './project.ts';
+import { parseProjectGatesReply, type ProjectGates } from './project-gates.ts';
 import { parseWorktrees, type Worktree } from './worktree.ts';
 
 /**
@@ -88,6 +89,15 @@ export interface WorkflowMap {
    */
   readonly worktrees: readonly Worktree[];
   /**
+   * What `.claude/gates.json` configures, or `undefined` on a project coach does not gate — P3-T6.
+   *
+   * It is in the map for the reason everything else here is: it comes out of `.claude`, it shares
+   * the cache signature, and it answers "what does Claude do in this repo?". What it is NOT is a
+   * verdict — that word is SPEC's and the file does not carry one (`project-gates.ts`). The deck
+   * shows the gates and links to coach, which is whose verdict it is (D12).
+   */
+  readonly gates: ProjectGates | undefined;
+  /**
    * Whether the folder has a `.claude` directory at all.
    *
    * The one flag in here, and it earns its place: it is the difference between "this repository
@@ -120,6 +130,7 @@ export function parseWorkflowMap(value: unknown): WorkflowMap | undefined {
     permissions: parsePermissionRules(fields['permissions']),
     conventions: conventionList(fields['conventions']),
     worktrees: parseWorktrees(fields['worktrees']),
+    gates: parseProjectGatesReply(fields['gates']),
     configured: fields['configured'] === true,
   };
 }

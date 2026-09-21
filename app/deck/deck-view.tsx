@@ -18,14 +18,15 @@ import type { PresetLaunch } from '../../contracts/launch-preset.ts';
 import { BrowserDeckApi } from './browser-deck-api.ts';
 import { BrowserStreamTransport } from './browser-stream-transport.ts';
 import { CommandPalette } from './command-palette.tsx';
-import { DeckBanners } from './deck-banners.tsx';
-import { DeckHeader } from './deck-header.tsx';
 import { DeckBody } from './deck-body.tsx';
-import { DeckInstall, installActions } from './deck-install.tsx';
+import { installActions } from './deck-install.tsx';
+import { DeckTop, projectTargets } from './deck-top.tsx';
 import { DeckStore } from './deck-store.ts';
 import { deckCommands, type DeckActions } from './deck-commands.ts';
 import { SessionRowViewModel } from './session-row-view-model.ts';
 import { ShortcutSheet } from './shortcut-sheet.tsx';
+import { ProjectScope } from './project-scope.ts';
+import { useCurrentProject } from './use-current-project.ts';
 import { usePaneGrid } from './use-pane-grid.ts';
 import { useDeckKeys, type DeckKeys } from './use-deck-keys.ts';
 
@@ -42,9 +43,15 @@ export function DeckView(): JSX.Element {
   const store = useDeckStore();
   const state = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot);
   useLiveStream(store);
+  // P3-T6. Which project a session is in, from the registry and the worktrees the maps carry.
+  // Rebuilt per render on purpose: it is a derivation over two lists the store already holds,
+  // and memoising it would be a cache to keep in step with both of them.
+  const scope = new ProjectScope(state.projects, state.maps);
+  const project = useCurrentProject((key) => scope.has(key));
   // The grid needs the rows to know which stored panes are still attachable after a reload
-  // (P5a-T5b), and `coreUp` to know when that list is worth reading.
-  const grid = usePaneGrid(state.rows, state.coreUp);
+  // (P5a-T5b), `coreUp` to know when that list is worth reading, and the project to know which
+  // stored layout is in force (P3-T6).
+  const grid = usePaneGrid(state.rows, state.coreUp, project.key);
   const { expanded, toggle } = useExpandedRows(store);
   const now = useTickingClock();
   // Which subscription's installation panel is open, or `undefined` — P4-T5. Component state
@@ -53,33 +60,32 @@ export function DeckView(): JSX.Element {
   const [install, setInstall] = useState<SubscriptionId | undefined>(undefined);
   const actions = useDeckActions(store, grid.openPane, setInstall);
 
-  // Every session, unfiltered: the palette can reach one the `/` box is currently hiding.
+  // Every session, unfiltered: the palette can reach one the `/` box is currently hiding — and,
+  // since P3-T6, one the current project is hiding too. Narrowing happens in `DeckBody`.
   const rows = state.rows.map((row) => new SessionRowViewModel(row));
   // `onLayout` comes from the grid rather than from `useDeckActions`: the palette's six layout
   // entries and the chooser's six buttons must be the same call, or one of them gets the next fix.
-  const keys = useDeckKeys(deckCommands({ rows, ...actions, onLayout: grid.setLayout }), {
+  const targets = { rows, ...actions, onLayout: grid.setLayout, onChooseProject: project.choose };
+  const keys = useDeckKeys(deckCommands({ ...targets, projects: projectTargets(state, scope) }), {
     onMovePane: grid.movePaneBy,
   });
 
   return (
     <main className="deck">
-      <DeckHeader
-        coreUp={state.coreUp}
-        sessionCount={rows.length}
-        quota={state.quota}
+      <DeckTop
+        state={state}
         now={now}
-        loading={state.loading}
-        onRefresh={actions.onRefresh}
-        onOpenShell={actions.onOpenShell}
-        onOpenInstall={actions.onOpenInstall}
+        count={rows.length}
+        install={install !== undefined}
+        actions={actions}
       />
-      {install !== undefined && <DeckInstall state={state} actions={actions} />}
-      <DeckBanners error={state.error} unreadable={state.unreadable} />
       <DeckBody
         rows={rows}
         state={state}
         now={now}
         grid={grid}
+        scope={scope}
+        project={project}
         expanded={expanded}
         actions={actions}
         onToggle={toggle}

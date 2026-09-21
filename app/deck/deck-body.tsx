@@ -6,6 +6,7 @@
 // and holds state, and this arranges. Nothing here fetches and nothing here decides.
 import { useState, type JSX } from 'react';
 import type { DeckActions } from './deck-commands.ts';
+import { sessionKey } from '../../contracts/session-row.ts';
 import type { DeckState } from './deck-store.ts';
 import { PaneGrid } from './pane-grid.tsx';
 import { ProjectsPanel } from './projects-panel.tsx';
@@ -15,6 +16,8 @@ import { AskPanel } from './ask-panel.tsx';
 import { SessionList } from './session-list.tsx';
 import { SessionPreviewViewModel } from './session-preview-view-model.ts';
 import type { SessionRowViewModel } from './session-row-view-model.ts';
+import type { ProjectScope } from './project-scope.ts';
+import type { CurrentProject } from './use-current-project.ts';
 import type { PaneGridState } from './use-pane-grid.ts';
 
 export interface DeckBodyProps {
@@ -22,6 +25,9 @@ export interface DeckBodyProps {
   readonly state: DeckState;
   readonly now: number;
   readonly grid: PaneGridState;
+  /** Which project each session is in — P3-T6. Built in `DeckView` so one object answers both. */
+  readonly scope: ProjectScope;
+  readonly project: CurrentProject;
   readonly expanded: ReadonlySet<string>;
   readonly actions: DeckActions;
   readonly onToggle: (row: SessionRowViewModel) => void;
@@ -35,21 +41,24 @@ export interface DeckBodyProps {
  * The keyboard does not know either: `/` focuses this box by id (deck-keyboard.ts), which is why
  * nothing above had to thread the query down or a setter back up.
  */
-export function DeckBody({
-  rows,
-  state,
-  now,
-  grid,
-  expanded,
-  actions,
-  onToggle,
-}: DeckBodyProps): JSX.Element {
+export function DeckBody(props: DeckBodyProps): JSX.Element {
+  const { rows, state, now, grid, scope, project, expanded, actions, onToggle } = props;
+  // P3-T6. The current project narrows the LIST and nothing else: the header still counts every
+  // session, the palette still reaches every session, and the panes on the right are whatever was
+  // open. The same shape `/`’s filter already has.
+  // Matched by KEY rather than by re-deriving from the view model: `ProjectScope` answers about
+  // `SessionRow`, which is what carries a `cwd`, and a second path rule on the presentation side
+  // would be a second opinion about which project a session is in.
+  const keep = new Set(scope.rowsIn(project.key, state.rows).map(sessionKey));
+  const inProject = rows.filter((row) => keep.has(row.key));
   return (
     <div className="deck-body">
       <DeckLeft
-        rows={rows}
+        rows={inProject}
         state={state}
         now={now}
+        scope={scope}
+        project={project}
         expanded={expanded}
         actions={actions}
         onToggle={onToggle}
@@ -74,17 +83,20 @@ interface DeckLeftProps {
   readonly rows: readonly SessionRowViewModel[];
   readonly state: DeckState;
   readonly now: number;
+  readonly scope: ProjectScope;
+  readonly project: CurrentProject;
   readonly expanded: ReadonlySet<string>;
   readonly actions: DeckActions;
   readonly onToggle: (row: SessionRowViewModel) => void;
 }
 
 /** The projects panel and the session list, and the `/` filter that belongs to the list. */
-function DeckLeft({ rows, state, now, expanded, actions, onToggle }: DeckLeftProps): JSX.Element {
+function DeckLeft(props: DeckLeftProps): JSX.Element {
+  const { rows, state, now, expanded, actions, onToggle } = props;
   const [search, setSearch] = useState('');
   return (
     <div className="deck-left">
-      <DeckProjects state={state} actions={actions} />
+      <DeckProjects state={state} actions={actions} scope={props.scope} project={props.project} />
       {/* P4-T4. Above the session list: a question is a thing you START, like a launch, and the
           answer belongs beside the sessions rather than inside one of them. */}
       <AskPanel
@@ -164,9 +176,13 @@ function previewViewModels(
 function DeckProjects({
   state,
   actions,
+  scope,
+  project,
 }: {
   readonly state: DeckState;
   readonly actions: DeckActions;
+  readonly scope: ProjectScope;
+  readonly project: CurrentProject;
 }): JSX.Element {
   return (
     <ProjectsPanel
@@ -178,11 +194,15 @@ function DeckProjects({
           maps: state.maps,
           presets: state.presets,
           presetRefusal: state.presetRefusal,
+          activity: scope.activity(state.rows),
+          current: project.key,
+          unassigned: scope.unassigned(state.rows),
         })
       }
       disabled={!state.coreUp}
       onImport={actions.onImportProject}
       onForget={actions.onForgetProject}
+      onChoose={project.choose}
       presets={actions}
     />
   );
