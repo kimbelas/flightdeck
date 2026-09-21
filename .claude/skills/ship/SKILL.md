@@ -30,7 +30,7 @@ there genuinely is not one.
 ## 3. Build it, then run it
 
 `npm run check` being green is not evidence the change works, and it measures nothing under
-`app/`. Six real bugs shipped past a green unit suite and were only found by running the thing
+`app/`. Seven real bugs shipped past a green unit suite and were only found by running the thing
 (RESEARCH.md §G).
 
 For anything touching the deck: `npm run build && npm run smoke` — 180 checks against a fixture

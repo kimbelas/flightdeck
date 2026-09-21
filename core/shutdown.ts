@@ -16,6 +16,7 @@
 // one list, two directions, and `tests/core/lifecycle.test.ts` asserts they cover the same set.
 import type { PaneRegistry } from './application/pane-registry.ts';
 import type { Reconciler } from './application/reconciler.ts';
+import type { ToastAnnouncer } from './application/toast-announcer.ts';
 import type { TicketOffice } from './application/ticket-office.ts';
 import type { TokenIssuer } from './application/token-issuer.ts';
 import type { TranscriptReader } from './application/transcript-reader.ts';
@@ -29,6 +30,7 @@ import type { Logger } from './ports/logger.ts';
 export interface Running {
   readonly reconciler: Reconciler;
   readonly transcripts: TranscriptReader;
+  readonly toasts: ToastAnnouncer;
   readonly store: SqliteStore;
   readonly stream: SessionStreamRoute;
   readonly issuer: TokenIssuer;
@@ -51,6 +53,11 @@ export function startCore(running: StartableCore): void {
   running.reconciler.start();
   // Feed 4's 1 s poll. The line whose absence cost P1-T7 its whole output — see the header.
   running.transcripts.start();
+  // P6-T3. No timer of its own — it is a listener on the hub — and it is here anyway, because the
+  // thing this pairing actually protects against is something startable being left unstarted, and
+  // an announcer nobody started is a feature that silently does not exist. That is the P1-T7 shape
+  // exactly: nothing throws, nothing looks wrong, and no toast is ever raised.
+  running.toasts.start();
 }
 
 /** A thing with a timer to start. Structural, so a test can supply a counter and not a Reconciler. */
@@ -69,6 +76,7 @@ export interface Startable {
 export interface StartableCore {
   readonly reconciler: Startable;
   readonly transcripts: Startable;
+  readonly toasts: Startable;
 }
 
 /** Stops core. Idempotent, because every step below is. */
@@ -78,6 +86,10 @@ export async function stopCore(running: Running): Promise<void> {
   running.reconciler.stop();
   // Same reason, same sentence: another timer NodeScheduler does not unref.
   running.transcripts.stop();
+  // Not a timer but a subscription, and it is unsubscribed for the neighbouring reason: an
+  // announcer left listening is a `subscriberCount` that never comes back down, and a closed
+  // stream that is still counted is the leak `EventHub` exists to make visible.
+  running.toasts.stop();
   // Second, and BEFORE the server, which is not interchangeable: `server.close()` waits for open
   // connections to end and an SSE response never does on its own, so a single deck tab would hold
   // core open through Ctrl+C. Closing the streams afterwards would not rescue it either —

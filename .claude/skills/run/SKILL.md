@@ -5,7 +5,7 @@ description: Launch Flightdeck and confirm a change actually works in the runnin
 
 # Running Flightdeck
 
-Six real bugs shipped past a green unit suite and were only found by running the thing
+Seven real bugs shipped past a green unit suite and were only found by running the thing
 (RESEARCH.md §G). A green `npm run check` is not evidence that a change works.
 
 ## Start it

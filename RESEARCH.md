@@ -3531,3 +3531,64 @@ check found a missing feature by being wrong about an existing one.
 **Three self-inflicted minutes, all the same bug.** A Windows path in a bash heredoc loses its
 backslashes, so `{"cwd":"C:\Users\…"}` reached core as invalid JSON and came back `bad_session`.
 The scratchpad `.py` pattern exists for exactly this and was not used. Third time.
+
+### G.51 What `toasted-notifier` actually does, measured before it was depended on (P6-T3, 2026-09-21)
+
+D16 named the library in 2026-09-10 from a survey (E.4) and nothing had run it. Four numbers, taken
+on this machine against 10.1.0 before the dependency was added:
+
+| Question | Answer |
+| --- | --- |
+| Does a toast appear at all? | yes — Windows 11, no AppUserModelID registration needed |
+| How long does `notify()` block? | **3 ms**. It spawns and returns. |
+| When does the callback fire? | when the toast RESOLVES — **3 786 ms** for one that timed out |
+| Does the child hold the event loop? | **no** — a process that raised one and did nothing else exited in 430 ms |
+
+The second and third are why `Notifier.notify` is `void` rather than `Promise<void>`. There is
+nothing to await except the owner's attention span, and a sweep behind it would be a sweep behind a
+toast nobody has looked at yet.
+
+**The dependency is 5 MB and ships a 3.5 MB `ntfytoast.exe`**, plus `growly`, `is-wsl`, `semver`,
+`shellwords` and `which`. `npm audit` is clean at high, all eight packages have verified registry
+signatures, and one carries an attestation — which is what CI's audit job checks.
+
+**The finding that put a platform guard in the adapter.** `toasted-notifier` does not spawn the same
+way on every platform. `notifiers/toaster.js` — the Windows path — calls `utils.fileCommand`, which
+is `execFile`: each value is one argument and no shell is involved. `notifiers/notifysend.js` — the
+Linux path — calls `utils.command`, which is `cp.exec(notifier + ' ' + options.join(' '))`, a
+SHELL. A toast body carries a session name, which is the owner's own text, and the unit suite runs
+on Linux in CI. So `WindowsToastNotifier` refuses to run off Windows, and its test imports the real
+library rather than a stub, because a stub would be testing the stub.
+
+### G.52 A green suite, and core would not boot (P6-T3, 2026-09-21)
+
+`npm run check` was green — 204 files, 2 528 tests, including eight cases against
+`WindowsToastNotifier` that import `toasted-notifier` for real rather than stubbing it. Then
+`flightdeck.cmd`:
+
+```
+core     FAILED to bind 127.0.0.1:4950 - see .flightdeck-core.log
+
+SyntaxError: The requested module 'toasted-notifier' does not provide an export named 'notify'
+```
+
+**The cause.** `import { notify } from 'toasted-notifier'` is wrong twice over. The package is
+CommonJS, and Node's ESM loader detects named re-exports from a CJS module by static analysis
+(`cjs-module-lexer`); this one assigns its export dynamically, so nothing is detected and a named
+import is a load-time error. And what the module exports is not a namespace at all — it is a live
+`WindowsToaster` INSTANCE whose `notify` reads `this.options`, so even a destructured
+`const { notify } = notifier` would have thrown at the first call. The fix is a default import and
+a method call: `notifier.notify(...)`, and an `export =` declaration that makes a named import a
+type error too.
+
+**Why the unit suite did not see it.** Vitest resolves and interops CJS through Vite, not through
+Node's ESM loader, and Vite synthesises the named exports Node refuses to. So a test that imports
+the real library — which this one deliberately does, and says so in its header — proves the library
+is installed and the adapter's logic runs. **It proves nothing about whether Node can load the
+module core actually imports.** That is a different question and only `node` answers it.
+
+**The seventh entry in this section, and the first where the test was written specifically to avoid
+being fooled and was fooled anyway.** The guard is now `tests/core/adapters/node-esm-imports.test.ts`:
+it spawns `node` and imports every adapter that pulls in a third-party module, asserting exit 0.
+A subprocess per module, about a second in total, against a class of failure that costs a boot.
+

@@ -111,3 +111,40 @@ export function prepareConfigStatements(db: DatabaseSync): ConfigStatements {
     ),
   };
 }
+
+/** The mute table's statements — P6-T3. Grouped for `ProjectStatements`' reason. */
+export interface MuteStatements {
+  readonly upsert: StatementSync;
+  readonly selectAll: StatementSync;
+  readonly remove: StatementSync;
+  readonly prune: StatementSync;
+}
+
+/**
+ * Four, and the fourth is the bound.
+ *
+ * `DO UPDATE SET muted_at` rather than `DO NOTHING`, and it is the opposite choice from
+ * `projects.imported_at` on purpose: muting a session that is already muted is not a second
+ * decision either, but `muted_at` is not shown to anybody — it exists so `prune` can keep the
+ * newest mutes and drop the oldest, and a row whose timestamp never moved would be evicted while
+ * the owner was still using it.
+ *
+ * `selectAll` orders by `muted_at DESC, subscription, session_id`: `prune` takes its window from
+ * the same ordering, so what survives a trim is what `selectAll` would have shown first.
+ */
+export function prepareMuteStatements(db: DatabaseSync): MuteStatements {
+  return {
+    upsert: db.prepare(
+      `INSERT INTO session_mutes (subscription, session_id, muted_at) VALUES (?, ?, ?)
+       ON CONFLICT(subscription, session_id) DO UPDATE SET muted_at = excluded.muted_at`,
+    ),
+    selectAll: db.prepare(
+      `SELECT * FROM session_mutes ORDER BY muted_at DESC, subscription, session_id`,
+    ),
+    remove: db.prepare(`DELETE FROM session_mutes WHERE subscription = ? AND session_id = ?`),
+    prune: db.prepare(
+      `DELETE FROM session_mutes WHERE rowid NOT IN
+         (SELECT rowid FROM session_mutes ORDER BY muted_at DESC, subscription, session_id LIMIT ?)`,
+    ),
+  };
+}

@@ -18,6 +18,7 @@ import { AskRoute } from './http/ask-route.ts';
 import { ConnectPlanRoute, ConnectWriteRoute } from './http/connect-routes.ts';
 import { DoctorRoute, RespawnRoute, UpdateRoute } from './http/install-routes.ts';
 import { LaunchRoute } from './http/launch-route.ts';
+import { MutesReadRoute, MutesWriteRoute } from './http/mutes-route.ts';
 import { PasteRoute } from './http/paste-route.ts';
 import { PreviewRoute, type PreviewSource } from './http/preview-route.ts';
 import { RequestRouter } from './http/request-router.ts';
@@ -118,6 +119,10 @@ export function buildRouter(parts: RouterParts, extra: readonly Route[]): Reques
     // The same two-routes-one-path shape, for the writer that started it — P4-T6, D13.
     new ConnectPlanRoute(parts.connector),
     new ConnectWriteRoute(parts.connector, parts.audit),
+    // And a third time, for the switch on every pane — P6-T3. No audit row: a mute changes
+    // nothing outside Flightdeck's own database, which is what SEC-PROC-3 records.
+    new MutesReadRoute(parts.feeds.mutes),
+    new MutesWriteRoute(parts.feeds.mutes),
     ...extra,
     new HooksRoute({
       queue: parts.feeds.hooks,

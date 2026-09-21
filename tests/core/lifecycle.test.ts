@@ -26,28 +26,34 @@ class Startable {
 }
 
 describe('startCore', () => {
-  it('starts BOTH feeds with timers, not just the reconciler', () => {
+  it('starts EVERY startable, not just the reconciler', () => {
     const reconciler = new Startable();
     const transcripts = new Startable();
+    const toasts = new Startable();
 
-    startCore({ reconciler, transcripts });
+    startCore({ reconciler, transcripts, toasts });
 
     expect(reconciler.started).toBe(1);
     // The one that was missing. Feed 4 polls every second and reads nothing until this is called.
     expect(transcripts.started).toBe(1);
+    // P6-T3, and here for the same shape rather than for a timer: an announcer nobody subscribed
+    // raises no toast, throws nothing, and looks exactly like a machine with nothing to say.
+    expect(toasts.started).toBe(1);
   });
 
   it('is idempotent, so a caller that starts twice does not run two polls', () => {
     const reconciler = new Startable();
     const transcripts = new Startable();
+    const toasts = new Startable();
 
-    startCore({ reconciler, transcripts });
-    startCore({ reconciler, transcripts });
+    startCore({ reconciler, transcripts, toasts });
+    startCore({ reconciler, transcripts, toasts });
 
     // `startCore` forwards every call; idempotence is each `start`'s own, and both use `??=` on
     // their timer. Asserting the forwarding here keeps this test about the list rather than about
     // somebody else's timer.
     expect(reconciler.started).toBe(2);
     expect(transcripts.started).toBe(2);
+    expect(toasts.started).toBe(2);
   });
 });

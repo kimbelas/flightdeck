@@ -39,6 +39,14 @@ interface PaneGridProps {
   readonly onStop: (row: SessionRowViewModel) => void;
   /** Hands the session to Windows Terminal and closes this pane — P6-T2. */
   readonly onPopOut: (row: SessionRowViewModel) => void;
+  /**
+   * Which sessions core is silent about, as `sessionKey` strings — P6-T3.
+   *
+   * The set rather than a per-pane boolean, because it is core's answer and one read fills every
+   * pane: a mute set in another tab, or yesterday, draws the right switch here without asking.
+   */
+  readonly muted: readonly string[];
+  readonly onMute: (row: SessionRowViewModel, muted: boolean) => void;
   readonly onRespawn: (row: SessionRowViewModel) => void;
   readonly onClose: (key: string) => void;
 }
@@ -103,6 +111,10 @@ function paneControls(
     },
     onPopOut: () => {
       props.onPopOut(row);
+    },
+    muted: props.muted.includes(row.key),
+    onMute: (muted: boolean) => {
+      props.onMute(row, muted);
     },
     onRespawn: () => {
       props.onRespawn(row);
