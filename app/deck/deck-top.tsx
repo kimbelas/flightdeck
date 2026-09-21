@@ -14,6 +14,7 @@
 import type { JSX } from 'react';
 import { projectKey } from '../../contracts/project.ts';
 import { DeckBanners } from './deck-banners.tsx';
+import { groupBannerLine } from './group-banner-line.ts';
 import { DeckHeader } from './deck-header.tsx';
 import { DeckInstall } from './deck-install.tsx';
 import type { DeckActions, ProjectTarget } from './deck-commands.ts';
@@ -43,7 +44,12 @@ export function DeckTop({ state, now, count, install, actions }: DeckTopProps): 
         onOpenInstall={actions.onOpenInstall}
       />
       {install && <DeckInstall state={state} actions={actions} />}
-      <DeckBanners error={state.error} unreadable={state.unreadable} />
+      <DeckBanners
+        error={state.error}
+        unreadable={state.unreadable}
+        group={groupBannerLine(state.groupReport, state.groupRefusal)}
+        onDismissGroup={actions.onClearGroup}
+      />
     </>
   );
 }

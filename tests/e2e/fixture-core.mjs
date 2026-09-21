@@ -51,6 +51,7 @@ import {
   presetId,
   PROFILE_FUNCTIONS,
 } from '../../contracts/launch-preset.ts';
+import { MAX_GROUP_LAUNCH, presetGroups } from '../../contracts/preset-group.ts';
 import { parseProjectPathBody, projectKey, projectName } from '../../contracts/project.ts';
 import { parseWorkflowMap } from '../../contracts/workflow-map.ts';
 import { ASK_MAX_BUDGET_USD } from '../../contracts/ask-run.ts';
@@ -219,6 +220,10 @@ export class FixtureCore {
     this.popouts = [];
     /** `sessionKey` strings, exactly as `MuteBook` holds them — P6-T3. */
     this.muted = new Set();
+    /** Every group press core was asked for — P6-T4. What the palette sent, not what it drew. */
+    this.groupPresses = [];
+    /** Held while a press is 'in flight', so a smoke check can reach the 409 — P6-T4. */
+    this.groupBusy = false;
     /** Every request core answered, so a check can ask what the deck actually sent. */
     this.requests = [];
     /** The bodies of every `POST /sessions`. The launch form's real destination. */
@@ -397,6 +402,9 @@ export class FixtureCore {
     }
     if (request.method === 'POST' && path === PASTED_IMAGE_PATH) {
       return this.pasteImage(await body(request));
+    }
+    if (request.method === 'POST' && path === '/sessions/group') {
+      return this.launchGroup(await body(request));
     }
     if (request.method === 'GET' && path === '/toasts/mutes') {
       return [200, { muted: [...this.muted].sort() }];
@@ -948,6 +956,83 @@ export class FixtureCore {
     // terminal that attached while the pane still held it would evict it in silence (F.2.6).
     const detached = this.endAttached({ kind: 'session', sessionId, subscription });
     return [200, { detached: detached === true }];
+  }
+
+  /**
+   * Files two saved presets under one group name — P6-T4.
+   *
+   * Setup rather than a route, because it stands for something that happened on another day: the
+   * owner saved these presets last week. Doing it through the save form would be testing the save
+   * form, which `presetChecks` already does, and would put four panel interactions in front of the
+   * thing this group is actually about.
+   *
+   * @param projectPath an imported folder. The presets are filed under it exactly as core files
+   * them, so `presetList` merges them with the built-ins the way a real core would.
+   */
+  seedGroup(projectPath, group = 'morning') {
+    const key = projectKey(projectPath);
+    // Imported too, if an earlier group withdrew it: a preset is filed under a folder, and this
+    // helper stands for a whole day's worth of setup rather than for one click of it.
+    if (!this.projects.has(key)) {
+      this.projects.set(key, {
+        path: projectPath,
+        name: projectName(projectPath),
+        importedAt: Date.now(),
+      });
+    }
+    for (const [id, name] of [
+      ['orchestrator', 'orchestrator'],
+      ['reports', 'reports'],
+    ]) {
+      this.presets.set(`${key}|${id}`, {
+        projectKey: key,
+        id,
+        name,
+        profileFn: 'claude-isg-orch',
+        cwd: projectPath,
+        sessionName: `fd-${id}`,
+        promptSource: 'literal',
+        prompt: 'go',
+        group,
+        builtIn: false,
+      });
+    }
+  }
+
+  /**
+   * `POST /sessions/group` — P6-T4, D17.
+   *
+   * **The double starts nothing, and that is the whole reason it exists.** A group press on a real
+   * core spends the owner's quota per preset; the half a browser can see is what the palette SENT
+   * and what the deck does with the report, and neither needs a session to exist. So this resolves
+   * the group out of the same preset list `GET /projects/presets` answers with — through the same
+   * `presetGroups` core uses, so a group the deck offers and a group core finds cannot diverge —
+   * and reports a made-up id per preset.
+   *
+   * The FIRST preset of every group is reported as failed, so the partial-failure path the deck
+   * has to draw is reachable without arranging for a real launch to go wrong.
+   */
+  launchGroup(raw) {
+    const { group } = parseJson(raw) ?? {};
+    if (typeof group !== 'string' || group.trim() === '') return [400, { error: 'bad_request' }];
+    if (this.groupBusy) return [409, { error: 'busy' }];
+    const found = presetGroups(this.presetList()).find(
+      (one) => one.key === group.trim().toLowerCase(),
+    );
+    if (found === undefined) return [400, { error: 'unknown_group' }];
+    if (found.presets.length > MAX_GROUP_LAUNCH) return [400, { error: 'too_many' }];
+    this.groupPresses.push(group.trim());
+    return [
+      200,
+      {
+        group: found.name,
+        outcomes: found.presets.map((preset, index) =>
+          index === 0
+            ? { presetId: preset.id, name: preset.name, failure: 'launch_failed' }
+            : { presetId: preset.id, name: preset.name, sessionId: `fixture-${preset.id}` },
+        ),
+      },
+    ];
   }
 
   /**

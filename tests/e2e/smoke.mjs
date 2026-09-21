@@ -39,6 +39,7 @@ import { configChangeChecks } from './smoke/config-change-checks.mjs';
 import { shellChecks } from './smoke/shell-checks.mjs';
 import { popoutChecks } from './smoke/popout-checks.mjs';
 import { muteChecks } from './smoke/mute-checks.mjs';
+import { groupChecks } from './smoke/group-checks.mjs';
 import { securityChecks } from './smoke/security-checks.mjs';
 import { LOOPBACK_ADDRESS, UI_PORT } from '../../contracts/origins.ts';
 
@@ -101,6 +102,9 @@ try {
   // After the project groups, because a shell opens in the CURRENT project and there has to be
   // one to be current (P6-T1).
   await shellChecks(page, report, core);
+  // After the project groups, because a group is made of presets and a preset needs an imported
+  // folder to be filed under (P6-T4). It reloads the page, so it goes before the pane groups.
+  await groupChecks(page, report, core);
   // After the shells, because it opens a SESSION pane and closes every other one first (P6-T3).
   // Before the pop-out, which ENDS the attach it was given: this group needs a pane that stays.
   await muteChecks(page, report, core);

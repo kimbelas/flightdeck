@@ -32,7 +32,12 @@ import {
   SEARCH_INPUT_ID,
 } from './deck-keyboard.ts';
 import type { DeckCommand } from './command-palette-view-model.ts';
+import type { GroupTarget } from './group-targets.ts';
 import type { SessionRowViewModel } from './session-row-view-model.ts';
+
+// Re-exported so the palette's types read from one place, while the TYPE lives in a leaf module a
+// unit test can import without dragging `deck-keyboard.ts` into the DOM-less project (G.53).
+export type { GroupTarget };
 
 /**
  * Everything the deck can be asked to do, whatever asked for it.
@@ -97,6 +102,17 @@ export interface DeckActions {
    */
   readonly onMute: (row: SessionRowViewModel, muted: boolean) => void;
   /**
+   * Starting a whole preset group — P6-T4, and **the palette is where D17 put it**.
+   *
+   * *"A named preset group ("morning: app-core orchestrator + ticket + reports") launches in one
+   * click from the palette."* It is the only entry here that spends quota per press, which is an
+   * argument for the palette rather than against it: `Ctrl+K morn Enter` is a deliberate sentence,
+   * where a button that lives permanently on screen is one an elbow can lean on.
+   */
+  readonly onLaunchGroup: (group: string) => void;
+  /** Dismisses the banner that says what the last press did. */
+  readonly onClearGroup: () => void;
+  /**
    * Deleting one — P4-T2, and deliberately NOT a palette entry.
    *
    * Every other verb here is reachable by typing its name into Ctrl+K. This one is not, and that
@@ -153,6 +169,8 @@ export interface CommandTargets extends DeckActions {
   readonly onLayout: (layout: PaneLayout) => void;
   /** The imported folders, in panel order — P3-T6. Empty until something is imported. */
   readonly projects: readonly ProjectTarget[];
+  /** The preset groups there are to press — P6-T4. Empty until a preset is given a group name. */
+  readonly groups: readonly GroupTarget[];
   readonly onChooseProject: (key: string | undefined) => void;
 }
 
@@ -161,6 +179,7 @@ export function deckCommands(targets: CommandTargets): readonly DeckCommand[] {
   return [
     ...globalCommands(targets),
     ...projectCommands(targets),
+    ...groupCommands(targets),
     ...layoutCommands(targets),
     ...targets.rows.flatMap((row) => rowCommands(row, targets)),
   ];
@@ -194,6 +213,36 @@ function projectCommands(targets: CommandTargets): readonly DeckCommand[] {
     },
   }));
   return [all, ...each];
+}
+
+/**
+ * SPEC §5.7's morning, and D17's one click — P6-T4.
+ *
+ * One entry per group, for `projectCommands`' reason: the palette is searched by typing, and
+ * `Ctrl+K morn Enter` beats a menu. A group with no presets has no entry because it does not
+ * exist — a group is derived from the presets wearing its name (`presetGroups`).
+ *
+ * **The hint carries the count, and that is not decoration.** This is the only entry in the
+ * palette that spends quota, and how much is exactly the number of presets in it. A group over the
+ * cap says so here rather than being refused after the press: the palette is where somebody can
+ * still change their mind.
+ */
+function groupCommands(targets: CommandTargets): readonly DeckCommand[] {
+  return targets.groups.map((group) => ({
+    id: `group-${group.key}`,
+    label: `Launch ${group.name}`,
+    hint: group.tooLarge
+      ? `group · ${describePresets(group.presets)} — too many to start at once`
+      : `group · starts ${describePresets(group.presets)}`,
+    run: () => {
+      targets.onLaunchGroup(group.name);
+    },
+  }));
+}
+
+/** `3 presets`, `1 preset`. Spelled out because the number is what the press will cost. */
+function describePresets(presets: number): string {
+  return `${String(presets)} preset${presets === 1 ? '' : 's'}`;
 }
 
 /** `3 sessions`, `1 session`, `no sessions` — never `0 sessions`, which reads as a failed count. */

@@ -43,6 +43,7 @@ import {
 import { AskSlice } from './ask-slice.ts';
 import { InstallSlice } from './install-slice.ts';
 import { LifecycleSlice } from './lifecycle-slice.ts';
+import { GroupSlice } from './group-slice.ts';
 import { MuteSlice } from './mute-slice.ts';
 import { upsert, without } from './session-rows.ts';
 import type { AskRequest } from '../../contracts/ask-run.ts';
@@ -105,6 +106,8 @@ export class DeckStore {
   private readonly lifecycle: LifecycleSlice;
   /** Which sessions core stops toasting about — P6-T3. Read on connect, written by a pane. */
   private readonly mutes: MuteSlice;
+  /** Pressing a preset group — P6-T4. The one button that starts N sessions at once. */
+  private readonly groups: GroupSlice;
   private state: DeckState = EMPTY;
   private source: EventStreamSource | undefined;
   private cancelRetry: (() => void) | undefined;
@@ -138,6 +141,9 @@ export class DeckStore {
     });
     this.mutes = new MuteSlice(api, (muted) => {
       this.set({ muted });
+    });
+    this.groups = new GroupSlice(api, (changes) => {
+      this.set(changes);
     });
   }
 
@@ -299,6 +305,19 @@ export class DeckStore {
    * `muted` is the position asked for rather than a toggle, and the set that comes back is core's
    * rather than this page's guess at it (`MuteSlice`).
    */
+  /**
+   * Starts every preset in a named group — P6-T4, D17.
+   *
+   * @returns whether core ACCEPTED the press, not whether every session started. What started is
+   * in `groupReport`, because three of four is the normal shape of a bad morning.
+   */
+  public launchGroup = (group: string): Promise<boolean> => this.groups.launch(group);
+
+  /** Dismisses the last group press. */
+  public clearGroup = (): void => {
+    this.groups.clear();
+  };
+
   public setMuted = (
     subscription: SubscriptionId,
     sessionId: string,

@@ -12,7 +12,7 @@
 // page's own `fetch`, the rewrite with its server-side bearer, core's parser.
 import { waitFor } from './report.mjs';
 
-const PROJECT = 'C:\\Users\\belas\\Documents\\development\\app-next';
+export const PROJECT = 'C:\\Users\\belas\\Documents\\development\\app-next';
 const MISSING = 'C:\\nope\\not-here';
 
 export async function projectChecks(page, report, core) {
