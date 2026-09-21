@@ -1,4 +1,4 @@
-// The three groups of actions that are pure store-wiring — P4-T4, P4-T2, P3-T1, P6-T3, P6-T4.
+// The three groups of actions that are pure store-wiring — P4-T4, P4-T2, P3-T1, P6-T3, P6-T6.
 //
 // Out of `deck-view.tsx` for the reason that file's own comment already gave: it has a 250-line
 // limit it has been split for twice, and of what it does, this is the piece with the least to do
@@ -9,7 +9,8 @@
 // They stay three functions rather than becoming one, because they are three different answers to
 // "why is this fire-and-forget": an Ask is over when its answer is (D48), a lifecycle verb is
 // reported by the next sweep rather than by its own reply, and a project read is deliberate
-// because it costs a walk of the disk.
+// because it costs a walk of the disk. `onHandOff` is the one exception in the file and says so
+// where it is defined — a fork has no sweep to report it, so the form that pressed gets the answer.
 import type { AskRequest } from '../../contracts/ask-run.ts';
 import type { DeckActions } from './deck-commands.ts';
 import type { DeckStore } from './deck-store.ts';
@@ -40,7 +41,14 @@ export function lifecycleActions(
   store: DeckStore,
 ): Pick<
   DeckActions,
-  'onResume' | 'onStop' | 'onRemove' | 'onPreview' | 'onMute' | 'onLaunchGroup' | 'onClearGroup'
+  | 'onResume'
+  | 'onStop'
+  | 'onRemove'
+  | 'onPreview'
+  | 'onHandOff'
+  | 'onMute'
+  | 'onLaunchGroup'
+  | 'onClearGroup'
 > {
   return {
     onResume: (row: SessionRowViewModel) => {
@@ -61,6 +69,12 @@ export function lifecycleActions(
     onPreview: (row: SessionRowViewModel) => {
       void store.preview(row.ref);
     },
+    // P6-T6. The one action in this file that is NOT fire-and-forget, and the exception is
+    // earned: a handoff has no sweep to report it — the fork arrives as a new row seconds later —
+    // so the form that pressed needs the answer to know whether to stay open. The promise is
+    // returned rather than awaited here, because what to do with it is the form's decision.
+    onHandOff: (row: SessionRowViewModel, path: string, name: string) =>
+      store.handOff(row.ref, path, name),
     // P6-T3. `muted` is the position being asked for rather than a toggle, so the button and the
     // set it reads from cannot disagree about which way the press went.
     onMute: (row: SessionRowViewModel, muted: boolean) => {

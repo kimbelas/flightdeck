@@ -170,6 +170,20 @@ const FULL_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
 /** What `stop` takes, and what names a job directory — eight lowercase hex (F.7.1, F.2.8b). */
 const SHORT_SESSION_ID = /^[0-9a-f]{8}$/u;
 
+/**
+ * The id a forked session comes back with — P6-T6.
+ *
+ * Exported so the check that pushes the fork onto the snapshot uses the SAME id core answered
+ * with. A made-up one would let a deck that drew the row from the reply pass the check that says
+ * it must not: the row would be there either way.
+ *
+ * @param nth 1 for the first handoff of the run. Shaped like a uuid, because the deck's contracts
+ * refuse anything else and a double that sent a looser id would be testing a looser deck.
+ */
+export function forkIdFor(nth) {
+  return `f0000000-0000-4000-8000-${String(nth).padStart(12, '0')}`;
+}
+
 export class FixtureCore {
   /**
    * @param tokenFile where to write the per-boot token. The smoke points both this and the deck's
@@ -218,6 +232,18 @@ export class FixtureCore {
     this.driftAgeMs = THREE_DAYS_MS;
     /** Every pop-out core was asked for — P6-T2. What the deck sent, not what it drew. */
     this.popouts = [];
+    /** Every handoff core was asked for — P6-T6. The folder and the name, as the row sent them. */
+    this.handoffs = [];
+    /**
+     * A code to refuse the NEXT handoff with, or `undefined` to accept it.
+     *
+     * Set by a check rather than derived, because the deck only ever offers worktrees core knows
+     * about — so the refusal path is not reachable by pressing the control, and it is the half
+     * worth seeing through a browser: the sentence has to land on the row that pressed and the
+     * form has to stay up with the two answers still in it. Cleared as it is used, so a refusal
+     * armed for one press cannot silently refuse the next.
+     */
+    this.refuseHandoff = undefined;
     /** `sessionKey` strings, exactly as `MuteBook` holds them — P6-T3. */
     this.muted = new Set();
     /** Every group press core was asked for — P6-T4. What the palette sent, not what it drew. */
@@ -388,6 +414,9 @@ export class FixtureCore {
     }
     if (request.method === 'POST' && path === '/sessions/rm') {
       return this.removeSession(await body(request));
+    }
+    if (request.method === 'POST' && path === '/sessions/handoff') {
+      return this.handOff(await body(request));
     }
     if (request.method === 'POST' && path === '/run') return this.startAsk(await body(request));
     if (request.method === 'GET' && path === '/doctor') return this.doctor(url);
@@ -746,6 +775,54 @@ export class FixtureCore {
     if (!FULL_SESSION_ID.test(ref?.sessionId ?? '')) return [400, { error: 'bad_session' }];
     this.removals.push(ref);
     return [200, { sessionId: ref.sessionId }];
+  }
+
+  /**
+   * The worktrees the fixture reports for one imported folder — P6-T6.
+   *
+   * Built through the SAME function `GET /projects/map` answers with, so a check that asserts the
+   * handoff's targets is asserting against what the deck was actually told rather than against a
+   * number written twice. An unimported folder has none, which is the deck's own answer for one.
+   */
+  worktreesOf(projectPath) {
+    const project = this.projects.get(projectKey(projectPath));
+    return project === undefined ? [] : workflowMap(project).worktrees;
+  }
+
+  /**
+   * `POST /sessions/handoff` — forking a session into a worktree (P6-T6).
+   *
+   * **No session is forked here and none could be.** A real handoff spawns
+   * `claude --bg --resume <uuid> --fork-session -n <name>` in the target tree; what decides the
+   * argv and what comes back is settled in `session-handoff.test.ts`. What lives on this side of
+   * the wire is what the row SENT and what the deck does with the answer — and the answer is the
+   * interesting half, because a handoff is the one verb that adds a session.
+   *
+   * **The fork is not published.** That is the assertion this double exists for: a real core says
+   * 201 and the new row arrives on the next sweep, so a deck that drew the fork from this reply
+   * would be showing a row core has not said exists. The check pushes the snapshot itself.
+   *
+   * Screened the way `HandoffRoute` screens: both ids, and a folder and a name that are there and
+   * are not longer than core's own caps.
+   */
+  handOff(raw) {
+    const { sessionId, shortId, subscription, cwd, name } = parseJson(raw) ?? {};
+    const known = subscription === '365' || subscription === 'isg';
+    const full = typeof sessionId === 'string' && FULL_SESSION_ID.test(sessionId);
+    const short = typeof shortId === 'string' && SHORT_SESSION_ID.test(shortId);
+    if (!known || !full || !short) return [400, { error: 'bad_session' }];
+    if (typeof cwd !== 'string' || cwd.trim() === '' || cwd.length > 400) {
+      return [400, { error: 'bad_cwd' }];
+    }
+    if (typeof name !== 'string' || name.trim() === '' || name.length > 80) {
+      return [400, { error: 'bad_name' }];
+    }
+    this.handoffs.push({ subscription, sessionId, shortId, cwd, name });
+    const refusal = this.refuseHandoff;
+    this.refuseHandoff = undefined;
+    if (refusal !== undefined) return [refusal === 'no_claude' ? 503 : 400, { error: refusal }];
+    // 201, because a handoff CREATES a session — the one thing that separates it from a resume.
+    return [201, { sessionId: forkIdFor(this.handoffs.length) }];
   }
 
   /**

@@ -9,6 +9,10 @@
 // handoff either made one session or did not, and the session itself is the result — it arrives in
 // the list through the stream like every other row, rather than being drawn from this reply.
 //
+// **The refusal carries the row it was about.** Several rows can be expanded at once (P2-T4), so a
+// bare code would draw "that folder is gone" under a session nobody pressed — a sentence that is
+// false about that row. The key is the one the deck already draws rows under (`sessionKey`).
+//
 // **There is no `clear`, and that is not an omission.** `handOff` clears the refusal before it
 // posts, so the next press always starts from silence; a separate dismiss would only exist to hide
 // a refusal without acting on it, which is a button that makes the deck less true.
@@ -17,12 +21,20 @@
 import { CORE_HANDOFF_PATH } from '../../contracts/deck-routes.ts';
 import { parseHandoffFailure, type HandoffFailure } from '../../contracts/launch-reply.ts';
 import type { SessionRef } from '../../contracts/session-ref.ts';
+import { sessionKey } from '../../contracts/session-row.ts';
 import type { DeckApi } from './deck-api.ts';
+
+/** Why one row's handoff was refused. */
+export interface HandoffRefusal {
+  /** Which row pressed — `sessionKey`, the key the deck files every row under. */
+  readonly key: string;
+  readonly code: HandoffFailure;
+}
 
 /** The field of `DeckState` this slice touches. */
 export interface HandoffHeld {
-  /** Why the last handoff was refused, as core's code. `undefined` once one is accepted. */
-  readonly handoffRefusal: HandoffFailure | undefined;
+  /** The last refusal and the row it was about. `undefined` once a handoff is accepted. */
+  readonly handoffRefusal: HandoffRefusal | undefined;
 }
 
 export class HandoffSlice {
@@ -51,7 +63,7 @@ export class HandoffSlice {
       name,
     });
     if (reply?.status === 201) return true;
-    this.publish({ handoffRefusal: refusalOf(reply?.body) });
+    this.publish({ handoffRefusal: { key: sessionKey(ref), code: refusalOf(reply?.body) } });
     return false;
   }
 }

@@ -11,6 +11,8 @@
 // about what happens when a second row is expanded. Several can be open at once, and the store
 // keys details per row for that reason.
 import { useState, type JSX } from 'react';
+import type { HandoffOffer } from './handoff-view-model.ts';
+import { RowHandoff } from './row-handoff.tsx';
 import { SessionDetailView } from './session-detail-view.tsx';
 import type { SessionDetailViewModel } from './session-detail-view-model.ts';
 import type { SessionPreviewViewModel } from './session-preview-view-model.ts';
@@ -27,12 +29,17 @@ interface SessionRowCardProps {
   readonly preview: SessionPreviewViewModel | undefined;
   /** Whether a preview was ASKED for at all, which is what tells "waiting" from "never pressed". */
   readonly previewAsked: boolean;
+  /** Where this session could be handed to, and why not when it could not — P6-T6. */
+  readonly handoff: HandoffOffer;
+  /** Why the last handoff pressed on THIS row was refused, in English. `undefined` for silence. */
+  readonly handoffRefusal: string | undefined;
   readonly onToggle: () => void;
   readonly onOpen: () => void;
   readonly onResume: () => void;
   readonly onStop: () => void;
   readonly onRemove: () => void;
   readonly onPreview: () => void;
+  readonly onHandOff: (path: string, name: string) => Promise<boolean>;
 }
 
 export function SessionRowCard(props: SessionRowCardProps): JSX.Element {
@@ -72,11 +79,16 @@ export function SessionRowCard(props: SessionRowCardProps): JSX.Element {
 }
 
 /**
- * What an open row shows under its title: the detail, the preview button, and the delete control.
+ * What an open row shows under its title: the detail, the preview, the handoff and the delete.
  *
  * The preview is offered on EVERY expanded row: a session that cannot be attached is the one this
  * matters most for, and a session that can is still one somebody may want to look at without
  * taking the terminal (P5a-T4). The delete control is last — see `RowDelete`.
+ *
+ * The handoff sits between them on purpose (P6-T6). It belongs below the preview, because which
+ * tree to hand a session to is a decision somebody makes after looking at what it is doing; and it
+ * belongs above the delete, because `RowDelete` is the last thing on this card and stays the last
+ * thing on this card — a destructive control that moves is one that gets pressed by habit.
  */
 function RowOpen({
   row,
@@ -84,8 +96,11 @@ function RowOpen({
   detail,
   preview,
   previewAsked,
+  handoff,
+  handoffRefusal,
   onRemove,
   onPreview,
+  onHandOff,
 }: Omit<
   SessionRowCardProps,
   'expanded' | 'onToggle' | 'onOpen' | 'onResume' | 'onStop'
@@ -94,6 +109,12 @@ function RowOpen({
     <>
       <SessionDetailView detail={detail} now={now} />
       <SessionPreviewView preview={preview} asked={previewAsked} now={now} onPreview={onPreview} />
+      <RowHandoff
+        offer={handoff}
+        title={row.title}
+        refusal={handoffRefusal}
+        onHandOff={onHandOff}
+      />
       <RowDelete row={row} onRemove={onRemove} />
     </>
   );

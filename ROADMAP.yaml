@@ -3467,7 +3467,78 @@ phases:
           `npm run check` 211 files / 2 639 tests; `npm run smoke` 393 checks.
       - id: P6-T6
         title: Session handoff — resume into a new worktree with --resume --fork-session
-        status: todo
+        status: done
+        done_on: 2026-09-21
+        deliverables:
+          [
+            contracts/launch-reply.ts,
+            contracts/deck-routes.ts,
+            core/application/session-handoff.ts,
+            core/http/handoff-route.ts,
+            core/routes.ts,
+            core/verbs.ts,
+            core/main.ts,
+            app/deck/handoff-view-model.ts,
+            app/deck/handoff-slice.ts,
+            app/deck/row-handoff.tsx,
+            app/deck/deck-state.ts,
+            app/deck/deck-store.ts,
+            app/deck/deck-actions.ts,
+            app/deck/deck-commands.ts,
+            app/deck/deck-body.tsx,
+            app/deck/session-list.tsx,
+            app/deck/session-row-card.tsx,
+            app/globals.css,
+            tests/core/application/session-handoff.test.ts,
+            tests/core/http/handoff-route.test.ts,
+            tests/app/handoff-view-model.test.ts,
+            tests/app/deck-store-handoff.test.ts,
+            tests/e2e/fixture-core.mjs,
+            tests/e2e/smoke/handoff-checks.mjs,
+            RESEARCH.md G.54,
+          ]
+        notes: >-
+          SPEC §6(8), and **F.2.7 was partly stale, so it was measured again** — G.54. That
+          measurement named this task by id and said a resume must take the full uuid and NOTHING
+          else, which would have made a handoff a game of guessing which flag to add; it was taken
+          on binary 2.1.268 and this machine runs 2.1.278, whose `--bg` help describes a different
+          rule. Re-measured at zero token cost, because a forked session comes back
+          `idle - send a prompt to start`: `--bg --resume <uuid> --fork-session -n <name>` gives a
+          new id, takes the name, and **runs in the PROCESS cwd rather than the original session's
+          folder**. That last one could have sunk the feature — had it restored the recorded
+          directory, a handoff would have silently opened in the old tree, which is P6-T1's "the
+          one failure a terminal must not have".
+          **The one verb in the deck that ADDS a session without being able to lose one.** The
+          original keeps its id, its name and its conversation, which is why there is no armed
+          second button in front of it where `rm` has one: the disclosure on the row opens a form
+          because the press needs two answers, and for no other reason. Putting a second control
+          in `rm`'s red would teach the hand that both are the same press.
+          **The targets are worktrees the deck was already told about** (P3-T4's map), and the
+          tree the session is ALREADY in is excluded. That exclusion is the whole control: core
+          would accept that folder — `resolveDirectory` screens for "may core write here", not for
+          "is this a different tree" — and the result is two sessions competing over one checkout,
+          which is what P6-T5 warns about one task earlier. Windows path equality does the
+          excluding, so a trailing separator or a different case cannot smuggle it back in.
+          **Three silences, three sentences.** A session in no imported project, a project whose
+          map has not arrived, and a project with one tree are different problems with different
+          fixes; one sentence for all three would tell somebody to make a worktree they already
+          have. The first is the ORDINARY answer — most sessions on this machine are in folders
+          nobody imported — which is why it had to be its own.
+          The refusal is keyed on the row that pressed, because several rows can be expanded at
+          once and a bare code would draw "that folder is gone" under a session nobody touched.
+          The fork is NOT drawn from the 201: it arrives on the stream a sweep later like every
+          other row, and the smoke pushes the snapshot itself to prove the list does not move
+          before core says the session exists.
+          Eight sabotages on the service and eight more on the deck's two modules, each watched to
+          land and then to fail. Two of the first core failures were one trap a layer apart:
+          passing `undefined` to a parameter that HAS a default selects the default, and
+          `ClaudeInstall` reads `undefined` as "go and look on disk", which on this machine finds
+          one. Verified live against the real core: the `XPERT` session in the imported `xpert-new`
+          offers exactly one target — `dms-rework · chore/dms-rework-from-master`, the tree it is
+          not in — prefilled `XPERT-fork`, while `apex` and `fd-t2-live` get the sentence instead
+          of the control. Running it is also what showed the form wrapping its two buttons apart
+          in a 340px column; one field per line fixed it.
+          `npm run check` 215 files / 2 709 tests; `npm run smoke` 413 checks.
       - id: P6-T7
         title: Adopt externally started sessions when they exit
         status: todo

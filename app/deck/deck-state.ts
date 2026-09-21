@@ -12,8 +12,8 @@
 // boundary, and moving twelve import sites to prove it would be churn with no reader behind it.
 import type { AskRefusal } from '../../contracts/ask-run.ts';
 import type { GroupLaunchReport, GroupRefusal } from '../../contracts/preset-group.ts';
-import type { HandoffFailure } from '../../contracts/launch-reply.ts';
 import type { InstallHealth, UpdateResult } from '../../contracts/install-health.ts';
+import type { HandoffRefusal } from './handoff-slice.ts';
 import type { RespawnReport } from './install-slice.ts';
 import type { AskRun } from './ask-slice.ts';
 import type { LaunchPreset, PresetRefusal } from '../../contracts/launch-preset.ts';
@@ -90,8 +90,13 @@ export interface DeckState {
   readonly groupReport: GroupLaunchReport | undefined;
   /** Why the last press was refused outright. `undefined` once one is accepted. */
   readonly groupRefusal: GroupRefusal | undefined;
-  /** Why the last handoff was refused — P6-T6. `undefined` once one is accepted. */
-  readonly handoffRefusal: HandoffFailure | undefined;
+  /**
+   * The last refused handoff and the row it was about — P6-T6.
+   *
+   * Keyed rather than bare, because several rows can be expanded at once: a code with no row on it
+   * would draw the sentence under a session nobody pressed (`HandoffSlice`).
+   */
+  readonly handoffRefusal: HandoffRefusal | undefined;
   /**
    * The imported projects, newest first — P3-T1.
    *
