@@ -42,6 +42,26 @@ export interface SessionVerbParts {
 }
 
 /** The four verbs that act on a session — P4-T2. See the header for which one takes a shell. */
+import { join } from 'node:path';
+import { SessionPopper, type PaneHolders } from './application/session-popper.ts';
+import { WindowsTerminalCommands } from './adapters/windows/windows-terminal-commands.ts';
+
+/**
+ * `powershell.exe` by absolute path, for `PowerShellLaunchCommands`' reason (SEC-PROC-2).
+ *
+ * Core runs as a logon task and a service's `PATH` is not the interactive one — the lesson
+ * `ClaudeInstall` already carries about the npm shim.
+ */
+function powerShellPath(): string {
+  return join(
+    process.env['SystemRoot'] ?? 'C:\\Windows',
+    'System32',
+    'WindowsPowerShell',
+    'v1.0',
+    'powershell.exe',
+  );
+}
+
 export function sessionVerbs(
   parts: SessionVerbParts,
 ): Pick<RouterParts, 'launcher' | 'resumer' | 'stopper' | 'remover' | 'respawner' | 'doctor'> {
@@ -80,6 +100,31 @@ export function buildAsker(parts: AskParts): AskRunner {
     publisher: parts.publisher,
     audit: parts.audit,
     clock: parts.clock,
+    logger: parts.logger,
+  });
+}
+
+/**
+ * Popping a session out into Windows Terminal — P6-T2.
+ *
+ * Its own builder rather than a member of `sessionVerbs`, and the reason is what it needs: the
+ * PANE REGISTRY. The other six verbs are about a session on disk; this one is about who currently
+ * holds the attach, because it has to let go before Windows Terminal takes it (F.2.6). That is a
+ * dependency `sessionVerbs` does not have and should not grow.
+ */
+export function buildPopper(
+  parts: SessionVerbParts & { readonly panes: PaneHolders },
+): SessionPopper {
+  return new SessionPopper({
+    terminals: new WindowsTerminalCommands({
+      install: parts.install,
+      runner: parts.runner,
+      shell: powerShellPath(),
+      logger: parts.logger,
+    }),
+    panes: parts.panes,
+    runner: parts.runner,
+    audit: parts.audit,
     logger: parts.logger,
   });
 }

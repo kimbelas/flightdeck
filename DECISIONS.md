@@ -1716,3 +1716,50 @@ into one inside a repository, so both fields are compared — exactly as a sessi
 said "Closing this pane detaches it. The session keeps running." on every pane. For a session that
 is true and measured (F.2.6). For a shell it is a lie — `PaneRegistry` kills the process — and SPEC
 has `npm run dev` living in one of these. It now says what closing it actually does.
+
+## D57 — the pop-out does NOT go through a profile function, and SPEC's command line is wrong (decided 2026-09-21, P6-T2)
+
+SPEC §5.3 spells the Windows Terminal pop-out:
+
+```
+wt.exe -w 0 nt --title … -d … powershell -NoExit -Command "<profile fn> attach <id>"
+```
+
+**The last clause does not attach to anything.** Measured, against the owner's own profile:
+`claude-365` is `& $ClaudeBin --dangerously-skip-permissions @args`, so `claude-365 attach <id>`
+becomes `claude --dangerously-skip-permissions attach <id>` — and a global flag before the
+subcommand makes Claude Code stop reading `attach` as one. It takes `attach <id>` as a **prompt**,
+starts an interactive session, answers it, spends tokens, and exits **0**. A button wired that way
+would look like it worked every single time.
+
+So the tab runs `claude attach <short>` directly, with `CLAUDE_CONFIG_DIR` set from the closed
+`SubscriptionId` union — which is exactly what a PANE has always done (`WindowsPtyCommands`).
+
+**This is not a reversal of D4.** D4 routes LAUNCHES through the profile functions because that is
+where model routing lives: `claude-isg-ticket` pins `opusplan[1m]` and two environment variables,
+and core spawning `claude.exe` reproduces one of the four and loses the rest. An attach starts
+nothing and chooses no model. The only thing that matters is which account's config directory it
+reads, and the function is the wrong tool for that because its fixed flag destroys the dispatch.
+
+**Nothing is interpolated into a command string, and that took a measurement to make possible.**
+The `-Command` text is FIXED — `& $env:FD_CLAUDE attach $env:FD_SESSION` — and the two values
+travel as environment variables, exactly as `PowerShellLaunchCommands` passes `FD_PROMPT`. That
+only works if the environment reaches a new tab in an ALREADY-OPEN window, since `-w 0` hands the
+command to the running Windows Terminal rather than starting one. It does; G.50 has the probe.
+Without that, the config directory would have had to be composed into the script text.
+
+**Two values do reach the command line as arguments, and they are treated differently.** Windows
+Terminal re-reads its own command line and treats `;` as a subcommand separator. A TITLE carrying
+one is sanitised, because a title is cosmetic. A FOLDER carrying one **refuses the pop-out**: a tab
+that opened somewhere other than the session's folder is the same failure the shell pane refused in
+P6-T1, and silently dropping `-d` would be that failure wearing a shrug.
+
+**Detaching happens first, and the order is the feature.** `claude attach` is last-one-wins (F.2.6):
+a second attach is accepted and the first is evicted, exiting 0 about 2.4 s later. A pop-out that
+merely opened a terminal would steal its own pane, and the pane would report an exit code it cannot
+tell apart from the session ending. `PaneRegistry.releaseFor` is the door, and it is called before
+the terminal is even looked for.
+
+**And the card is closed on core's answer, not on the press.** Core replies `detached: true` when it
+released the hold; the deck closes that pane then. Left open, the card would say "evicted" — the
+right word for somebody ELSE taking the attach, and the wrong one for a button you pressed.

@@ -34,6 +34,18 @@ export class SessionRowViewModel {
     return parts.at(-1) ?? '—';
   }
 
+  /**
+   * The whole folder, for the one caller that needs a path rather than a label — P6-T2.
+   *
+   * `project` above is the trailing segment, which is what a dense row can show. A pop-out has to
+   * tell Windows Terminal where to open, and a trailing segment would put the tab in a folder of
+   * that name under wherever it happened to start. Empty when the row carries none, which the
+   * store turns into `undefined` rather than sending an empty string.
+   */
+  public get cwd(): string | undefined {
+    return this.row.cwd === '' ? undefined : this.row.cwd;
+  }
+
   public get kindLabel(): string {
     return this.row.kind;
   }

@@ -3186,7 +3186,73 @@ phases:
           `npm run check` 196 files / 2 385 tests; `npm run smoke` 355 checks.
       - id: P6-T2
         title: Pop out to Windows Terminal (AppX path resolution from open-tab.mjs), detach first
-        status: todo
+        status: done
+        done_on: 2026-09-21
+        deliverables:
+          [
+            contracts/launch-reply.ts,
+            contracts/deck-routes.ts,
+            core/ports/terminal-commands.ts,
+            core/adapters/windows/windows-terminal-commands.ts,
+            core/application/session-popper.ts,
+            core/application/pane-registry.ts,
+            core/http/popout-route.ts,
+            core/routes.ts,
+            core/verbs.ts,
+            core/main.ts,
+            app/deck/lifecycle-slice.ts,
+            app/deck/deck-store.ts,
+            app/deck/deck-replies.ts,
+            app/deck/deck-commands.ts,
+            app/deck/deck-view.tsx,
+            app/deck/deck-body.tsx,
+            app/deck/pane-grid.tsx,
+            app/deck/pane-head.tsx,
+            app/deck/session-row-view-model.ts,
+            tests/core/application/session-popper.test.ts,
+            tests/core/application/pane-registry.test.ts,
+            tests/core/adapters/windows-terminal-commands.test.ts,
+            tests/core/http/stop-route.test.ts,
+            tests/e2e/fixture-core.mjs,
+            tests/e2e/smoke/popout-checks.mjs,
+            DECISIONS.md D57,
+            RESEARCH.md G.50,
+          ]
+        notes: >-
+          SPEC §5.7(4)'s escape hatch, and **SPEC's own command line for it is wrong** — D57, found
+          by running it. SPEC spells the tab `<profile fn> attach <id>`; `claude-365` is
+          `& $ClaudeBin --dangerously-skip-permissions @args`, and a global flag before the
+          subcommand makes Claude Code stop reading `attach` as one. It takes `attach <id>` as a
+          PROMPT, starts an interactive session, spends tokens and exits 0 — wrong action, real
+          cost, looks successful. The probe that found it cost one short session (G.50).
+          So the tab runs `claude attach <short>` with `CLAUDE_CONFIG_DIR` set, which is what a
+          pane has always done. **Not a reversal of D4**: a launch goes through the function
+          because that is where model routing lives; an attach starts nothing and chooses no model.
+          **Nothing is interpolated into a command string**, and that needed a measurement to be
+          possible: the `-Command` text is fixed and reads two environment variables, which only
+          works because the environment DOES reach a new tab in an already-open window (`-w 0`).
+          Probed and confirmed (G.50). Two values do reach the argv — the title is sanitised
+          because it is cosmetic, and a FOLDER carrying Windows Terminal's `;` separator REFUSES
+          the pop-out, because a tab that opened somewhere else is P6-T1's failure again.
+          **Detaching first is the order, not a nicety.** `claude attach` is last-one-wins (F.2.6),
+          so a pop-out that merely opened a terminal would steal its own pane and the pane would
+          report an exit code it cannot tell apart from the session ending. `PaneRegistry.
+          releaseFor` is called before the terminal is even looked for.
+          **And the card closes on CORE's answer.** It was left open at first, which made it say
+          "evicted" — the right word for somebody ELSE taking the attach and the wrong one for a
+          button you pressed. The smoke check that found this was written expecting the card to
+          vanish, failed, and turned out to be right about the feature and wrong about the code.
+          `wt.exe` on PATH is still an AppX alias Node cannot spawn: resolved once through
+          `Get-AppxPackage` and cached. `DeckStore` went over 250 lines again with the fourth
+          session verb, so resume/stop/pop out/delete became `LifecycleSlice` — one shape, four
+          times. Six sabotages, each watched to land and then to fail.
+          Verified live: `POST /sessions/popout` answered 200 in 1 966 ms, and the OS reported a
+          tab titled `fd-popout-probe` running
+          `powershell -NoLogo -NoExit -Command "& $env:FD_CLAUDE attach $env:FD_SESSION"`.
+          `npm run check` 198 files / 2 426 tests; `npm run smoke` 363 checks.
+          One more found by CI rather than by the suite: the resolved binary was composed with
+          `node:path.join`, which is platform-shaped, and the unit job runs on Linux — so the
+          Windows path came back `...__8wek/wt.exe` there and `\wt.exe` here. `win32.join`.
       - id: P6-T3
         title: Windows toasts from core (toasted-notifier) with per-session mute
         status: todo

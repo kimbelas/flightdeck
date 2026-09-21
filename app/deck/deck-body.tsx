@@ -72,6 +72,7 @@ export function DeckBody(props: DeckBodyProps): JSX.Element {
         onFocused={grid.setFocused}
         onRename={grid.renamePane}
         onStop={actions.onStop}
+        onPopOut={actions.onPopOut}
         onRespawn={actions.onRespawnOne}
         onClose={grid.closePane}
       />

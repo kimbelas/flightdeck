@@ -37,6 +37,8 @@ interface PaneGridProps {
   readonly onFocused: (key: string) => void;
   readonly onRename: (key: string, title: string) => void;
   readonly onStop: (row: SessionRowViewModel) => void;
+  /** Hands the session to Windows Terminal and closes this pane — P6-T2. */
+  readonly onPopOut: (row: SessionRowViewModel) => void;
   readonly onRespawn: (row: SessionRowViewModel) => void;
   readonly onClose: (key: string) => void;
 }
@@ -98,6 +100,9 @@ function paneControls(
     canRespawn: row.canRespawn,
     onStop: () => {
       props.onStop(row);
+    },
+    onPopOut: () => {
+      props.onPopOut(row);
     },
     onRespawn: () => {
       props.onRespawn(row);

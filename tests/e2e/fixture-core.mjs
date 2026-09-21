@@ -215,6 +215,8 @@ export class FixtureCore {
      * the first one makes the gap a real number the check can read.
      */
     this.driftAgeMs = THREE_DAYS_MS;
+    /** Every pop-out core was asked for — P6-T2. What the deck sent, not what it drew. */
+    this.popouts = [];
     /** Every request core answered, so a check can ask what the deck actually sent. */
     this.requests = [];
     /** The bodies of every `POST /sessions`. The launch form's real destination. */
@@ -373,6 +375,9 @@ export class FixtureCore {
     }
     if (request.method === 'POST' && path === '/sessions/stop') {
       return this.stopSession(await body(request));
+    }
+    if (request.method === 'POST' && path === '/sessions/popout') {
+      return this.popOut(await body(request));
     }
     if (request.method === 'POST' && path === '/sessions/rm') {
       return this.removeSession(await body(request));
@@ -912,6 +917,31 @@ export class FixtureCore {
     return [200, { sessionId }];
   }
 
+  /**
+   * Popping a session out to Windows Terminal — P6-T2, with core's refusals and its ORDER.
+   *
+   * No terminal is opened here and none could be: a CI runner has no Windows Terminal, and
+   * what the smoke is checking lives on this side of the wire anyway — that the deck sends the
+   * title and the folder, and that the pane goes away because CORE released the hold rather
+   * than because the deck removed its own card.
+   *
+   * So the double does the one thing core does that the browser can see: it ends the attach
+   * behind the pane, exactly as `stopSession` does. A deck that closed the card itself would
+   * pass a check that only counted cards, and would be guessing at the outcome of a write.
+   */
+  popOut(raw) {
+    const { sessionId, shortId, subscription, title, cwd } = parseJson(raw) ?? {};
+    const known = subscription === '365' || subscription === 'isg';
+    const full = typeof sessionId === 'string' && FULL_SESSION_ID.test(sessionId);
+    const short = typeof shortId === 'string' && SHORT_SESSION_ID.test(shortId);
+    if (!known || !full || !short) return [400, { error: 'bad_session' }];
+    this.popouts.push({ subscription, sessionId, shortId, title, cwd });
+    // Detach first, which is the whole of the task: `claude attach` is last-one-wins, so a
+    // terminal that attached while the pane still held it would evict it in silence (F.2.6).
+    const detached = this.endAttached({ kind: 'session', sessionId, subscription });
+    return [200, { detached: detached === true }];
+  }
+
   /** The replay, then nothing until `publish` — exactly core's contract (stream-event.ts). */
   openStream(request, response) {
     response.writeHead(200, STREAM_HEADERS);
@@ -943,12 +973,17 @@ export class FixtureCore {
 
   /** Exits the PTY behind every pane attached to `target`, exactly as a stopped session does. */
   endAttached(target) {
+    let ended = false;
     for (const [client, held] of this.attached) {
       if (!sameTarget(held, target)) continue;
       client.send(encode({ type: 'exit', code: 0 }));
       client.close();
       this.attached.delete(client);
+      ended = true;
     }
+    // P6-T2 reads the answer: a pop-out reports whether a pane was actually detached, and the
+    // deck says "detached and popped out" only when one was.
+    return ended;
   }
 
   serve(client, target) {

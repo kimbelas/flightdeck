@@ -96,6 +96,26 @@ export class PaneRegistry {
     return this.panes.get(paneId);
   }
 
+  /**
+   * Releases whatever pane holds this target — P6-T2, `PaneHolders`.
+   *
+   * The one door out of the holder map, and it exists so a pop-out can DETACH before Windows
+   * Terminal attaches. `claude attach` is last-one-wins (F.2.6): a second attach evicts the
+   * first silently, so the order matters and the caller must not have to know how the map is
+   * keyed to get it right.
+   *
+   * @returns whether a pane was released. `false` for a target nobody holds — an ordinary
+   * answer, not a failure: popping out a session with no pane open is a perfectly good thing to
+   * do, and the deck says "popped out" rather than "detached and popped out".
+   */
+  public releaseFor(target: PtyTarget): boolean {
+    const key = holderKey(target);
+    const paneId = key === undefined ? undefined : this.holders.get(key);
+    if (paneId === undefined) return false;
+    this.close(paneId);
+    return true;
+  }
+
   /** Closes every pane. The composition root calls this on shutdown so no attach outlives core. */
   public closeAll(): void {
     for (const paneId of [...this.panes.keys()]) this.close(paneId);

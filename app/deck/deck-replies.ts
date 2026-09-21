@@ -13,6 +13,7 @@ import {
   parseLaunchFailure,
   parseRemoveFailure,
   parseResumeFailure,
+  parsePopoutFailure,
   parseStopFailure,
   type LaunchAccepted,
 } from '../../contracts/launch-reply.ts';
@@ -82,6 +83,24 @@ export function whyNotResumed(reply: JsonReply | undefined): string {
  * that is not the right shape. `stop` takes the SHORT id and refuses the full uuid (F.2.8b), so
  * this is the code a row with a half-filled ref would produce.
  */
+/**
+ * Why the pop-out did not happen — P6-T2.
+ *
+ * Its own function beside the others for the reason their unions are separate: the verbs
+ * sound alike and are not. `no_terminal` covers two absences on purpose — Windows Terminal
+ * and Claude Code — because from here they are one sentence.
+ */
+export function whyNotPoppedOut(reply: JsonReply | undefined): string {
+  if (reply === undefined) return UNREACHABLE;
+  const failure = parsePopoutFailure(reply.body);
+  if (failure === 'no_terminal') {
+    return 'Nothing here to pop out into — Windows Terminal or claude.exe is missing.';
+  }
+  if (failure === 'bad_session') return 'That row does not carry the ids core needs.';
+  if (failure !== undefined) return 'Core could not open Windows Terminal.';
+  return describeStatus(reply.status);
+}
+
 export function whyNotStopped(reply: JsonReply | undefined): string {
   if (reply === undefined) return UNREACHABLE;
   const failure = parseStopFailure(reply.body);

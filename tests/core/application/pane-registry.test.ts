@@ -177,3 +177,37 @@ describe('PaneRegistry — lifecycle', () => {
     expect(host.last?.spec).toMatchObject({ cols: 120, rows: 40 });
   });
 });
+
+describe('PaneRegistry.releaseFor — detaching before a pop-out (P6-T2)', () => {
+  it('closes the pane holding a session, and kills its attach', () => {
+    const { panes, host } = registry();
+    panes.open(SESSION, SIZE);
+
+    expect(panes.releaseFor(SESSION)).toBe(true);
+    expect(panes.openPaneCount).toBe(0);
+    expect(host.last?.killed).toBe(true);
+  });
+
+  // An ordinary answer, not a failure: popping out a session with no pane open is fine.
+  it('answers false for a session nobody holds', () => {
+    expect(registry().panes.releaseFor(SESSION)).toBe(false);
+  });
+
+  // A shell is never held, so there is nothing to release and nothing to guess at.
+  it('answers false for a shell, which no pane ever holds', () => {
+    const { panes } = registry();
+    panes.open(SHELL, SIZE);
+
+    expect(panes.releaseFor(SHELL)).toBe(false);
+    expect(panes.openPaneCount).toBe(1);
+  });
+
+  // The whole point of the order: the hold has to be free before Windows Terminal attaches.
+  it('frees the hold, so the session can be opened again afterwards', () => {
+    const { panes } = registry();
+    panes.open(SESSION, SIZE);
+    panes.releaseFor(SESSION);
+
+    expect(panes.open(SESSION, SIZE).ok).toBe(true);
+  });
+});

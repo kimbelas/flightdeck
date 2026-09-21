@@ -123,6 +123,28 @@ export function parseStopFailure(value: unknown): StopFailure | undefined {
  * `rm` takes the SHORT id and refuses the full uuid, exactly as `stop` does (F.2.8b, and F.8.4
  * measured the same for `rm`), so `bad_session` is the code for a row that does not carry both.
  */
+/**
+ * Why a pop-out did not happen — P6-T2.
+ *
+ * Its own union beside the three above, for `RemoveFailure`'s reason: the verbs differ in what can
+ * go wrong. `no_terminal` covers Windows Terminal not being installed AND Claude Code not being
+ * installed, because from the deck they are one sentence: there is nothing here to pop out into.
+ */
+export type PopoutFailure = 'bad_session' | 'no_terminal' | 'popout_failed';
+
+export const POPOUT_FAILURES: readonly PopoutFailure[] = [
+  'bad_session',
+  'no_terminal',
+  'popout_failed',
+];
+
+/** One refusal off `POST /sessions/popout`. @throws never. */
+export function parsePopoutFailure(value: unknown): PopoutFailure | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const error: unknown = Object.fromEntries(Object.entries(value))['error'];
+  return POPOUT_FAILURES.find((known) => known === error);
+}
+
 export type RemoveFailure = 'no_claude' | 'bad_session' | 'remove_failed';
 
 export const REMOVE_FAILURES: readonly RemoveFailure[] = [

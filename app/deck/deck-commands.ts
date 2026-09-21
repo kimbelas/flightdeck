@@ -80,6 +80,15 @@ export interface DeckActions {
   readonly onResume: (row: SessionRowViewModel) => void;
   readonly onStop: (row: SessionRowViewModel) => void;
   /**
+   * Hands a session to Windows Terminal — P6-T2, and NOT a palette entry.
+   *
+   * It is reached from the pane, because what it does is about the pane: it detaches this
+   * one before the terminal attaches, since `claude attach` is last-one-wins (F.2.6). A
+   * palette entry would be a way to pop out a session with no pane open, which is a
+   * different verb wearing the same word.
+   */
+  readonly onPopOut: (row: SessionRowViewModel) => void;
+  /**
    * Deleting one — P4-T2, and deliberately NOT a palette entry.
    *
    * Every other verb here is reachable by typing its name into Ctrl+K. This one is not, and that

@@ -37,6 +37,7 @@ import { projectViewChecks } from './smoke/project-view-checks.mjs';
 import { observedChecks } from './smoke/observed-checks.mjs';
 import { configChangeChecks } from './smoke/config-change-checks.mjs';
 import { shellChecks } from './smoke/shell-checks.mjs';
+import { popoutChecks } from './smoke/popout-checks.mjs';
 import { securityChecks } from './smoke/security-checks.mjs';
 import { LOOPBACK_ADDRESS, UI_PORT } from '../../contracts/origins.ts';
 
@@ -99,6 +100,8 @@ try {
   // After the project groups, because a shell opens in the CURRENT project and there has to be
   // one to be current (P6-T1).
   await shellChecks(page, report, core);
+  // After the shells, because it opens a SESSION pane and closes every other one first (P6-T2).
+  await popoutChecks(page, report, core);
   if (DEV) devChecks(report, seen);
   else await securityChecks(page, report, core, seen);
   await page.screenshot({ path: SHOT });

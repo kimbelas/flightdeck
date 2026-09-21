@@ -85,6 +85,14 @@ export const CORE_RESUME_PATH = `${CORE_PREFIX}sessions/resume`;
 export const CORE_STOP_PATH = `${CORE_PREFIX}sessions/stop`;
 
 /**
+ * Handing a session to Windows Terminal — P6-T2, SPEC §5.7(4).
+ *
+ * Its own literal path beside the other session verbs, and spelled here for
+ * `CORE_STOP_PATH`'s reason: the deck and `PopoutRoute` must not be able to drift apart.
+ */
+export const CORE_POPOUT_PATH = `${CORE_PREFIX}sessions/popout`;
+
+/**
  * DELETING one, conversation and all — P4-T2.
  *
  * Its own literal path rather than a field on the stop body, and that is a control rather than
