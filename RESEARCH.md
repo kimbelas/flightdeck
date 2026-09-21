@@ -1427,6 +1427,96 @@ the CLI's own, then core's closing one, which is why the panel keeps the FIRST (
 no cost, and a panel taking the last would show a finished run costing nothing). And the 202 came
 back before any record did, which is the property D48 exists for.
 
+### F.10 The version chip's three verbs — P4-T5 (2026-09-21, Claude Code 2.1.278)
+
+#### F.10.1 `claude doctor` — and the line that made it a parser
+
+Exit 0, **1.98 s**, 20 lines, `Key: value` with prose either side. Verbatim, account name replaced:
+
+```
+Running: npm-global (2.1.278)
+Commit: 809c980662e3
+Platform: win32-x64
+Path: C:\Users\<account>\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe
+Config install method: global
+Search: OK (bundled)
+Auto-updates: enabled
+Auto-update channel: latest
+Last update attempt: success → 2.1.278 (2026-09-19)
+Managed settings (remote): none configured for this organization
+Organization policy: Loaded from api.anthropic.com
+
+No installation issues found.
+```
+
+**Three of those lines cannot go on the deck.** `Path` carries the Windows account name — the same
+thing `contracts/core-status.ts` already keeps off this screen with `transcriptPath` (SEC-DATA-2) —
+and the last two name the employer. So the output is read into a closed list of keys and anything
+else is dropped, which also means a line a future version adds is excluded by default. That is why
+`contracts/install-health.ts` is a parser and not a `<pre>`.
+
+**`Auto-updates: enabled` reframes the whole task.** The roadmap asked for a `claude update` button
+on the assumption that somebody has to press one. The binary keeps itself current and `Last update
+attempt` says when it last did — two days before this measurement. The button is a "check now", and
+the panel says so rather than leaving the owner thinking they are behind.
+
+#### F.10.2 `claude update` — no check-only form, and it is not alone on stdout
+
+```
+$ claude update --help
+Usage: claude update|upgrade [options]
+Check for updates and install if available
+Options:
+  -h, --help  Display help for command
+```
+
+**There is no dry-run flag.** Pressing it can replace the binary that every session started
+afterwards will run. Measured, already current: exit 0, **3.8 s**, 4 lines.
+
+```
+Current version: 2.1.278
+Checking for updates to latest version...
+Claude Code is up to date (2.1.278)
+SessionEnd hook [http://127.0.0.1:4950/hooks] failed: connect ECONNREFUSED 127.0.0.1:4950
+```
+
+**That fourth line is Flightdeck's.** `update` runs a session lifecycle and fires the `SessionEnd`
+hook, so with core stopped its stdout carries an ECONNREFUSED against Flightdeck's own port. It is
+P0-T3's receiver-down behaviour arriving somewhere nobody looked for it, and a panel that printed
+the output verbatim would tell the owner Claude is broken when the thing that is down is the deck
+they are reading it on. Only the two sentences the parser names survive.
+
+#### F.10.3 `respawn` takes the SHORT id — the fourth verb measured, the third to agree
+
+```
+claude respawn 26b03f93                                 respawned 26b03f93    exit 0, 1.96 s
+claude respawn 26b03f93-0000-0000-0000-000000000000     No job matching '…'   exit 1
+```
+
+So the id forms now stand at: `stop` (F.2.8b), `rm` (F.8.4) and `respawn` all take the short id and
+fail loudly on a uuid; `--resume` takes the full uuid and **forks silently** on a short one (F.2.7).
+Four verbs, two rules, and the only one that fails quietly is the odd one out — still the reason
+there is no shared id helper.
+
+#### F.10.4 `respawn --all` does not mean all
+
+Measured with two background sessions on `365`, one `blocked` and one `done`:
+
+```
+BEFORE   d1b2f43c deck-demo   background  blocked
+         26b03f93 fd-t5-probe background  done
+
+$ claude respawn --all          exit 0, 1.08 s
+respawned d1b2f43c
+```
+
+**It restarted one of the two and said so.** The skipped session was the one that had finished — and
+respawning that same session BY NAME had worked a minute earlier (F.10.3), so this is `--all`'s
+selection rather than a refusal. A button labelled "respawn all" would therefore be a button that
+quietly skips whatever has finished, and a deck that reported a count taken from the request would
+report a number the CLI never produced. The reply carries the ids the output named; the panel prints
+those.
+
 ## G. Slice results (measured on this machine, 2026-09-11, binary 2.1.268)
 
 Measured while building the D30 terminal slice, and extended by P1-T9. Every one of these was found
@@ -3030,3 +3120,30 @@ have missed entirely is `rate_limit_event`, which carries both quota windows in 
 this codebase does not use (F.9.2). **The capture is what caught it, and D28 is why the capture
 happened in this task rather than in P0**: a fixture captured without a consumer is captured wrong,
 and nobody would have thought to capture a record type they did not know existed.
+
+### G.43 The task whose premise the first measurement contradicted (P4-T5, 2026-09-21)
+
+Three sabotages, each removing the mechanism its checks depend on (G.32), each verified to have
+LANDED before the result was read (G.38, G.40).
+
+| sabotage | what failed |
+| --- | --- |
+| read every `Key:` line instead of the closed allowlist | 4 tests, including "drops the Path line, which carries the Windows account name" |
+| take the respawned count from the REQUEST instead of the output | 4 `SessionRespawner` tests |
+| have the panel say "all sessions restarted" | smoke: `and names the ids the CLI restarted rather than claiming it restarted all of them`, detail `isg: all sessions restarted.` |
+
+**The roadmap asked for a button whose premise was false.** P4-T5 is "Version chip — claude update,
+respawn --all, doctor output", and the first thing `claude doctor` printed was `Auto-updates:
+enabled` with `Last update attempt: success → 2.1.278 (2026-09-19)` — two days earlier. The binary
+already keeps itself current, so the update button is a convenience, not the chore the task implied.
+It still ships, because "check now" is a real thing to want, but the panel says auto-updates are on
+rather than letting the owner infer they are behind. **A task note is a hypothesis; the first
+measurement is what tells you which task you are actually doing.** (F.8.3 was the same lesson from
+the other direction: that note predicted a hang that did not happen.)
+
+**Two verbs were measured before a line of them was written, and both differed from their name.**
+`respawn --all` restarts the sessions the CLI chooses and skips one that has finished, while
+respawning that same session by name works — so "all" is the flag's spelling, not its behaviour.
+And `claude update`'s stdout is not only `claude update`'s: it runs a session lifecycle and fires
+the `SessionEnd` hook, so with core down it carries an ECONNREFUSED against **Flightdeck's own
+port**. Two ways to ship a screen that lies, both found by running the thing once each.

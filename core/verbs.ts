@@ -22,6 +22,8 @@ import { SpawnProcessStream } from './adapters/claude-cli/spawn-process-stream.t
 import { PowerShellLaunchCommands } from './adapters/windows/powershell-launch-commands.ts';
 import type { ClaudeInstall } from './adapters/claude-cli/claude-install.ts';
 import { AskRunner, type AskPublisher } from './application/ask-runner.ts';
+import { InstallDoctor } from './application/install-doctor.ts';
+import { SessionRespawner } from './application/session-respawner.ts';
 import type { AuditLog } from './application/audit-log.ts';
 import { SessionLauncher } from './application/session-launcher.ts';
 import { SessionRemover } from './application/session-remover.ts';
@@ -42,7 +44,7 @@ export interface SessionVerbParts {
 /** The four verbs that act on a session — P4-T2. See the header for which one takes a shell. */
 export function sessionVerbs(
   parts: SessionVerbParts,
-): Pick<RouterParts, 'launcher' | 'resumer' | 'stopper' | 'remover'> {
+): Pick<RouterParts, 'launcher' | 'resumer' | 'stopper' | 'remover' | 'respawner' | 'doctor'> {
   return {
     launcher: new SessionLauncher({
       commands: new PowerShellLaunchCommands(),
@@ -53,6 +55,12 @@ export function sessionVerbs(
     resumer: new SessionResumer(parts),
     stopper: new SessionStopper(parts),
     remover: new SessionRemover(parts),
+    // P4-T5. Restarting a session so it picks up the current binary — the fourth verb with a
+    // measured id form, and the third to take the SHORT one (RESEARCH.md F.10.3).
+    respawner: new SessionRespawner(parts),
+    // P4-T5. `doctor` reads and `update` can replace the binary; neither starts a session, so
+    // both spawn it directly for D47's reason.
+    doctor: new InstallDoctor(parts),
   };
 }
 

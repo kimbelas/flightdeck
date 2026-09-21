@@ -336,7 +336,13 @@ recommend in three cases it words differently — a gap under five points (`tie`
 has never reported (`incomparable`), and the two profile functions that are `~\.claude-isg` by
 construction (`not_routable`, D44). `flightdeck-core status` prints the same recommendation from
 the same pure rule. **Also here:** the Claude Code version chip (2.1.267 shared by both subs),
-`claude update`, `respawn --all`, and `claude doctor` output.
+`claude update`, `respawn --all`, and `claude doctor` output — built in P4-T5, D49. The chip is a
+**button** now (it was a label from P2-T3) and opens a panel per subscription. Three things the
+measurements changed about this sentence: **auto-updates are already on**, so the update button is a
+"check now" and the panel says so rather than implying a chore (F.10.1); **doctor's output is parsed,
+not printed**, because its `Path:` line carries the Windows account name (SEC-DATA-2); and
+**`--all` does not mean all** — it skips a session that has finished — so the panel reports the ids
+the CLI actually restarted (F.10.4).
 
 ### 5.3 F3 — The terminal grid
 

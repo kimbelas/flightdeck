@@ -12,6 +12,7 @@
 // fetches, polls or re-renders on a timer to stay current.
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type JSX } from 'react';
 import type { AskRequest } from '../../contracts/ask-run.ts';
+import type { SubscriptionId } from '../../contracts/session.ts';
 import type { PtyTarget } from '../../contracts/pty-protocol.ts';
 import type { PresetLaunch } from '../../contracts/launch-preset.ts';
 import { BrowserDeckApi } from './browser-deck-api.ts';
@@ -20,6 +21,7 @@ import { CommandPalette } from './command-palette.tsx';
 import { DeckBanners } from './deck-banners.tsx';
 import { DeckHeader } from './deck-header.tsx';
 import { DeckBody } from './deck-body.tsx';
+import { DeckInstall, installActions } from './deck-install.tsx';
 import { DeckStore } from './deck-store.ts';
 import { deckCommands, type DeckActions } from './deck-commands.ts';
 import { SessionRowViewModel } from './session-row-view-model.ts';
@@ -45,7 +47,11 @@ export function DeckView(): JSX.Element {
   const grid = usePaneGrid(state.rows, state.coreUp);
   const { expanded, toggle } = useExpandedRows(store);
   const now = useTickingClock();
-  const actions = useDeckActions(store, grid.openPane);
+  // Which subscription's installation panel is open, or `undefined` — P4-T5. Component state
+  // rather than store state: nothing outside this page cares, and the reading it triggers is in
+  // the store where it belongs.
+  const [install, setInstall] = useState<SubscriptionId | undefined>(undefined);
+  const actions = useDeckActions(store, grid.openPane, setInstall);
 
   // Every session, unfiltered: the palette can reach one the `/` box is currently hiding.
   const rows = state.rows.map((row) => new SessionRowViewModel(row));
@@ -65,7 +71,9 @@ export function DeckView(): JSX.Element {
         loading={state.loading}
         onRefresh={actions.onRefresh}
         onOpenShell={actions.onOpenShell}
+        onOpenInstall={actions.onOpenInstall}
       />
+      {install !== undefined && <DeckInstall state={state} actions={actions} />}
       <DeckBanners error={state.error} unreadable={state.unreadable} />
       <DeckBody
         rows={rows}
@@ -156,7 +164,11 @@ function useLiveStream(store: DeckStore): void {
  * `DeckActions` is declared in deck-commands.ts because the palette needs the same four: a command
  * that opened a pane its own way would be a second implementation of the row's button.
  */
-function useDeckActions(store: DeckStore, openPane: (pane: OpenPane) => void): DeckActions {
+function useDeckActions(
+  store: DeckStore,
+  openPane: (pane: OpenPane) => void,
+  openInstall: (subscription: SubscriptionId | undefined) => void,
+): DeckActions {
   const onOpenShell = useCallback(() => {
     openPane(SHELL_PANE);
   }, [openPane]);
@@ -189,6 +201,7 @@ function useDeckActions(store: DeckStore, openPane: (pane: OpenPane) => void): D
     ...lifecycleActions(store),
     ...projectActions(store),
     ...askActions(store),
+    ...installActions(store, openInstall),
   };
 }
 

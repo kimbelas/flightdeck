@@ -19,6 +19,7 @@
 // A palette entry that does nothing is worse than an absent one: the first no-op teaches you not to
 // trust the entries beside it. So the list grows when those tasks land, and not before.
 import type { AskRequest } from '../../contracts/ask-run.ts';
+import type { SubscriptionId } from '../../contracts/session.ts';
 import type { PresetDraft, PresetLaunch, PresetRef } from '../../contracts/launch-preset.ts';
 import { PANE_LAYOUTS, type PaneLayout } from '../../contracts/pane-layout.ts';
 import {
@@ -95,6 +96,18 @@ export interface DeckActions {
    */
   readonly onAsk: (draft: AskRequest) => void;
   readonly onClearAsk: () => void;
+  /**
+   * The version chip's three verbs — P4-T5.
+   *
+   * None is a palette entry. `doctor` and `update` are questions about the machine rather than
+   * about a session, and `respawn` restarts background sessions — which is not `rm`, but is still
+   * not something to put one fuzzy-match away from `resume`.
+   */
+  readonly onOpenInstall: (subscription: SubscriptionId) => void;
+  readonly onCheckInstall: (subscription: SubscriptionId) => void;
+  readonly onUpdateClaude: (subscription: SubscriptionId) => void;
+  readonly onRespawnAll: (subscription: SubscriptionId) => void;
+  readonly onCloseInstall: () => void;
 }
 
 export interface CommandTargets extends DeckActions {

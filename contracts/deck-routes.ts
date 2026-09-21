@@ -192,3 +192,16 @@ export const CORE_PRESETS_PATH = `${CORE_PROJECTS_PATH}/presets`;
  * cannot be forgotten; forgetting a saved one brings the built-in it shadowed back.
  */
 export const CORE_PRESET_FORGET_PATH = `${CORE_PRESETS_PATH}/forget`;
+
+/**
+ * The version chip's three verbs — P4-T5.
+ *
+ * `GET /doctor` reads the installation's health, narrowed so the binary's path — which carries the
+ * Windows account name — never reaches the DOM (SEC-DATA-2, RESEARCH.md F.10.1). The other two are
+ * POSTs because neither is safe: `claude update` has **no check-only form**, so pressing it can
+ * replace the binary (F.10.2), and `respawn` restarts background sessions.
+ */
+export const CORE_DOCTOR_PATH = `${CORE_PREFIX}doctor`;
+export const CORE_UPDATE_PATH = `${CORE_PREFIX}update`;
+/** One session by SHORT id, or `{subscription, all: true}` — and `--all` skips what has finished. */
+export const CORE_RESPAWN_PATH = `${CORE_PREFIX}sessions/respawn`;

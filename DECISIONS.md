@@ -1402,3 +1402,39 @@ a prompt that is correct.
 prints no `result` at all, and a panel waiting for one would spin for ever. The two are visible
 together in F.9.5 — the CLI's carries the cost, core's does not — which is why the panel keeps the
 FIRST: taking the last would show a finished run costing nothing.
+
+## D49 — the version chip opens a panel, and the update button is a convenience (decided 2026-09-21, P4-T5)
+
+SPEC §5.2 put `claude update`, `respawn --all` and `claude doctor` output "here", beside the version
+chip, without saying what the chip was. P2-T3 made it a label. It is a button now, because a version
+number is the only thing on the deck the owner looks at and then wants to *do* something about.
+
+**The first measurement contradicted the task's premise.** `claude doctor` reports
+`Auto-updates: enabled` and `Last update attempt: success → 2.1.278 (2026-09-19)` (F.10.1). The
+binary keeps itself current; nobody has to press anything. The button still ships — "check now" is a
+real thing to want, and `claude update` has **no check-only form**, so it is the only way to ask —
+but the panel states that auto-updates are on rather than letting a button imply the owner is
+behind. A control that implies a chore that does not exist is worse than no control.
+
+**Doctor's output is parsed, not printed, and that is a security control.** Its `Path:` line carries
+the Windows account name and two more name the employer's policy source. `contracts/install-health.ts`
+reads a closed list of keys and drops everything else, so a line a future version adds is excluded
+by default rather than published by default — the same bargain `contracts/core-status.ts` already
+makes about `transcriptPath` (SEC-DATA-2).
+
+**`update`'s stdout is not only `update`'s.** It runs a session lifecycle and fires the `SessionEnd`
+hook, so with core stopped it prints an ECONNREFUSED against `127.0.0.1:4950` — Flightdeck's own
+port (F.10.2). Relaying it would show the owner an error Flightdeck caused, about Flightdeck,
+reading as Claude being broken. Only the two sentences the parser names cross the wire.
+
+**`--all` is not "all", so the button does not say it is.** Measured with two background sessions,
+`respawn --all` restarted the `blocked` one and skipped the `done` one, while respawning that same
+session by name worked (F.10.4). So the reply carries **the ids the CLI printed**, never a count
+taken from the request, and the panel says "restarted d1b2f43c" or "nothing needed restarting".
+`respawn` also takes the SHORT id and refuses the uuid, which makes it the fourth verb with a
+measured id form and the third to agree — `--resume` remains the only one that fails quietly.
+
+**`doctor` writes no audit row; `update` and `respawn` do.** SEC-PROC-3's line is "every mutating
+action writes a row", and a row per panel open would bury the rows a reviewer is looking for. The
+panel reads on open and changes nothing until a button is pressed — which is also why `update` is
+not run when the panel opens, since opening a panel must not be able to replace the binary.

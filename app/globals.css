@@ -1373,3 +1373,76 @@ kbd {
     grid-template-rows: none;
   }
 }
+
+/* ---- the installation panel behind the version chip (P4-T5) ---- */
+
+/* The chip was a label until P4-T5; as a button it must still read as a chip, so it inherits
+   `.chip` and only drops the browser's button chrome. */
+button.chip-version {
+  cursor: pointer;
+  font: inherit;
+  border-style: solid;
+}
+
+.install {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.install-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.install-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.install-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.install-sub {
+  font-weight: 600;
+}
+
+.install-note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.install-bad {
+  margin: 0;
+  font-size: 11px;
+  color: var(--warn);
+}
+
+.install-fields dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 10px;
+  margin: 4px 0 0;
+  font-size: 11px;
+}
+
+.install-field {
+  display: contents;
+}
+
+.install-field dt {
+  color: var(--dim);
+}
+
+.install-field dd {
+  margin: 0;
+}

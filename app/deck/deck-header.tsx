@@ -20,6 +20,7 @@
 // written for, carried all the way to the bar's width.
 import type { JSX } from 'react';
 import type { QuotaSummary } from '../../contracts/quota-summary.ts';
+import type { SubscriptionId } from '../../contracts/session.ts';
 import { SubscriptionQuotaViewModel, type QuotaGaugeViewModel } from './quota-view-model.ts';
 
 interface DeckHeaderProps {
@@ -31,6 +32,14 @@ interface DeckHeaderProps {
   readonly loading: boolean;
   readonly onRefresh: () => void;
   readonly onOpenShell: () => void;
+  /**
+   * Opens the installation panel — P4-T5.
+   *
+   * The version chip was a label from P2-T3 until this task; it is a button now, because what the
+   * owner wants when they look at a version number is `doctor`, `update` and `respawn`, and those
+   * had nowhere to live.
+   */
+  readonly onOpenInstall: (subscription: SubscriptionId) => void;
 }
 
 export function DeckHeader({
@@ -41,6 +50,7 @@ export function DeckHeader({
   loading,
   onRefresh,
   onOpenShell,
+  onOpenInstall,
 }: DeckHeaderProps): JSX.Element {
   const subscriptions = (quota?.subscriptions ?? []).map(
     (entry) => new SubscriptionQuotaViewModel(entry),
@@ -54,7 +64,12 @@ export function DeckHeader({
       <span className="muted">{sessionCount} sessions</span>
       <div className="quotas">
         {subscriptions.map((entry) => (
-          <SubscriptionQuotaBlock key={entry.key} quota={entry} now={now} />
+          <SubscriptionQuotaBlock
+            key={entry.key}
+            quota={entry}
+            now={now}
+            onOpenInstall={onOpenInstall}
+          />
         ))}
       </div>
       <button type="button" onClick={onRefresh} disabled={loading}>
@@ -68,6 +83,7 @@ export function DeckHeader({
 }
 
 interface SubscriptionQuotaBlockProps {
+  readonly onOpenInstall: (subscription: SubscriptionId) => void;
   readonly quota: SubscriptionQuotaViewModel;
   readonly now: number;
 }
@@ -79,7 +95,11 @@ interface SubscriptionQuotaBlockProps {
  * how the owner sees that `isg` has not been touched today — and a block that disappeared would
  * make the header's width jump every time a session started.
  */
-function SubscriptionQuotaBlock({ quota, now }: SubscriptionQuotaBlockProps): JSX.Element {
+function SubscriptionQuotaBlock({
+  quota,
+  now,
+  onOpenInstall,
+}: SubscriptionQuotaBlockProps): JSX.Element {
   const spend = quota.spendLabel;
   return (
     <div className={`quota${quota.silent ? ' quota-silent' : ''}`}>
@@ -90,9 +110,17 @@ function SubscriptionQuotaBlock({ quota, now }: SubscriptionQuotaBlockProps): JS
         {spend ?? '—'}
       </span>
       {quota.claudeVersion !== undefined && (
-        <span className="chip chip-version" title={`Claude Code on ${quota.label}`}>
+        <button
+          type="button"
+          className="chip chip-version"
+          title={`Claude Code on ${quota.label} — doctor, updates, respawn`}
+          aria-label={`installation ${quota.label}`}
+          onClick={() => {
+            onOpenInstall(quota.label === 'isg' ? 'isg' : '365');
+          }}
+        >
           {quota.claudeVersion}
-        </span>
+        </button>
       )}
     </div>
   );

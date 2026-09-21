@@ -11,6 +11,8 @@
 // change. That is deliberate rather than lazy: this is a split for the line count, not a new
 // boundary, and moving twelve import sites to prove it would be churn with no reader behind it.
 import type { AskRefusal } from '../../contracts/ask-run.ts';
+import type { InstallHealth, UpdateResult } from '../../contracts/install-health.ts';
+import type { RespawnReport } from './install-slice.ts';
 import type { AskRun } from './ask-slice.ts';
 import type { LaunchPreset, PresetRefusal } from '../../contracts/launch-preset.ts';
 import type { ImportRefusal, ProjectRecord } from '../../contracts/project.ts';
@@ -36,6 +38,17 @@ export interface DeckState {
   readonly ask: AskRun | undefined;
   /** Why the last Ask was refused, as core's code. `undefined` once one is accepted. */
   readonly askRefusal: AskRefusal | undefined;
+  /**
+   * What `claude doctor` said per subscription — P4-T5.
+   *
+   * Keyed and empty until the chip is pressed: doctor costs ~2 s per account (F.10.1), and a key
+   * present with `undefined` means asked-and-waiting, as it does for details and previews.
+   */
+  readonly health: Readonly<Record<string, InstallHealth | undefined>>;
+  /** What the last update attempt said. Almost always "already up to date" — auto-updates are on. */
+  readonly update: UpdateResult | undefined;
+  /** Which sessions the last respawn actually restarted. `--all` is not all (F.10.4). */
+  readonly respawn: RespawnReport | undefined;
   /**
    * The expanded rows' details, keyed by `sessionKey` — P2-T4.
    *
@@ -127,6 +140,9 @@ export const EMPTY: DeckState = {
   quota: undefined,
   ask: undefined,
   askRefusal: undefined,
+  health: {},
+  update: undefined,
+  respawn: undefined,
   details: {},
   previews: {},
   projects: [],

@@ -15,6 +15,7 @@ import { HealthRoute } from './http/health-route.ts';
 import { HooksRoute } from './http/hooks-route.ts';
 import { KeybindingPlanRoute, KeybindingWriteRoute } from './http/keybindings-route.ts';
 import { AskRoute } from './http/ask-route.ts';
+import { DoctorRoute, RespawnRoute, UpdateRoute } from './http/install-routes.ts';
 import { LaunchRoute } from './http/launch-route.ts';
 import { PasteRoute } from './http/paste-route.ts';
 import { PreviewRoute, type PreviewSource } from './http/preview-route.ts';
@@ -33,6 +34,8 @@ import type { DeckQuery } from './application/deck-query.ts';
 import type { KeybindingHelper } from './application/keybinding-helper.ts';
 import type { PasteInbox } from './application/paste-inbox.ts';
 import type { AskRunner } from './application/ask-runner.ts';
+import type { InstallDoctor } from './application/install-doctor.ts';
+import type { SessionRespawner } from './application/session-respawner.ts';
 import type { SessionLauncher } from './application/session-launcher.ts';
 import type { SessionResumer } from './application/session-resumer.ts';
 import type { SessionRemover } from './application/session-remover.ts';
@@ -58,6 +61,9 @@ export interface RouterParts {
   readonly remover: SessionRemover;
   /** One headless question at a time, streamed onto `/stream` (P4-T4, D47, D48). */
   readonly asker: AskRunner;
+  /** The version chip's three verbs — P4-T5. */
+  readonly respawner: SessionRespawner;
+  readonly doctor: InstallDoctor;
   readonly tickets: TicketOffice;
   readonly paste: PasteInbox;
   readonly keybindings: KeybindingHelper;
@@ -89,6 +95,10 @@ export function buildRouter(parts: RouterParts, extra: readonly Route[]): Reques
     new RemoveRoute(parts.remover),
     // 202 and a run id; the answer arrives as `ask` frames on the stream, not down this body.
     new AskRoute(parts.asker),
+    // P4-T5. The read is a GET and writes no audit row; the two writes are POSTs and do.
+    new DoctorRoute(parts.doctor),
+    new UpdateRoute(parts.doctor),
+    new RespawnRoute(parts.respawner),
     new TicketRoute(parts.tickets),
     new PasteRoute(parts.paste),
     // Two routes on one path: the GET cannot write and the POST re-plans from disk (P5a-T7).

@@ -2244,7 +2244,71 @@ phases:
         security: [SEC-PROC-4, SEC-UI-2, SEC-DATA-2]
       - id: P4-T5
         title: Version chip — claude update, respawn --all, doctor output
-        status: todo
+        status: done
+        done_on: 2026-09-21
+        deliverables:
+          [
+            contracts/install-health.ts,
+            contracts/deck-routes.ts,
+            core/application/install-doctor.ts,
+            core/application/session-respawner.ts,
+            core/http/install-routes.ts,
+            core/verbs.ts,
+            core/routes.ts,
+            app/deck/install-slice.ts,
+            app/deck/install-panel.tsx,
+            app/deck/deck-install.tsx,
+            app/deck/deck-header.tsx,
+            app/deck/deck-state.ts,
+            app/deck/deck-store.ts,
+            app/deck/deck-view.tsx,
+            app/deck/deck-commands.ts,
+            app/globals.css,
+            tests/contracts/install-health.test.ts,
+            tests/core/application/install-doctor.test.ts,
+            tests/core/application/session-respawner.test.ts,
+            tests/e2e/fixture-core.mjs,
+            tests/e2e/smoke/deck-checks.mjs,
+            DECISIONS.md D49,
+            RESEARCH.md F.10,
+            RESEARCH.md G.43,
+          ]
+        notes: >-
+          **The first measurement contradicted the task's own premise**, which is the lesson worth
+          keeping (G.43). This task asks for a `claude update` button; the first line of
+          `claude doctor` is `Auto-updates: enabled`, with `Last update attempt: success → 2.1.278
+          (2026-09-19)` two days earlier (F.10.1). The binary keeps itself current and nobody has to
+          press anything. The button ships anyway — "check now" is a real thing to want and there is
+          **no check-only form** of the verb — but the panel states that auto-updates are on rather
+          than letting a button imply a chore that does not exist.
+          **Doctor's output is parsed, not printed, and that is SEC-DATA-2.** Its `Path:` line is
+          the binary's location with the Windows account name in it, and two more lines name the
+          employer's policy source. `contracts/install-health.ts` reads a closed list of keys and
+          drops everything else, so a line a future version adds is excluded by default rather than
+          published by default — the bargain `contracts/core-status.ts` already makes about
+          `transcriptPath`.
+          **`claude update`'s stdout is not only `claude update`'s.** It runs a session lifecycle
+          and fires the `SessionEnd` hook, so with core stopped it prints an ECONNREFUSED against
+          `127.0.0.1:4950` — Flightdeck's own port (F.10.2). That is P0-T3's receiver-down behaviour
+          turning up somewhere nobody looked for it, and relaying the output would show the owner an
+          error Flightdeck caused, about Flightdeck, reading as Claude being broken.
+          **`--all` does not mean all.** Measured with two background sessions, one `blocked` and
+          one `done`, `respawn --all` restarted the first and skipped the second — while respawning
+          that same session BY NAME worked a minute earlier (F.10.4). So "all" is the flag's
+          spelling rather than its behaviour, the reply carries the ids the CLI printed, and the
+          panel says "restarted d1b2f43c" or "nothing needed restarting" rather than a count it
+          assumed. `respawn` also takes the SHORT id and refuses the uuid (F.10.3), making it the
+          fourth verb with a measured id form and the third to agree; `--resume` is still the only
+          one that fails quietly.
+          `doctor` writes no audit row and the two writes do — a row per panel open would bury the
+          rows a reviewer looks for. The panel reads on open and changes nothing until a button is
+          pressed, which is also why `update` is not run on open: opening a panel must not be able
+          to replace the binary.
+          Three sabotages, each watched to fail (G.43): reading every `Key:` line instead of the
+          allowlist breaks four tests including the account-name one, taking the respawn count from
+          the request breaks four more, and a panel that says "all sessions restarted" breaks the
+          smoke check whose detail prints the false sentence.
+        security: [SEC-DATA-2, SEC-PROC-3]
       - id: P4-T6
         title: Connect / Disconnect subscription UI with dry-run diff
         status: todo

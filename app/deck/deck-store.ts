@@ -49,6 +49,7 @@ import {
   whyNotStopped,
 } from './deck-replies.ts';
 import { AskSlice } from './ask-slice.ts';
+import { InstallSlice } from './install-slice.ts';
 import { upsert, without } from './session-rows.ts';
 import type { AskRequest } from '../../contracts/ask-run.ts';
 import { DetailSlice } from './detail-slice.ts';
@@ -77,6 +78,15 @@ export type { DeckState, EventStreamSource, StreamTransport } from './deck-state
 const RECONNECT_MS = 2000;
 
 export class DeckStore {
+  /**
+   * The version chip's panel — P4-T5. Nothing is read until it is opened.
+   *
+   * Exposed rather than re-wrapped, unlike the other five slices. They are wrapped because the
+   * store adds something on the way past — a loading flag, a cascade, a re-read. It adds nothing
+   * to these three, and three methods that only forward would be three more places to keep in
+   * step for no reader's benefit.
+   */
+  public readonly install: InstallSlice;
   private readonly subscribers = new Set<() => void>();
   private readonly transport: StreamTransport;
   private readonly api: DeckApi;
@@ -112,6 +122,9 @@ export class DeckStore {
       this.set(changes);
     });
     this.asks = new AskSlice(api, (changes) => {
+      this.set(changes);
+    });
+    this.install = new InstallSlice(api, (changes) => {
       this.set(changes);
     });
     this.details = new DetailSlice(api, (details) => {
