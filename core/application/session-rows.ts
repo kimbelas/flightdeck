@@ -5,6 +5,7 @@
 // second opinion about that: `claude attach` takes background sessions only (SPEC §5.2), so a row
 // that said otherwise would offer a pane that cannot open.
 import {
+  ENDED_ADOPTABLE,
   INTERACTIVE_NOT_ATTACHABLE,
   NOT_LIVE,
   type SessionRow,
@@ -27,6 +28,34 @@ export function toSessionRow(session: Session): SessionRow {
     status: session.state.status,
     attachable,
     notAttachableBecause: reasonFor(session, attachable),
+  };
+}
+
+/**
+ * The same session, after its terminal closed — P6-T7, SPEC §4.3.
+ *
+ * `claude agents --json --all` keeps a background session forever and **forgets an interactive one
+ * the moment it exits** (measured — RESEARCH.md G.55). So there is no record to map here: this
+ * takes the last row core saw and says what is true of it now, which is the only honest source
+ * there is.
+ *
+ * Three fields change and each one is a claim that would otherwise be false. `live` is the fact.
+ * `runState` and `status` are dropped because they were readings of a process that no longer
+ * exists — a row left saying `busy` is a row claiming a closed terminal is working. And the reason
+ * becomes `ENDED_ADOPTABLE`, because "already bound to its own terminal" stops being true at
+ * exactly this moment.
+ *
+ * Here rather than inline in the reconciler for `toSessionRow`'s reason: `attachable` has one
+ * definition in this file and must not gain a second.
+ */
+export function toEndedRow(row: SessionRow): SessionRow {
+  return {
+    ...row,
+    live: false,
+    runState: undefined,
+    status: undefined,
+    attachable: false,
+    notAttachableBecause: ENDED_ADOPTABLE,
   };
 }
 

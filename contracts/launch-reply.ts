@@ -105,6 +105,34 @@ export function parseHandoffFailure(value: unknown): HandoffFailure | undefined 
   return HANDOFF_FAILURES.find((known) => known === value);
 }
 
+/**
+ * Why core would not adopt an ended interactive session — P6-T7, SPEC §4.3.
+ *
+ * Its own union rather than a widened `ResumeFailure`, for `HandoffFailure`'s reason: a resume
+ * wakes a background job that core is still being told about, and an adoption takes a session the
+ * listing has already forgotten (G.55). The two codes a resume cannot have are the two that are
+ * about WHICH session this is rather than about the spawn.
+ *
+ * `not_adoptable` is core having nothing to adopt: no row, or a row that is not an ended
+ * interactive session. `still_running` is the one worth telling apart from it, because it is not a
+ * failure at all — the terminal is still open, and the answer is to close it.
+ */
+export type AdoptFailure =
+  'no_claude' | 'bad_session' | 'not_adoptable' | 'still_running' | 'adopt_failed';
+
+export const ADOPT_FAILURES: readonly AdoptFailure[] = [
+  'no_claude',
+  'bad_session',
+  'not_adoptable',
+  'still_running',
+  'adopt_failed',
+];
+
+/** One off the wire, or `undefined`. The deck has a sentence per code and none for anything else. */
+export function parseAdoptFailure(value: unknown): AdoptFailure | undefined {
+  return ADOPT_FAILURES.find((known) => known === value);
+}
+
 export const RESUME_FAILURES: readonly ResumeFailure[] = [
   'no_claude',
   'bad_session',

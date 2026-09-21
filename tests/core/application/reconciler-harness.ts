@@ -21,6 +21,8 @@ export interface Spec {
   readonly live?: boolean;
   readonly runState?: 'working' | 'blocked' | 'done';
   readonly name?: string;
+  /** Where it was running. P6-T7 asserts on it — an adoption runs in the folder core remembers. */
+  readonly cwd?: string;
 }
 
 /** One session. The short id is the uuid's first segment, so `id` is what tests assert on. */
@@ -31,7 +33,7 @@ export function session(spec: Spec, subscription: SubscriptionId): Session {
       subscription,
       kind: spec.kind ?? 'background',
       name: spec.name ?? spec.id,
-      cwd: 'C:\\work',
+      cwd: spec.cwd ?? 'C:\\work',
       startedAt: new Date(1000),
     },
     { runState: spec.runState, status: undefined, live: spec.live ?? true },
@@ -44,6 +46,8 @@ export interface Rig {
   readonly sink: FakeEventSink;
   readonly scheduler: FakeScheduler;
   readonly watcher: FakeDirectoryWatcher;
+  /** Exposed for P6-T7: an ended interactive session is held for a WINDOW, which has to be waited out. */
+  readonly clock: FakeClock;
   readonly logger: FakeLogger;
 }
 
@@ -52,16 +56,10 @@ export function rig(): Rig {
   const sink = new FakeEventSink();
   const scheduler = new FakeScheduler();
   const watcher = new FakeDirectoryWatcher();
+  const clock = new FakeClock();
   const logger = new FakeLogger();
-  const reconciler = new Reconciler({
-    source,
-    sink,
-    scheduler,
-    watcher,
-    clock: new FakeClock(),
-    logger,
-  });
-  return { reconciler, source, sink, scheduler, watcher, logger };
+  const reconciler = new Reconciler({ source, sink, scheduler, watcher, clock, logger });
+  return { reconciler, source, sink, scheduler, watcher, clock, logger };
 }
 
 /**

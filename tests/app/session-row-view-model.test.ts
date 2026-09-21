@@ -203,3 +203,51 @@ describe('SessionRowViewModel — a folder two accounts are both in', () => {
     expect(row.sharesWorkingTree).toBe(false);
   });
 });
+
+/**
+ * Adopting a session started outside Flightdeck — P6-T7, SPEC §4.3.
+ *
+ * The migration path to F7: a terminal you close becomes a session the deck can put in a pane.
+ * `canResume` and `canAdopt` are complements across `kind`, and between them every row that says
+ * "not running" now has exactly one button — which is what makes the pair readable.
+ */
+describe('SessionRowViewModel — adopting (P6-T7)', () => {
+  it('offers adopt on an interactive session that has ended', () => {
+    expect(view({ kind: 'interactive', live: false }).canAdopt).toBe(true);
+  });
+
+  // A live one is somebody's open terminal. Adopting it would start a second process against a
+  // conversation being typed into, which is a worse outcome than the button not being there.
+  it('does not offer it while the terminal is still open', () => {
+    expect(view({ kind: 'interactive', live: true }).canAdopt).toBe(false);
+  });
+
+  // A background session is already what an adoption produces. `resume` is its verb.
+  it.each([true, false])('does not offer it on a background session (live: %s)', (live) => {
+    expect(view({ kind: 'background', live }).canAdopt).toBe(false);
+  });
+
+  it('never offers both adopt and resume on one row', () => {
+    for (const kind of ['interactive', 'background'] as const) {
+      for (const live of [true, false]) {
+        const row = view({ kind, live });
+
+        expect(row.canAdopt && row.canResume).toBe(false);
+      }
+    }
+  });
+
+  // `-n` would keep the name and `-n` starts a COPY (RESEARCH.md G.55), so the session is renamed
+  // after its own short id. Said on the button, because a row that quietly changed its own name is
+  // a row somebody spends a minute looking for.
+  it('says the session will be renamed, and to what', () => {
+    const hint = view({ kind: 'interactive', live: false }).adoptHint;
+
+    expect(hint).toContain('337975f9');
+    expect(hint).toMatch(/renamed/iu);
+  });
+
+  it('says which folder it will come back in', () => {
+    expect(view({ kind: 'interactive', live: false }).adoptHint).toContain('flightdeck');
+  });
+});

@@ -48,6 +48,17 @@ export const INTERACTIVE_NOT_ATTACHABLE =
 export const NOT_LIVE = 'Not running. Resume it to attach.';
 
 /**
+ * The reason on an interactive session that has ENDED — P6-T7, SPEC §4.3.
+ *
+ * A third reason rather than reusing `INTERACTIVE_NOT_ATTACHABLE`, which says the session is
+ * "already bound to its own terminal": that sentence becomes FALSE the moment the terminal closes,
+ * and it is the only thing the row would say. The terminal is gone, the conversation is not, and
+ * what to do about it is the one useful sentence here.
+ */
+export const ENDED_ADOPTABLE =
+  'That terminal has closed. Adopt it to bring the conversation back as a background session.';
+
+/**
  * The identity of a row, as one string.
  *
  * Both fields, because a session id is only unique within a config dir: the same uuid under the

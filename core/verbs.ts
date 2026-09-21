@@ -46,6 +46,7 @@ import { join } from 'node:path';
 import { SessionPopper, type PaneHolders } from './application/session-popper.ts';
 import { GroupLauncher } from './application/group-launcher.ts';
 import { type PaneRegistry } from './application/pane-registry.ts';
+import { SessionAdopter, type SessionDirectory } from './application/session-adopter.ts';
 import { SessionHandoff } from './application/session-handoff.ts';
 import { type ExecFileProcessRunner } from './adapters/claude-cli/execfile-process-runner.ts';
 import type { ProjectSlice } from './projects.ts';
@@ -135,7 +136,8 @@ export function buildPopper(
 }
 
 /**
- * Everything that acts on a session: the six verbs, the pop-out, the group press and the handoff.
+ * Everything that acts on a session: the six verbs, the pop-out, the group press, the handoff
+ * and the adoption.
  *
  * Together because the last two both need something the first makes. `buildPopper` needs the pane
  * registry, so the pane the pop-out detaches is the pane the socket server holds. And
@@ -155,6 +157,15 @@ export interface SessionSliceParts {
   readonly runner: ExecFileProcessRunner;
   readonly audit: AuditLog;
   readonly projects: ProjectSlice;
+  /**
+   * Where core last saw each session — P6-T7. The reconciler, narrowed to one getter.
+   *
+   * An adoption is the one session verb that needs core's own memory: the folder it runs in is
+   * not on the request and cannot be, and the listing has already forgotten the session
+   * (`SessionAdopter`). Named `directory` rather than `sessions`, which on the parts object beside
+   * it is the `SessionSource` — the thing that sweeps rather than the thing that remembers.
+   */
+  readonly directory: SessionDirectory;
   readonly logger: Logger;
 }
 
@@ -172,6 +183,7 @@ export function sessionSlice(
   | 'popper'
   | 'groups'
   | 'forker'
+  | 'adopter'
 > {
   const { install, logger } = parts;
   const sessionParts = { install, runner: parts.runner, audit: parts.audit, logger };
@@ -182,6 +194,9 @@ export function sessionSlice(
     // P6-T6. The registry, because a handoff names a FOLDER and `resolveDirectory` is the only
     // screen that admits a worktree (G.26, G.28).
     forker: new SessionHandoff({ ...sessionParts, registry: parts.projects.registry }),
+    // P6-T7. The reconciler, because an adoption runs in the folder the terminal was in and core
+    // is the only one that knows it — the browser sends a ref and no path (SEC-FS-1).
+    adopter: new SessionAdopter({ ...sessionParts, sessions: parts.directory }),
     groups: new GroupLauncher({
       presets: parts.projects.presets,
       launcher: verbs.launcher,

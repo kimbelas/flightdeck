@@ -18,6 +18,15 @@
 //  3. **Mistake a stopped session for a departed one.** `agents --json` without `--all` omits
 //     stopped and retired sessions entirely (F.2.2), which would make every `claude stop` look
 //     like an `rm`. The source passes `--all`; this is the class that would be wrong without it.
+//
+// **An interactive session that vanishes has ENDED; a background one that vanishes was DELETED**
+// — P6-T7, and the asymmetry is measured rather than assumed (RESEARCH.md G.55). `--all` keeps a
+// background job listed forever with `state: done` and no `pid`, so it can only leave the listing
+// by being `rm`-ed; an interactive session is dropped the instant its terminal closes. `rm` takes
+// a job directory, which an interactive session has never had, so it cannot be the explanation
+// for one disappearing. That is why an interactive session lingers here as an ENDED row rather
+// than being announced gone: the terminal has closed, the conversation has not, and SPEC §4.3
+// says the deck offers to adopt it at exactly this moment.
 import type { DraftEvent } from '../../contracts/fd-event.ts';
 import {
   byAttentionThenAge,
@@ -32,7 +41,7 @@ import type { EventSink } from '../ports/event-sink.ts';
 import type { Logger } from '../ports/logger.ts';
 import type { Scheduler } from '../ports/scheduler.ts';
 import type { SessionSource, Sweep } from '../ports/session-source.ts';
-import { sameRow, toSessionRow } from './session-rows.ts';
+import { sameRow, toEndedRow, toSessionRow } from './session-rows.ts';
 
 /** RESEARCH.md B.2: ~763 ms per config dir, so a shorter interval spends the machine on itself. */
 const SWEEP_INTERVAL_MS = 10_000;
@@ -48,6 +57,24 @@ const NUDGE_DEBOUNCE_MS = 200;
  * before it is announced gone. Two, for the reason in the header.
  */
 const SWEEPS_BEFORE_GONE = 2;
+
+/**
+ * How long an ended interactive session stays on the deck as adoptable — P6-T7.
+ *
+ * Thirty minutes: long enough to survive going for a coffee after closing a terminal, short enough
+ * that the deck is not a graveyard of every window opened today. It is a window on the OFFER, not
+ * on the conversation — `claude --resume` still works on it forever, and a row that stayed until
+ * somebody dismissed it would be a second inbox to keep.
+ */
+const LINGER_MS = 30 * 60_000;
+
+/**
+ * How many ended sessions to hold at once. `VitalsRegistry`'s reason rather than a memory budget:
+ * a map that only ever grows is the kind of thing nobody notices until it matters, and the time
+ * window above bounds the ordinary day but not a script that opens a hundred terminals in one.
+ * Eviction is oldest-ended first, which is also the order they would expire in.
+ */
+const MAX_LINGERING = 20;
 
 /** What the reconciler says happened. `SessionStreamRoute` fans these out; the store keeps them. */
 export type ReconcileEventType = 'seen' | 'changed' | 'gone';
@@ -71,6 +98,8 @@ export class Reconciler {
 
   private readonly known = new Map<string, SessionRow>();
   private readonly absences = new Map<string, number>();
+  /** Ended interactive sessions, by session id, holding the instant they were found missing. */
+  private readonly lingering = new Map<string, number>();
   private readonly unreadableSubscriptions = new Set<SubscriptionId>();
 
   private sweepTimer: Cancellation | undefined;
@@ -96,6 +125,32 @@ export class Reconciler {
   /** Subscriptions whose last sweep failed. Not the same as a subscription with no sessions. */
   public get unreadable(): readonly SubscriptionId[] {
     return [...this.unreadableSubscriptions];
+  }
+
+  /**
+   * The ended interactive sessions still on offer — P6-T7.
+   *
+   * `DeckQuery` merges these into `GET /sessions`, which takes a FRESH sweep and therefore cannot
+   * see them: the listing has already forgotten them, which is the whole reason they are held
+   * here. Without the merge a refresh would clear the offer and the next stream frame would put it
+   * back, which is a deck disagreeing with itself.
+   */
+  public get ended(): readonly SessionRow[] {
+    return [...this.lingering.keys()]
+      .map((sessionId) => this.known.get(sessionId))
+      .filter((row): row is SessionRow => row !== undefined);
+  }
+
+  /**
+   * The last row core saw for one session, or `undefined`.
+   *
+   * `SessionAdopter` reads the FOLDER from it. That is deliberate and is the security posture of
+   * every session verb here: the browser sends a ref, never a path, and core answers where that
+   * session was from its own reading of the machine (SEC-FS-1).
+   */
+  public rowFor(subscription: SubscriptionId, sessionId: string): SessionRow | undefined {
+    const row = this.known.get(sessionId);
+    return row?.subscription === subscription ? row : undefined;
   }
 
   /**
@@ -220,6 +275,10 @@ export class Reconciler {
       const row = toSessionRow(session);
       present.add(row.sessionId);
       this.absences.delete(row.sessionId);
+      // An adopted session comes back under its OWN id as a background job (G.55), so a row that
+      // reappears is no longer ended and must stop being offered — the offer is the one thing on
+      // it that would otherwise survive the thing it was offering.
+      this.lingering.delete(row.sessionId);
       this.record(row, at);
     }
     this.retireMissing(sweep.subscription, present, at);
@@ -238,19 +297,73 @@ export class Reconciler {
   /** Trap 2: absence is counted, not acted on, until it has happened twice in a row. */
   private retireMissing(subscription: SubscriptionId, present: Set<string>, at: number): void {
     const gone: SessionRow[] = [];
+    const ended: SessionRow[] = [];
     for (const [sessionId, row] of this.known) {
       if (row.subscription !== subscription || present.has(sessionId)) continue;
-      const absences = (this.absences.get(sessionId) ?? 0) + 1;
-      if (absences < SWEEPS_BEFORE_GONE) {
-        this.absences.set(sessionId, absences);
-        continue;
-      }
-      gone.push(row);
+      const verdict = this.verdictFor(row, at);
+      if (verdict === 'gone') gone.push(row);
+      else if (verdict === 'ended') ended.push(row);
     }
+    for (const row of ended) this.endInteractive(row, at);
     for (const row of gone) {
       this.absences.delete(row.sessionId);
+      this.lingering.delete(row.sessionId);
       this.known.delete(row.sessionId);
       this.publish('gone', row, at);
+    }
+  }
+
+  /**
+   * What one absent row's absence means now.
+   *
+   * `wait` is the answer that does something: it is where the absence is COUNTED, which is trap 2
+   * — a record carries `state: working` before it carries `pid` (G.2), so one missing sweep is
+   * never enough to conclude anything.
+   */
+  private verdictFor(row: SessionRow, at: number): 'gone' | 'ended' | 'wait' {
+    // Already ended: absence is what it IS now, so it is not counted again — only timed.
+    const endedAt = this.lingering.get(row.sessionId);
+    if (endedAt !== undefined) return at - endedAt >= LINGER_MS ? 'gone' : 'wait';
+
+    const absences = (this.absences.get(row.sessionId) ?? 0) + 1;
+    if (absences < SWEEPS_BEFORE_GONE) {
+      this.absences.set(row.sessionId, absences);
+      return 'wait';
+    }
+    // The asymmetry the header argues: a background job can only leave the listing by being
+    // `rm`-ed, and an interactive session leaves it by its terminal closing.
+    return row.kind === 'interactive' ? 'ended' : 'gone';
+  }
+
+  /**
+   * One interactive session's terminal has closed — P6-T7.
+   *
+   * `changed`, not `gone`: the session is still on the deck, as an ended row with an offer on it.
+   * The row is REPLACED rather than annotated, because `toEndedRow` is what decides that an ended
+   * session is not busy and not "already bound to its own terminal" — see it for why each of those
+   * would otherwise be a claim the row makes and cannot support.
+   */
+  private endInteractive(row: SessionRow, at: number): void {
+    this.absences.delete(row.sessionId);
+    this.evictOldestEnded();
+    this.lingering.set(row.sessionId, at);
+    const endedRow = toEndedRow(row);
+    this.known.set(row.sessionId, endedRow);
+    this.logger.info('session_ended', {
+      subscription: row.subscription,
+      session: row.sessionId,
+    });
+    this.publish('changed', endedRow, at);
+  }
+
+  /** Oldest-ended first, and only when the cap is already reached — see `MAX_LINGERING`. */
+  private evictOldestEnded(): void {
+    while (this.lingering.size >= MAX_LINGERING) {
+      // Insertion order IS ended order: `endInteractive` is the only writer and it appends.
+      const oldest = this.lingering.keys().next();
+      if (oldest.done === true) return;
+      this.lingering.delete(oldest.value);
+      this.known.delete(oldest.value);
     }
   }
 

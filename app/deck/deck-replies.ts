@@ -9,6 +9,7 @@
 // as "core is not running" is exactly wrong — core is running, it answered, and it cannot find
 // claude.exe. That is the operator's to fix and is the one code worth repeating verbatim.
 import {
+  parseAdoptFailure,
   parseLaunchAccepted,
   parseLaunchFailure,
   parseRemoveFailure,
@@ -74,6 +75,35 @@ export function whyNotResumed(reply: JsonReply | undefined): string {
   if (failure === 'bad_session') return 'That row does not carry a full session id.';
   if (failure !== undefined) return 'Core could not wake that session.';
   return describeStatus(reply.status);
+}
+
+/**
+ * Why a session would not be adopted — P6-T7, SPEC §4.3.
+ *
+ * `still_running` is the one worth its own sentence, and it is not a failure at all: the terminal
+ * is still open, which is a thing to go and do something about rather than a thing that went
+ * wrong. `not_adoptable` is almost always core having restarted — its memory of the ended terminal
+ * went with it — so the sentence says what to do rather than naming the code.
+ */
+export function whyNotAdopted(reply: JsonReply | undefined): string {
+  if (reply === undefined) return UNREACHABLE;
+  const failure = parseAdoptFailure(bodyError(reply.body));
+  if (failure === 'no_claude') {
+    return 'Core is running but cannot find claude.exe — run `npm run doctor`.';
+  }
+  if (failure === 'bad_session') return 'That row does not carry a full session id.';
+  if (failure === 'still_running') return 'That terminal is still open. Close it, then adopt it.';
+  if (failure === 'not_adoptable') {
+    return 'Core no longer knows where that session was running, so it cannot be adopted.';
+  }
+  if (failure !== undefined) return 'Core could not adopt that session.';
+  return describeStatus(reply.status);
+}
+
+/** The `error` field of a reply body, without asserting what the body is. */
+function bodyError(body: unknown): unknown {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return undefined;
+  return Object.fromEntries(Object.entries(body))['error'];
 }
 
 /**

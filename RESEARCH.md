@@ -3666,3 +3666,56 @@ The forked session reads `state: blocked` while it waits for its first prompt, w
 flags it **needs-you** and P6-T3 toasts it. That is right rather than incidental — a handoff that
 has landed and is waiting for instructions is exactly something that needs you.
 
+### G.55 What `claude agents` forgets, and what an adoption really does (P6-T7, 2026-09-21)
+
+SPEC §4.3 says *"when one exits, the deck offers to adopt it (`--bg --resume`)"*. Two things had to
+be measured before that sentence could be built, and the first one is not about the argv at all.
+
+**`claude agents --json --all` keeps a background session forever and forgets an interactive one
+the instant its terminal closes.** Read off this machine, 2.1.278:
+
+```
+count 11  →  ('background', 'dead'): 8   ('interactive', 'live'): 3
+```
+
+Eight background sessions with `state: done` and no `pid`, still listed. Three interactive
+sessions, every one of them with a `pid`. **There is no such thing as a dead interactive record.**
+So the deck could not have offered anything: the reconciler saw the session vanish, published
+`gone` after two sweeps, and deleted the row. SPEC's moment had nothing on screen to hang on.
+
+That is the asymmetry `Reconciler` now implements. `rm` takes a job directory, which an interactive
+session has never had, so it cannot be why one disappears — an interactive session that vanishes
+has ENDED, and a background one that vanishes was DELETED. The same event, two meanings, and
+reading either as the other is a way to lie to the owner.
+
+**Then the argv, measured on a throwaway session at zero token cost** — an adopted session comes
+back `idle — send a prompt to start`, so it spends nothing until prompted, exactly as G.54's fork
+did. Three runs, from three different directories:
+
+| Command | id | kind | name | cwd of the result |
+|---|---|---|---|---|
+| `--bg --resume <uuid>`, session never a `--bg` job | **kept** | becomes **background** | **lost → the short id** | **the PROCESS cwd** |
+| `--bg --resume <uuid>`, already a background job | kept | background | kept | **its own saved cwd** |
+| `--bg --resume <uuid> -n <name>` | **new — a copy** | background | the name | process cwd |
+
+Three consequences, and the feature needs all three:
+
+1. **The adoption must be given a cwd; a resume must not.** A session with no `--bg` history has no
+   saved options to restore, so it runs wherever the process was started — which for core is its
+   own directory. That is P6-T1's "the one failure a terminal must not have", arriving silently and
+   looking like it worked. A background job DOES keep its folder, which is why `SessionResumer`
+   passes none and is correct as it stands. `SessionAdopter` reads the folder from core's own
+   memory of the session, never from the request (SEC-FS-1).
+2. **The name cannot be kept.** `-n` would keep it and `-n` forks. On 2.1.278 the binary says so
+   out loud, which is new: *"background session 22147988 keeps its own saved options, so the flags
+   you passed started a copy as ab17fd7a. Without flags, the same command continues 22147988
+   itself."* A resume with no flags answers *"woke session 22147988 with its saved options
+   (--model)"*. F.2.7's rule stands; the CLI now explains it.
+3. **The adopted session keeps its id**, so the deck's row keys, its transcript and its history all
+   carry over — it is the same session, not a copy of one. Nothing is parsed out of stdout for that
+   reason: a correct adoption cannot produce a different id, so reading one back would mean
+   reporting on a copy made by accident.
+
+The adopted session reads `state: blocked` while it waits for a prompt, so the deck flags it
+**needs-you** and P6-T3 toasts it — G.54's last paragraph again, and right for the same reason.
+

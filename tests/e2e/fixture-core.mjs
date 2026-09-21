@@ -234,6 +234,10 @@ export class FixtureCore {
     this.popouts = [];
     /** Every handoff core was asked for — P6-T6. The folder and the name, as the row sent them. */
     this.handoffs = [];
+    /** Every adoption core was asked for — P6-T7. The whole body, so a check can see what is NOT in it. */
+    this.adoptions = [];
+    /** A code to refuse the NEXT adoption with, or `undefined` to accept it. `refuseHandoff`'s twin. */
+    this.refuseAdopt = undefined;
     /**
      * A code to refuse the NEXT handoff with, or `undefined` to accept it.
      *
@@ -417,6 +421,9 @@ export class FixtureCore {
     }
     if (request.method === 'POST' && path === '/sessions/handoff') {
       return this.handOff(await body(request));
+    }
+    if (request.method === 'POST' && path === '/sessions/adopt') {
+      return this.adopt(await body(request));
     }
     if (request.method === 'POST' && path === '/run') return this.startAsk(await body(request));
     if (request.method === 'GET' && path === '/doctor') return this.doctor(url);
@@ -787,6 +794,34 @@ export class FixtureCore {
   worktreesOf(projectPath) {
     const project = this.projects.get(projectKey(projectPath));
     return project === undefined ? [] : workflowMap(project).worktrees;
+  }
+
+  /**
+   * `POST /sessions/adopt` — bringing an ended interactive session back (P6-T7).
+   *
+   * **No session is adopted here and none could be.** A real adoption spawns
+   * `claude --bg --resume <uuid>` in the folder core remembers; which folder that is, and that it
+   * is core's own reading rather than the browser's, is settled in `session-adopter.test.ts`.
+   *
+   * What lives on this side of the wire is what the row SENT — and the interesting half is what it
+   * did NOT send. The body is a ref and no path: a browser that could name the directory a process
+   * starts in is what SEC-FS-1 exists to prevent, and this double records the whole body so a
+   * check can assert the absence.
+   *
+   * 200 and the id that went in, because an adoption keeps the id — the one thing that separates
+   * it from the copy a stray flag would make (G.55).
+   */
+  adopt(raw) {
+    const fields = parseJson(raw) ?? {};
+    const { sessionId, subscription } = fields;
+    const known = subscription === '365' || subscription === 'isg';
+    const full = typeof sessionId === 'string' && FULL_SESSION_ID.test(sessionId);
+    if (!known || !full) return [400, { error: 'bad_session' }];
+    this.adoptions.push(fields);
+    const refusal = this.refuseAdopt;
+    this.refuseAdopt = undefined;
+    if (refusal !== undefined) return [refusal === 'no_claude' ? 503 : 400, { error: refusal }];
+    return [200, { sessionId }];
   }
 
   /**
