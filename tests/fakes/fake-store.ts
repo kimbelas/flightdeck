@@ -7,11 +7,12 @@
 // The sqlite adapter replaces this in core; nothing above the port can tell them apart, which is
 // the test that the port is the right shape.
 import type { AuditOutcome, AuditRow, DraftAuditRow } from '../../contracts/audit-row.ts';
+import { MAX_CONFIG_SNAPSHOTS } from '../../contracts/config-snapshot.ts';
 import type { DraftEvent, FdEvent } from '../../contracts/fd-event.ts';
 import { byProjectThenName, type LaunchPreset } from '../../contracts/launch-preset.ts';
 import { projectKey, type ProjectRecord } from '../../contracts/project.ts';
 import type { DraftVitalsSnapshot, VitalsSnapshot } from '../../contracts/vitals-snapshot.ts';
-import type { Store } from '../../core/ports/store.ts';
+import type { ConfigSnapshot, DraftConfigSnapshot, Store } from '../../core/ports/store.ts';
 
 export class FakeStore implements Store {
   private readonly events: FdEvent[] = [];
@@ -24,6 +25,9 @@ export class FakeStore implements Store {
   private nextEventId = 1;
   private nextAuditId = 1;
   private nextSnapshotId = 1;
+  /** Newest LAST, which is insertion order — the reads below reverse it, as the adapter does. */
+  private readonly configHistory: ConfigSnapshot[] = [];
+  private nextConfigId = 1;
   private writable = true;
 
   /** Everything appended, for a test that wants to read the whole log rather than page it. */
@@ -144,6 +148,27 @@ export class FakeStore implements Store {
   public forgetPreset(projectKeyValue: string, id: string): boolean {
     if (!this.writable) throw new Error('store is not writable');
     return this.presets.delete(presetSlot(projectKeyValue, id));
+  }
+
+  /** Appends and prunes together, because the adapter's `rememberConfigSnapshot` does. */
+  public rememberConfigSnapshot(snapshot: DraftConfigSnapshot): ConfigSnapshot {
+    if (!this.writable) throw new Error('store is not writable');
+    const stored: ConfigSnapshot = { ...snapshot, id: this.nextConfigId };
+    this.nextConfigId += 1;
+    this.configHistory.push(stored);
+    const mine = this.configHistory.filter((one) => one.projectKey === snapshot.projectKey);
+    for (const stale of mine.slice(0, Math.max(0, mine.length - MAX_CONFIG_SNAPSHOTS))) {
+      this.configHistory.splice(this.configHistory.indexOf(stale), 1);
+    }
+    return stored;
+  }
+
+  /** Newest first, by id — the adapter orders by id for the reason its statements give. */
+  public configSnapshots(projectKeyValue: string, limit: number): readonly ConfigSnapshot[] {
+    return this.configHistory
+      .filter((one) => one.projectKey === projectKeyValue)
+      .sort((left, right) => right.id - left.id)
+      .slice(0, Math.max(0, limit));
   }
 }
 

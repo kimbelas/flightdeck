@@ -6,6 +6,7 @@
 // hook body. Every mapper below answers with something valid or with a default, and none throws —
 // one unreadable row must not take out the page of rows around it.
 import type { AuditOutcome, AuditRow } from '../../../contracts/audit-row.ts';
+import { parseConfigDigest, type ConfigDigest } from '../../../contracts/config-snapshot.ts';
 import { EVENT_SOURCES, type EventSource, type FdEvent } from '../../../contracts/fd-event.ts';
 import {
   PROFILE_FUNCTIONS,
@@ -17,6 +18,7 @@ import {
 import { projectName, type ProjectRecord } from '../../../contracts/project.ts';
 import type { SubscriptionId } from '../../../contracts/session.ts';
 import type { VitalsSnapshot } from '../../../contracts/vitals-snapshot.ts';
+import type { ConfigSnapshot } from '../../ports/store.ts';
 
 /** A stored payload back to a value. A column that will not parse reads as absent, never throws. */
 function decodePayload(value: unknown): unknown {
@@ -134,6 +136,50 @@ function promptSourceOf(value: string): PromptSource {
 /** `SubscriptionId` is closed and there are two of them; anything else is not from this build. */
 function subscriptionOf(value: string): SubscriptionId {
   return value === 'isg' ? 'isg' : '365';
+}
+
+/**
+ * One config snapshot — P3-T7.
+ *
+ * The digest is a TEXT column holding JSON, so it goes back through `parseConfigDigest` rather
+ * than being trusted: a row written by an older build, or by a build that knew a facet this one
+ * does not, comes back as the facets this build understands and nothing throws. That is the same
+ * rule every payload in this file follows.
+ */
+export function toConfigSnapshot(row: unknown): ConfigSnapshot {
+  const fields = asRecord(row) ?? {};
+  return {
+    id: numberAt(fields, 'id'),
+    projectKey: stringAt(fields, 'project_key'),
+    takenAt: numberAt(fields, 'taken_at'),
+    digest: parseConfigDigest(jsonAt(fields, 'digest')) ?? EMPTY_DIGEST,
+  };
+}
+
+/** What a row this build cannot read at all comes back as. Compares unequal to every real one. */
+const EMPTY_DIGEST: ConfigDigest = {
+  instructions: [],
+  agents: [],
+  commands: [],
+  skills: [],
+  hooks: [],
+  servers: [],
+  plugins: [],
+  marketplaces: [],
+  permissions: [],
+  conventions: [],
+  gates: [],
+};
+
+/** A TEXT column holding JSON. Unparseable is `undefined`, never a throw. */
+function jsonAt(fields: Readonly<Record<string, unknown>>, key: string): unknown {
+  const value = fields[key];
+  if (typeof value !== 'string') return undefined;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
 }
 
 export function asRecord(value: unknown): Readonly<Record<string, unknown>> | undefined {

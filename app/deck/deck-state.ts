@@ -15,6 +15,7 @@ import type { InstallHealth, UpdateResult } from '../../contracts/install-health
 import type { RespawnReport } from './install-slice.ts';
 import type { AskRun } from './ask-slice.ts';
 import type { LaunchPreset, PresetRefusal } from '../../contracts/launch-preset.ts';
+import type { ConfigDrift } from '../../contracts/config-snapshot.ts';
 import type { ObservedBehaviour } from '../../contracts/observed-behaviour.ts';
 import type { ImportRefusal, ProjectRecord } from '../../contracts/project.ts';
 import type { ProjectStatus } from '../../contracts/project-status.ts';
@@ -98,6 +99,15 @@ export interface DeckState {
    */
   readonly maps: Readonly<Record<string, WorkflowMap>>;
   /**
+   * The last time each folder's configuration CHANGED, and what changed — P3-T7.
+   *
+   * Beside `maps` rather than inside one, because the two are different kinds of fact: a map is
+   * what is configured now and is re-derived from the disk, a drift is what happened, at an
+   * instant, and lives in core's store. A folder absent from here has never changed since it was
+   * imported, which is the ordinary state and draws nothing.
+   */
+  readonly drifts: Readonly<Record<string, ConfigDrift>>;
+  /**
    * What Claude actually did in each folder, keyed by `projectKey` — P3-T5.
    *
    * A fourth map beside `statuses` and `maps`, and the one with three states rather than two:
@@ -159,6 +169,7 @@ export const EMPTY: DeckState = {
   importRefusal: undefined,
   statuses: {},
   maps: {},
+  drifts: {},
   observed: {},
   presets: [],
   presetRefusal: undefined,

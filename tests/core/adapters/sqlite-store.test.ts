@@ -15,6 +15,7 @@ import {
 } from '../../../core/adapters/sqlite/sqlite-store.ts';
 import { MIGRATIONS } from '../../../core/adapters/sqlite/schema.ts';
 import { FakeStore } from '../../fakes/fake-store.ts';
+import { describeConfigStoreContract } from '../ports/config-store-contract.ts';
 import { describePresetStoreContract } from '../ports/preset-store-contract.ts';
 import { describeStoreContract } from '../ports/store-contract.ts';
 
@@ -51,6 +52,9 @@ describeStoreContract('SqliteStore', () => open(`${String(Math.random()).slice(2
 // The preset half, in its own file for `store-contract.ts`'s line limit — P4-T1.
 describePresetStoreContract('FakeStore', () => new FakeStore());
 describePresetStoreContract('SqliteStore', () => open(`${String(Math.random()).slice(2)}.db`));
+
+describeConfigStoreContract('FakeStore', () => new FakeStore());
+describeConfigStoreContract('SqliteStore', () => open(`${String(Math.random()).slice(2)}.db`));
 
 describe('SqliteStore — the file', () => {
   it('creates the database and its directory', () => {

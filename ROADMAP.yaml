@@ -1518,9 +1518,18 @@ phases:
 
   - id: P3
     name: Projects and the workflow map
-    status: doing
+    status: done
     goal: Imported folders show what Claude is configured to do there and what it actually did.
     gate: Importing app-next renders its agents, commands, skills, hook timeline, worktrees and MCP server correctly; importing docs-tool (no .claude) degrades gracefully to CLAUDE.md + stack + git.
+    gate_met: >-
+      Met 2026-09-21 against this machine's own folders, which are not the two the gate names —
+      `app-next` and `docs-tool` do not exist here and never did under those names. `xpert-new` is
+      the configured half: 16 assets, 15 hook steps, 1 MCP server (`chrome-devtools`), 2 worktrees,
+      `configured: true`, on `feature/XWEB-1937-...`, Angular + Docker + Node. `pdf-editor` is the
+      degrading half: no `.claude` at all, `configured: false`, and it still reports a 42 393-byte
+      `CLAUDE.md` over both user files, Next.js + Node, and `fix/nested-form-edits` 1 changed.
+      `claude-kit` is the harder version of the same case — no `.claude` AND no `CLAUDE.md` — and
+      draws a project with a repository and no workflow rather than a failed read.
     depends_on: [P2]
     tasks:
       - id: P3-T1
@@ -1876,7 +1885,75 @@ phases:
           had arrived.
       - id: P3-T7
         title: Config-change snapshots and diff
-        status: todo
+        status: done
+        done_on: 2026-09-21
+        deliverables:
+          [
+            contracts/config-snapshot.ts,
+            core/application/config-historian.ts,
+            core/http/workflow-map-route.ts,
+            core/ports/store.ts,
+            core/adapters/sqlite/schema.ts,
+            core/adapters/sqlite/statements.ts,
+            core/adapters/sqlite/sqlite-store.ts,
+            core/adapters/sqlite/rows.ts,
+            core/projects.ts,
+            app/deck/ago.ts,
+            app/deck/config-drift-view-model.ts,
+            app/deck/workflow-map-slice.ts,
+            app/deck/workflow-map-panel.tsx,
+            app/deck/projects-view-model.ts,
+            app/deck/projects-panel.tsx,
+            app/deck/deck-state.ts,
+            app/deck/deck-store.ts,
+            app/deck/deck-body.tsx,
+            app/globals.css,
+            tests/contracts/config-snapshot.test.ts,
+            tests/core/application/config-historian.test.ts,
+            tests/core/ports/config-store-contract.ts,
+            tests/core/http/projects-route.test.ts,
+            tests/fakes/fake-store.ts,
+            tests/e2e/fixture-core.mjs,
+            tests/e2e/smoke/config-change-checks.mjs,
+            DECISIONS.md D55,
+            RESEARCH.md G.48,
+          ]
+        notes: >-
+          SPEC §5.1's first enhancement, and the last of P3. `GET /projects/map` answers
+          `{ maps, drifts }` — two lists rather than a field on each map, because they are two kinds
+          of fact: a map is what is configured NOW and is re-derived from the disk every five
+          minutes, a drift is what HAPPENED, at an instant, and lives in core's store.
+          **It is the one reading in the project slice that writes, and D55 argues against D37 to
+          get there.** D37 keeps stack and git out of the store because they are readings of now. A
+          config change is the other kind: it is unrecoverable once the file is edited again, so no
+          amount of reading the disk can tell you a hook arrived on Tuesday. `ConfigHistorian` is a
+          class of its own and the route composes the two, so `WorkflowMapReader` stays a pure read.
+          **A row per CHANGE, not per read** — the map is answered on every deck load, the digest is
+          recomputed each time and written only when it moves, bounded at 20 snapshots per folder.
+          **Two rules that had to be decided rather than discovered.** A first sighting is not a
+          change: a newly imported folder with 17 hooks would otherwise announce a change on the day
+          it was imported. And the answer is the LAST change, not the change since you last looked
+          — a row that said "hooks changed" once and went blank on reload would erase itself, which
+          is the whole reason two snapshots are read.
+          **What the digest cannot see is the design.** No instruction byte sizes (`CLAUDE.md` is
+          edited most days), no convention file counts (`state/` gains one per ticket), no worktrees
+          (git, and this machine makes one per ticket), no hook timeouts, no read instant. What it
+          CAN see: which list a permission rule is on, so `Read(.env)` moving from `deny` to `ask`
+          is a change rather than nothing at all.
+          Five sabotages, and **three of them found a bad check before they found anything else**
+          (G.48). The first-sighting check was over a folder already read a dozen times and passed
+          under the sabotage that breaks it; the persistence check clicked refresh and then read a
+          chip from the PREVIOUS reply, so it raced — it reloads the page now, which is both
+          unraceable and the stronger claim. A third lesson: `locator.textContent()` WAITS, so in a
+          group whose failure mode is an absent element it turns a recorded FAIL into a 30 s timeout
+          that kills the run.
+          The fixture core had been shipping a `PermissionRules` with no `ask` since P3-T3 — four
+          tasks, invisible because nothing in CORE consumed a map from the double until now. It goes
+          through `parseWorkflowMap` now, which is the rule that file's own header states.
+          Verified live: three real projects snapshotted on first read with no drift, then a
+          throwaway repo imported, edited and re-read — `agents + second-agent`,
+          `hooks + SessionStart * node warm.mjs`, `permissions + ask Read(.env) − deny Read(.env)`.
+          `npm run check` 195 files / 2 357 tests; `npm run smoke` 345 checks.
 
   - id: P4
     name: Launcher, quota-aware routing, Ask and Dispatch

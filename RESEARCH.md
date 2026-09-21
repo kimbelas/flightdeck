@@ -3352,3 +3352,62 @@ The new panel first reused `.project-map` for its frame, which is a `<details>` 
 into `.project-detail` and keeping `.project-map` for the map alone is the fix: **a class name is
 part of the test surface**, and widening one silently is how a check starts passing about the wrong
 element. Playwright's strict mode is what turned this into a stack trace instead of a green run.
+
+### G.48 Two sabotages that broke nothing, and the check that was racing (P3-T7, 2026-09-21)
+
+Five sabotages, each verified to have LANDED before the result was read (G.38, G.40). **Three of
+them found a bad check before they found anything else**, which is G.46's lesson arriving twice more
+in one task.
+
+| sabotage | what failed |
+| --- | --- |
+| report a drift only on the read that SAW it | smoke: `the change survives a reload` + `it is the SAME change` — **after the check was rewritten; see below** |
+| a first sighting reports everything as added | smoke: `and reading it for the first time reports nothing` — **after the check was moved to a fresh folder** |
+| the digest sees instruction byte sizes | 2 unit tests, led by `does not see a CLAUDE.md being edited` |
+| a permission rule loses which list it is on | unit + smoke: `the deny rule that arrived is named, and SAID to be a deny rule` |
+| the change chip moves out of the closed summary | smoke: `and it is in the CLOSED summary` |
+
+**The first-sighting check was over a folder that had been read a dozen times.** It asserted "no
+change chip" before the edit — and the sabotage that makes a first sighting report everything as
+added passed it, because by then the snapshot existed and the drift was empty for the ordinary
+reason. A first-sighting check has to be over a folder that is actually being seen for the first
+time, so the group now imports one that core has never read. **The same shape as G.46's worktree
+test**: the assertion named the mechanism and exercised none of it.
+
+**The persistence check was racing on stale state.** It clicked refresh and then read the chip. Under
+the sabotage the chip was still the previous reply's, so it passed. There is nothing in the DOM that
+distinguishes "the new reply rendered" from "it has not arrived yet", so the wait could not be
+written — the fix is to reload the page, which has no stale state to race because everything after
+it came from a request made after it. It is also the stronger claim: **"the config changed on
+Tuesday" has to survive a browser being closed, or it is a notification rather than a record.**
+
+**A sabotage also has to fail as a FAIL, not as a timeout.** Playwright's `locator.textContent()`
+WAITS for the element. In a group whose failure mode is the element being absent, that turned a
+recorded failure into a 30-second timeout that killed the run — and `report.mjs` exists precisely so
+one failure does not hide the thirty after it. Every read in the group is `allTextContents()[0]`
+now, which returns immediately and empty.
+
+**The fixture had been shipping an invalid `PermissionRules` since P3-T3, and only a crash found
+it.** `workflowMap()` in `fixture-core.mjs` was hand-written with `allow` and `deny` and no `ask`.
+Nothing noticed for four tasks because nothing in CORE consumed a map from the double — the deck's
+`parseWorkflowMap` fills the field. P3-T7's historian is the first core-side consumer, and it threw
+`Cannot read properties of undefined (reading 'map')`. That file's own header says every fixture
+goes through the same parsers the deck uses; this one was not, and now is.
+
+**Measured live against the real core and a throwaway repository.** Three imported projects on first
+read: three snapshots written, `drifts: []` — 190, 2 288 and 178 bytes of digest. A probe repo was
+then imported, edited (one agent added, one hook added, `Read(.env)` moved from `deny` to `ask`) and
+re-read:
+
+```
+drift-probe | at 13:18:50 | stood 11.1 s
+    agents      + second-agent
+    hooks       + SessionStart * node warm.mjs
+    permissions + ask Read(.env)   - deny Read(.env)
+```
+
+On the deck that is an amber `changed 12s ago` in the map's closed summary, and inside it
+`CHANGED 12S AGO AFTER 11S` over three rows — the added entries green, the removed one red and
+struck through, because colour alone is not a way to say which is which. The probe was forgotten and
+deleted; its two snapshot rows remain in the store, which is D55's rule working (a snapshot is what
+happened, and the folder being withdrawn does not make it untrue).

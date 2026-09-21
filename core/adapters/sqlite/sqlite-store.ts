@@ -16,13 +16,30 @@ import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { AuditRow, DraftAuditRow } from '../../../contracts/audit-row.ts';
+import { MAX_CONFIG_SNAPSHOTS } from '../../../contracts/config-snapshot.ts';
 import type { DraftEvent, FdEvent } from '../../../contracts/fd-event.ts';
 import type { LaunchPreset } from '../../../contracts/launch-preset.ts';
 import { projectKey, type ProjectRecord } from '../../../contracts/project.ts';
 import type { DraftVitalsSnapshot, VitalsSnapshot } from '../../../contracts/vitals-snapshot.ts';
-import type { Store } from '../../ports/store.ts';
-import { asRecord, toAudit, toEvent, toPreset, toProject, toSnapshot } from './rows.ts';
+import type { ConfigSnapshot, DraftConfigSnapshot, Store } from '../../ports/store.ts';
+import {
+  asRecord,
+  toAudit,
+  toConfigSnapshot,
+  toEvent,
+  toPreset,
+  toProject,
+  toSnapshot,
+} from './rows.ts';
 import { MIGRATIONS, PRAGMAS } from './schema.ts';
+import {
+  prepareConfigStatements,
+  preparePresetStatements,
+  prepareProjectStatements,
+  type ConfigStatements,
+  type PresetStatements,
+  type ProjectStatements,
+} from './statements.ts';
 
 /**
  * The largest payload kept verbatim, in JSON characters.
@@ -37,77 +54,6 @@ export const MAX_PAYLOAD_CHARS = 262_144;
 export interface TruncatedPayload {
   readonly truncated: true;
   readonly chars: number;
-}
-
-/** The project registry's statements — P3-T1. See the field they are held in. */
-interface ProjectStatements {
-  readonly upsert: StatementSync;
-  readonly selectAll: StatementSync;
-  readonly selectOne: StatementSync;
-  readonly remove: StatementSync;
-}
-
-/**
- * The one UPSERT in the file, and three around it.
- *
- * The reason for `ON CONFLICT` is in the port: a project is keyed by its folder, so re-importing
- * one has to be the same row. `DO UPDATE` rather than `DO NOTHING`, and `imported_at` deliberately
- * left out of the update — the path and the name are re-displayed in whatever casing the
- * filesystem now uses, while "when did I add this" survives, because a second click on the same
- * folder is not a second decision.
- *
- * `selectAll` orders newest first, then by key, so two folders imported in the same millisecond
- * still have an order: a list that reshuffles between reads is one the deck cannot key a React row
- * from.
- */
-function prepareProjectStatements(db: DatabaseSync): ProjectStatements {
-  return {
-    upsert: db.prepare(
-      `INSERT INTO projects (path_key, path, name, imported_at) VALUES (?, ?, ?, ?)
-       ON CONFLICT(path_key) DO UPDATE SET path = excluded.path, name = excluded.name`,
-    ),
-    selectAll: db.prepare(`SELECT * FROM projects ORDER BY imported_at DESC, path_key`),
-    selectOne: db.prepare(`SELECT * FROM projects WHERE path_key = ?`),
-    remove: db.prepare(`DELETE FROM projects WHERE path_key = ?`),
-  };
-}
-
-/** The preset table's statements — P4-T1. Grouped for `ProjectStatements`' reason. */
-interface PresetStatements {
-  readonly upsert: StatementSync;
-  readonly selectAll: StatementSync;
-  readonly selectOne: StatementSync;
-  readonly remove: StatementSync;
-  readonly removeForProject: StatementSync;
-}
-
-/**
- * The preset table's five.
- *
- * `selectAll` orders by project then name then id, which is `byProjectThenName` in SQL: the deck
- * draws these as a keyed React list under each project row, and a list that reshuffles between
- * reads is one React has to rebuild rather than reconcile.
- *
- * `removeForProject` is the cascade the port promises — forgetting a folder takes its presets with
- * it, because a preset names a folder to start a session in and a folder that is no longer
- * imported is one core may not read (SEC-FS-1).
- */
-function preparePresetStatements(db: DatabaseSync): PresetStatements {
-  return {
-    upsert: db.prepare(
-      `INSERT INTO presets
-         (project_key, id, name, profile_fn, cwd, session_name, prompt_source, prompt, preset_group)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(project_key, id) DO UPDATE SET
-         name = excluded.name, profile_fn = excluded.profile_fn, cwd = excluded.cwd,
-         session_name = excluded.session_name, prompt_source = excluded.prompt_source,
-         prompt = excluded.prompt, preset_group = excluded.preset_group`,
-    ),
-    selectAll: db.prepare(`SELECT * FROM presets ORDER BY project_key, name, id`),
-    selectOne: db.prepare(`SELECT * FROM presets WHERE project_key = ? AND id = ?`),
-    remove: db.prepare(`DELETE FROM presets WHERE project_key = ? AND id = ?`),
-    removeForProject: db.prepare(`DELETE FROM presets WHERE project_key = ?`),
-  };
 }
 
 export class SqliteStore implements Store {
@@ -129,6 +75,8 @@ export class SqliteStore implements Store {
   private readonly projectRows: ProjectStatements;
   /** The preset table's five, grouped for the same reason — P4-T1. */
   private readonly presetRows: PresetStatements;
+  /** The config history's three — P3-T7. */
+  private readonly configRows: ConfigStatements;
 
   /**
    * Opens (and creates) the store, applying any migrations it is behind on.
@@ -177,6 +125,7 @@ export class SqliteStore implements Store {
     );
     this.projectRows = prepareProjectStatements(this.db);
     this.presetRows = preparePresetStatements(this.db);
+    this.configRows = prepareConfigStatements(this.db);
   }
 
   /** The schema version this file is at. `flightdeck-core status` prints it (P1-T12). */
@@ -279,6 +228,21 @@ export class SqliteStore implements Store {
 
   public forgetPreset(projectKeyValue: string, id: string): boolean {
     return this.presetRows.remove.run(projectKeyValue, id).changes > 0;
+  }
+
+  /** Appended and pruned in one call, so the bound cannot be forgotten at a call site. */
+  public rememberConfigSnapshot(snapshot: DraftConfigSnapshot): ConfigSnapshot {
+    this.configRows.insert.run(
+      snapshot.projectKey,
+      snapshot.takenAt,
+      JSON.stringify(snapshot.digest),
+    );
+    this.configRows.prune.run(snapshot.projectKey, snapshot.projectKey, MAX_CONFIG_SNAPSHOTS);
+    return this.configSnapshots(snapshot.projectKey, 1)[0] ?? { ...snapshot, id: 0 };
+  }
+
+  public configSnapshots(projectKeyValue: string, limit: number): readonly ConfigSnapshot[] {
+    return this.configRows.selectLatest.all(projectKeyValue, limit).map(toConfigSnapshot);
   }
 
   /** Closes the handle. Idempotent, because shutdown is (main.ts `stopCore`). */

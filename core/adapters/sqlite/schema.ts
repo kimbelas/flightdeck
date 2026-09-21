@@ -113,6 +113,29 @@ export const MIGRATIONS: readonly string[] = [
     PRIMARY KEY (project_key, id)
   );
   `,
+  // 5 — config snapshots: what `.claude` held, so that what it holds now can be a change (P3-T7).
+  //
+  // **A row per CHANGE, not per read.** `/projects/map` is answered on every deck load and the map
+  // is cached for five minutes; a row per read would make this table grow with how often somebody
+  // looks rather than with what happened. `ConfigHistorian` writes only when the digest moves.
+  //
+  // **The digest is a JSON TEXT column rather than eleven tables.** What is compared is a set of
+  // names per facet, and the comparison happens in `contracts/config-snapshot.ts` where the rule
+  // about what counts as a change lives. Normalising it would put that rule in SQL, where the
+  // decision to exclude byte sizes and worktrees could not be read.
+  //
+  // **`project_key`, and no foreign key to `projects`.** A snapshot is an observation and survives
+  // the folder being forgotten, exactly as an event about a session survives the session — and
+  // re-importing a folder should not have lost what its config used to be. Nothing joins the two.
+  `
+  CREATE TABLE config_snapshots (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_key TEXT    NOT NULL,
+    taken_at    INTEGER NOT NULL,
+    digest      TEXT    NOT NULL
+  );
+  CREATE INDEX config_snapshots_project ON config_snapshots (project_key, id DESC);
+  `,
 ];
 
 /**

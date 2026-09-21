@@ -37,6 +37,7 @@ import { ProjectStatusRoute } from './http/project-status-route.ts';
 import { ProjectsRoute } from './http/projects-route.ts';
 import { WorkflowMapRoute } from './http/workflow-map-route.ts';
 import type { Route } from './http/route.ts';
+import { ConfigHistorian } from './application/config-historian.ts';
 import { ObservedReader } from './application/observed-reader.ts';
 import { ObservedRoute, type ObservedSource } from './http/observed-route.ts';
 import { FsTranscriptFile } from './adapters/node/fs-transcript-file.ts';
@@ -110,7 +111,12 @@ export function projectRoutes(parts: ProjectParts): readonly Route[] {
     new ImportProjectRoute(registry),
     new ForgetProjectRoute(registry),
     new ProjectStatusRoute(buildStatusReader(registry, files, locator, parts)),
-    new WorkflowMapRoute(buildMapReader(registry, files, locator, parts)),
+    // P3-T7. The historian is the ONE thing in this slice that writes: a config change is an
+    // observation that something happened, where a map is a reading of now (D37, D55).
+    new WorkflowMapRoute(
+      buildMapReader(registry, files, locator, parts),
+      new ConfigHistorian({ store: parts.store, clock: parts.clock, logger: parts.logger }),
+    ),
     // P3-T5. One project per request, unlike its three neighbours — see the route's header.
     new ObservedRoute(buildObservedSource(registry, files, parts)),
     new PresetsRoute(presets),

@@ -1625,3 +1625,52 @@ the word SPEC guessed. That is G.43's rule a third time: a task note is a hypoth
 **Consequence.** The reading is withdrawn with the folder. `ProjectsSlice.forget` drops the tally
 when core accepts the withdrawal, because core will refuse to read that slug from that moment on
 (SEC-FS-1) and a tally left on screen would be the deck showing what it may no longer look at.
+
+## D55 — a config change is stored, where every other project reading is not (decided 2026-09-21, P3-T7)
+
+SPEC §5.1's first enhancement is "config-change detection (snapshot the map; diff when
+hooks/agents/permissions change)". Building it needed one decision that contradicts a decision
+already on this list, and two that had to be made rather than discovered.
+
+**It writes, and D37 says these readings do not.** D37 declined to put `stack` and `git` on the
+project row because they are *a reading taken a moment ago* while the row is *a standing permission
+the owner granted*, and putting a branch name there would make the one table that says which
+folders core may read change every time somebody commits. `WorkflowMapReader` and `ObservedReader`
+inherited that rule.
+
+A config CHANGE is the other kind of fact. It is an observation that something happened, at an
+instant, and it is **unrecoverable**: once `settings.json` has been edited again, no amount of
+reading the disk can tell you a hook was added on Tuesday. That is exactly what `core/ports/store.ts`
+says the store is for — "what survives a restart is what was observed" — so `config_snapshots` sits
+beside `events` and `vitals_snapshots`, not beside `projects`. The reading stays a pure read:
+`ConfigHistorian` is a separate class and `WorkflowMapRoute` composes the two, so the only thing in
+the project slice that writes is the one whose whole job is the history.
+
+**A row per change, not per read.** `/projects/map` is answered on every deck load. The digest is
+recomputed each time — set arithmetic over a few hundred strings — and a row is written only when
+it moves, so the table grows with what happened in the repository rather than with how often
+somebody looked at it. The table is bounded at twenty snapshots per folder on top of that.
+
+**A first sighting is not a change.** The first read of a newly imported folder finds seventeen
+hooks and no previous snapshot. Reporting them as "added" would mean every project announced a
+change on the day it was imported, which is not what anybody means by the word. It records the
+snapshot and says nothing.
+
+**The answer is the LAST change, not the change since you last looked.** A row that said "hooks
+changed" once and went blank on the next reload would be a feature that erases itself. So a folder
+whose config has not moved since Tuesday still reports Tuesday's change — computed from the two
+newest snapshots, writing nothing — and that is the whole reason two are read rather than one.
+
+**What the digest deliberately cannot see**, which is the design rather than a limitation:
+
+| excluded | because |
+| --- | --- |
+| instruction file SIZES | `CLAUDE.md` is edited most days; a source appearing or disappearing is configuration, its contents growing is work |
+| convention folder file COUNTS | `state/` gains a file per ticket |
+| worktrees | git, not `.claude` — and this machine makes one per ticket |
+| hook timeouts and `async` | a timeout that moves is not a new hook |
+| the instant the map was read | a digest containing it would differ from itself every time |
+
+And one thing it deliberately DOES see: a permission rule carries which list it is on, so
+`Read(.env)` moving from `deny` to `ask` is a change. A digest of bare rule strings would see that
+as no change at all, and it is the most consequential single edit this feature can report.
