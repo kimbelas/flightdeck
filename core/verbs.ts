@@ -44,6 +44,11 @@ export interface SessionVerbParts {
 /** The four verbs that act on a session — P4-T2. See the header for which one takes a shell. */
 import { join } from 'node:path';
 import { SessionPopper, type PaneHolders } from './application/session-popper.ts';
+import { GroupLauncher } from './application/group-launcher.ts';
+import { type PaneRegistry } from './application/pane-registry.ts';
+import { SessionHandoff } from './application/session-handoff.ts';
+import { type ExecFileProcessRunner } from './adapters/claude-cli/execfile-process-runner.ts';
+import type { ProjectSlice } from './projects.ts';
 import { WindowsTerminalCommands } from './adapters/windows/windows-terminal-commands.ts';
 
 /**
@@ -127,4 +132,60 @@ export function buildPopper(
     audit: parts.audit,
     logger: parts.logger,
   });
+}
+
+/**
+ * Everything that acts on a session: the six verbs, the pop-out, the group press and the handoff.
+ *
+ * Together because the last two both need something the first makes. `buildPopper` needs the pane
+ * registry, so the pane the pop-out detaches is the pane the socket server holds. And
+ * `GroupLauncher` needs the SAME `SessionLauncher` the router gets (P6-T4) — a second one would be
+ * a second audit trail for one press — plus the one preset book `projectSlice` holds, because
+ * deciding what a group is is a question about presets.
+ */
+/**
+ * What `sessionSlice` needs, which is far less than the whole HTTP side.
+ *
+ * Narrow on purpose, for `StartableCore`'s reason: this composes session verbs, and typing the
+ * parameter as `HttpParts` would drag the guard, the feeds, the version string and the report into
+ * a function that touches none of them.
+ */
+export interface SessionSliceParts {
+  readonly install: ClaudeInstall;
+  readonly runner: ExecFileProcessRunner;
+  readonly audit: AuditLog;
+  readonly projects: ProjectSlice;
+  readonly logger: Logger;
+}
+
+export function sessionSlice(
+  parts: SessionSliceParts,
+  panes: PaneRegistry,
+): Pick<
+  RouterParts,
+  | 'launcher'
+  | 'resumer'
+  | 'stopper'
+  | 'remover'
+  | 'respawner'
+  | 'doctor'
+  | 'popper'
+  | 'groups'
+  | 'forker'
+> {
+  const { install, logger } = parts;
+  const sessionParts = { install, runner: parts.runner, audit: parts.audit, logger };
+  const verbs = sessionVerbs(sessionParts);
+  return {
+    ...verbs,
+    popper: buildPopper({ ...sessionParts, panes }),
+    // P6-T6. The registry, because a handoff names a FOLDER and `resolveDirectory` is the only
+    // screen that admits a worktree (G.26, G.28).
+    forker: new SessionHandoff({ ...sessionParts, registry: parts.projects.registry }),
+    groups: new GroupLauncher({
+      presets: parts.projects.presets,
+      launcher: verbs.launcher,
+      logger,
+    }),
+  };
 }

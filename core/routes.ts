@@ -18,6 +18,7 @@ import { AskRoute } from './http/ask-route.ts';
 import { ConnectPlanRoute, ConnectWriteRoute } from './http/connect-routes.ts';
 import { DoctorRoute, RespawnRoute, UpdateRoute } from './http/install-routes.ts';
 import { GroupLaunchRoute, type GroupStarter } from './http/group-route.ts';
+import { HandoffRoute, type SessionForker } from './http/handoff-route.ts';
 import { LaunchRoute } from './http/launch-route.ts';
 import { MutesReadRoute, MutesWriteRoute } from './http/mutes-route.ts';
 import { PasteRoute } from './http/paste-route.ts';
@@ -74,6 +75,13 @@ export interface RouterParts {
    * (`projects.ts`).
    */
   readonly groups: GroupStarter;
+  /**
+   * Forks a session into a new working tree — P6-T6, SPEC §6(8).
+   *
+   * Its own field beside `resumer` rather than folded into it: a resume wakes a session under its
+   * own id and a handoff makes a second one, and the two are one word apart in English.
+   */
+  readonly forker: SessionForker;
   /** The one verb that destroys something — its own route, and its own confirm in the deck (P4-T2). */
   readonly remover: SessionRemover;
   /** One headless question at a time, streamed onto `/stream` (P4-T4, D47, D48). */
@@ -108,17 +116,7 @@ export function buildRouter(parts: RouterParts, extra: readonly Route[]): Reques
     // Its own route and not a field on the detail: a preview spawns `claude.exe` (P5a-T4).
     new PreviewRoute(parts.preview),
     new StatusRoute(parts.report),
-    new LaunchRoute(parts.launcher),
-    new ResumeRoute(parts.resumer),
-    new StopRoute(parts.stopper),
-    new PopoutRoute(parts.popper),
-    // The most expensive verb in the table, and its own row for that reason — P6-T4. One press
-    // starts N sessions and spends N first turns of the 5-hour window.
-    new GroupLaunchRoute(parts.groups),
-    // Its own literal path, so no typo turns a stop into a delete — see the route's header.
-    new RemoveRoute(parts.remover),
-    // 202 and a run id; the answer arrives as `ask` frames on the stream, not down this body.
-    new AskRoute(parts.asker),
+    ...sessionRoutes(parts),
     // P4-T5. The read is a GET and writes no audit row; the two writes are POSTs and do.
     new DoctorRoute(parts.doctor),
     new UpdateRoute(parts.doctor),
@@ -160,4 +158,35 @@ function subscriptionPaths(install: ClaudeInstall): SubscriptionPaths {
     '365': install.configDirFor('365'),
     isg: install.configDirFor('isg'),
   });
+}
+
+/**
+ * The seven verbs that act on a SESSION, as their own list.
+ *
+ * Lifted out of `buildRouter` when the seventh arrived and pushed it over its line limit (P6-T6),
+ * and they are the coherent piece: each is a POST on its own literal path that starts, wakes,
+ * forks, ends or hands over one session. Everything left in `buildRouter` answers a question
+ * about the machine instead.
+ *
+ * **The order is not alphabetical and is not accidental.** `launch`, `resume` and `handoff` make a
+ * session exist; `stop` and `rm` end one; `popout` and `group` are the two that do something to
+ * more than one thing at a time. Reading them in that order is how somebody works out which verb
+ * they want — and `rm` sits alone at the end with the comment that says why.
+ */
+function sessionRoutes(parts: RouterParts): readonly Route[] {
+  return [
+    new LaunchRoute(parts.launcher),
+    new ResumeRoute(parts.resumer),
+    // The only verb in the table that ADDS a session without being able to lose one — P6-T6.
+    new HandoffRoute(parts.forker),
+    new StopRoute(parts.stopper),
+    new PopoutRoute(parts.popper),
+    // The most expensive verb in the table, and its own row for that reason — P6-T4. One press
+    // starts N sessions and spends N first turns of the 5-hour window.
+    new GroupLaunchRoute(parts.groups),
+    // Its own literal path, so no typo turns a stop into a delete — see the route's header.
+    new RemoveRoute(parts.remover),
+    // 202 and a run id; the answer arrives as `ask` frames on the stream, not down this body.
+    new AskRoute(parts.asker),
+  ];
 }

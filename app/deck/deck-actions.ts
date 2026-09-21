@@ -64,7 +64,7 @@ export function lifecycleActions(
     // P6-T3. `muted` is the position being asked for rather than a toggle, so the button and the
     // set it reads from cannot disagree about which way the press went.
     onMute: (row: SessionRowViewModel, muted: boolean) => {
-      void store.setMuted(row.ref.subscription, row.ref.sessionId, muted);
+      void store.setMuted(row.ref, muted);
     },
     // P6-T4, D17. The one action here that spends quota per press — N sessions, N first turns.
     onLaunchGroup: (group: string) => {

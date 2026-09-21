@@ -44,6 +44,7 @@ import { AskSlice } from './ask-slice.ts';
 import { InstallSlice } from './install-slice.ts';
 import { LifecycleSlice } from './lifecycle-slice.ts';
 import { GroupSlice } from './group-slice.ts';
+import { HandoffSlice } from './handoff-slice.ts';
 import { MuteSlice } from './mute-slice.ts';
 import { upsert, without } from './session-rows.ts';
 import type { AskRequest } from '../../contracts/ask-run.ts';
@@ -108,6 +109,8 @@ export class DeckStore {
   private readonly mutes: MuteSlice;
   /** Pressing a preset group — P6-T4. The one button that starts N sessions at once. */
   private readonly groups: GroupSlice;
+  /** Forking a session into a worktree — P6-T6. The one verb that cannot lose a session. */
+  private readonly handoffs: HandoffSlice;
   private state: DeckState = EMPTY;
   private source: EventStreamSource | undefined;
   private cancelRetry: (() => void) | undefined;
@@ -143,6 +146,9 @@ export class DeckStore {
       this.set({ muted });
     });
     this.groups = new GroupSlice(api, (changes) => {
+      this.set(changes);
+    });
+    this.handoffs = new HandoffSlice(api, (changes) => {
       this.set(changes);
     });
   }
@@ -313,16 +319,22 @@ export class DeckStore {
    */
   public launchGroup = (group: string): Promise<boolean> => this.groups.launch(group);
 
+  /**
+   * Forks a session into a worktree — P6-T6, SPEC §6(8).
+   *
+   * @returns whether core made the fork. The new session is not returned and must not be: it
+   * arrives on the stream a sweep later, like every other row.
+   */
+  public handOff = (ref: SessionRef, cwd: string, name: string): Promise<boolean> =>
+    this.handoffs.handOff(ref, cwd, name);
+
   /** Dismisses the last group press. */
   public clearGroup = (): void => {
     this.groups.clear();
   };
 
-  public setMuted = (
-    subscription: SubscriptionId,
-    sessionId: string,
-    muted: boolean,
-  ): Promise<void> => this.mutes.set(subscription, sessionId, muted);
+  public setMuted = (ref: SessionRef, muted: boolean): Promise<void> =>
+    this.mutes.set(ref.subscription, ref.sessionId, muted);
 
   /**
    * Re-reads the project registry and everything annotating it — P3-T1, P3-T2, P3-T3, P4-T1.

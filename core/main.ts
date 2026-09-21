@@ -13,7 +13,6 @@ import { IngestKeyIssuer } from './application/ingest-key-issuer.ts';
 import { PaneRegistry } from './application/pane-registry.ts';
 import { type Reconciler } from './application/reconciler.ts';
 import { AuditLog } from './application/audit-log.ts';
-import { GroupLauncher } from './application/group-launcher.ts';
 import { StatusReport } from './application/status-report.ts';
 import { type ToastAnnouncer } from './application/toast-announcer.ts';
 import { type TranscriptReader } from './application/transcript-reader.ts';
@@ -43,7 +42,7 @@ import { RequestRouter } from './http/request-router.ts';
 import type { StreamRoute } from './http/route.ts';
 import { warmUp } from './http/warm-up.ts';
 import { buildFeeds, type Feeds } from './feeds.ts';
-import { sessionVerbs, buildAsker, buildPopper } from './verbs.ts';
+import { buildAsker, sessionSlice } from './verbs.ts';
 import { buildRouter, type RouterParts } from './routes.ts';
 import { projectSlice, type ProjectSlice } from './projects.ts';
 import { buildDetailReader, buildPreviewReader } from './reads.ts';
@@ -318,36 +317,6 @@ function buildHttp(parts: HttpParts): HttpSide {
   const sockets = new PtySocketServer({ guard, panes, tickets, logger });
   sockets.attachTo(server.raw);
   return { server, sockets, panes, tickets };
-}
-
-/**
- * Everything that acts on a session: the six verbs, the pop-out, and the group press.
- *
- * Together because the last two both need something the first makes. `buildPopper` needs the pane
- * registry, so the pane the pop-out detaches is the pane the socket server holds. And
- * `GroupLauncher` needs the SAME `SessionLauncher` the router gets (P6-T4) — a second one would be
- * a second audit trail for one press — plus the one preset book `projectSlice` holds, because
- * deciding what a group is is a question about presets.
- */
-function sessionSlice(
-  parts: HttpParts,
-  panes: PaneRegistry,
-): Pick<
-  RouterParts,
-  'launcher' | 'resumer' | 'stopper' | 'remover' | 'respawner' | 'doctor' | 'popper' | 'groups'
-> {
-  const { install, logger } = parts;
-  const sessionParts = { install, runner: parts.runner, audit: parts.audit, logger };
-  const verbs = sessionVerbs(sessionParts);
-  return {
-    ...verbs,
-    popper: buildPopper({ ...sessionParts, panes }),
-    groups: new GroupLauncher({
-      presets: parts.projects.presets,
-      launcher: verbs.launcher,
-      logger,
-    }),
-  };
 }
 
 /**
