@@ -1518,3 +1518,37 @@ the person had just stopped from that very pane. Nothing on the wire distinguish
 "did I ask?" flag went from a boolean to `PaneAsked` — `nobody`, `detach`, `stop` — and a pane now
 has a `stopped` status of its own. **No unit test could have caught it and none did; it was found by
 pressing the button on a real session** (G.45).
+
+## D52 — P5b is dropped; the deck stays a browser app (decided 2026-09-21, owner, supersedes D22 and part of D1)
+
+**Asked at exactly the point D22 said to ask it**, with P5a complete: nine panes in one window, the
+layouts, the keyboard, the per-pane controls, and the owner having typed into a real session in an
+Edge `--app` window. **Verdict: drop it.**
+
+D1 scheduled Tauri as "not optional" on one argument — Ctrl+W is delete-previous-word in a terminal
+and Chromium never delivers it to the page — and D22 established that the owner does not use Ctrl+W
+to erase words. D16 already fires Windows toasts from core with no window open, so notifications are
+not a reason either. What is left is a tray badge, a global summon hotkey and a taskbar entry, and
+none of those is worth a Rust toolchain on this machine today.
+
+**What the owner gives up is known and small, because P5a measured it.** `Ctrl+W`, `Ctrl+T` and
+`Ctrl+N` stay the browser's: Keyboard Lock works only in JavaScript-initiated fullscreen, so the
+`--app` window cannot have them (RESEARCH.md E.2), and `Ctrl+W` cannot be moved in Claude Code
+either — delete-word is not a keybindings action (G.33). The `?` sheet says so in the place somebody
+looks when a key does not do what they expected, and P5a-T7's helper moves the two that *can* move.
+
+**Dropped, not deleted.** P5b-T1/T2/T3 keep their titles and carry `status: dropped`, because a
+roadmap that silently loses a phase cannot tell "we decided not to" from "we forgot". The roadmap
+validator learned the difference in the same change: a phase whose tasks are all dropped is asked to
+be marked `dropped`, never `done` — marking it done would claim a tray badge that does not exist.
+
+**Reversible by construction.** D1's first point holds and is why this costs nothing: the
+application is the same localhost app in every shell, so swapping the window later rewrites no
+application code. The two things that would need doing are in P5b-T3's title — core's `Origin`
+allowlist (SEC-HTTP-2) — and a launcher.
+
+**P4 and P5a are marked `done` on task evidence rather than on a separate gate run** (owner, same
+conversation). Every task in both phases was verified live on this machine as it landed, and P4's
+gate sentence — a named ticket session started from the deck into a worktree — would spend real
+quota to re-prove a launcher that P4-T2 already proved live. The gate sentences stay in the file as
+what the phases were for.
