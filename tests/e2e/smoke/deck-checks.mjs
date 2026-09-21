@@ -716,15 +716,27 @@ export async function askChecks(page, report, core) {
   );
 
   // D48: nothing has been answered yet, and the panel is already open on the run.
-  core.publishAsk({
+  //
+  // **Re-published on every poll, and that is D48's own consequence rather than a fudge.** `ask`
+  // frames are deliberately NOT replayed on connect, so a subscriber that is momentarily absent
+  // misses the record outright — which is correct for a conversation and is exactly what happened
+  // on the `next dev` runner, where the stream had not finished re-establishing when the first
+  // publish went out: the check timed out after ten seconds and the delta that followed rendered
+  // twenty milliseconds later. What this check is about is that a `started` record PRINTS the mode,
+  // not that the first publish is never lost, so it keeps offering one until the panel has had it.
+  // A deck that ignored the record would still fail, which is the property that matters.
+  const started = {
     kind: 'started',
     sessionId: '7877f4f3-b48e-4db9-8baf-c8aa97428e7c',
     model: 'claude-opus-5',
     permissionMode: 'plan',
+  };
+  const opened = await waitFor(async () => {
+    core.publishAsk(started);
+    return ((await panel.locator('[aria-label="ask meta"]').allTextContents())[0] ?? '').includes(
+      'plan',
+    );
   });
-  const opened = await waitFor(async () =>
-    ((await panel.locator('[aria-label="ask meta"]').allTextContents())[0] ?? '').includes('plan'),
-  );
   report.check('the run reports what it was allowed to do, and the panel prints it', opened);
 
   core.publishAsk({ kind: 'delta', text: 'Three files ' });
