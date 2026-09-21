@@ -2,7 +2,7 @@
 
 // The left column: start a session, filter the list, then every session that survived the filter.
 import type { JSX } from 'react';
-import type { SubscriptionId } from '../../contracts/session.ts';
+import type { PresetLaunch } from '../../contracts/launch-preset.ts';
 import { SEARCH_INPUT_ID } from './deck-keyboard.ts';
 import { LaunchForm } from './launch-form.tsx';
 import type { SessionDetailViewModel } from './session-detail-view-model.ts';
@@ -30,10 +30,11 @@ interface SessionListProps {
   readonly previews: Readonly<Record<string, SessionPreviewViewModel | undefined>>;
   readonly onSearch: (value: string) => void;
   readonly onToggle: (row: SessionRowViewModel) => void;
-  readonly onLaunch: (subscription: SubscriptionId, prompt: string, name: string) => void;
+  readonly onLaunch: (request: PresetLaunch) => void;
   readonly onOpen: (row: SessionRowViewModel) => void;
   readonly onResume: (row: SessionRowViewModel) => void;
   readonly onStop: (row: SessionRowViewModel) => void;
+  readonly onRemove: (row: SessionRowViewModel) => void;
   readonly onPreview: (row: SessionRowViewModel) => void;
 }
 
@@ -61,6 +62,9 @@ export function SessionList(props: SessionListProps): JSX.Element {
           }}
           onStop={() => {
             onStop(row);
+          }}
+          onRemove={() => {
+            props.onRemove(row);
           }}
           onOpen={() => {
             onOpen(row);

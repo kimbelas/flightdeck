@@ -184,14 +184,16 @@ export interface PresetDraft {
  * names. `LaunchRoute` has parsed these four fields since P2-T2 — this names the shape so the two
  * ends cannot spell it differently.
  *
- * **The profile function is deliberately not in it.** Today's launcher runs `claude.exe` with the
- * subscription's config directory; P4-T2 is what makes the function itself the command, and it
- * will add the field here rather than infer it. Sending a name the launcher ignores would be a
- * field that reads as routing and is not.
+ * **The profile function is the routing, as of P4-T2, and `subscription` is gone.** P4-T1 sent a
+ * subscription because the launcher ran `claude.exe` with a config directory; the launcher now
+ * runs the function itself through PowerShell (D4), so the function decides the account, the model
+ * and the agent. Sending both would be two fields the command line could contradict, and core
+ * derives the one it audits with (`subscriptionOfProfileFunction`) rather than trusting it.
  */
 export interface PresetLaunch {
-  readonly subscription: SubscriptionId;
+  readonly profileFn: ProfileFunction;
   readonly prompt: string;
+  /** Ignored by a function that names itself (`pinsSessionName`); required by every other. */
   readonly name: string;
   readonly cwd: string;
 }

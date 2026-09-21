@@ -43,7 +43,9 @@ import {
   byProjectThenName,
   parsePresetDraft,
   parsePresetRef,
+  pinsSessionName,
   presetId,
+  PROFILE_FUNCTIONS,
 } from '../../contracts/launch-preset.ts';
 import { parseProjectPathBody, projectKey, projectName } from '../../contracts/project.ts';
 import { parseQuotaSummary } from '../../contracts/quota-summary.ts';
@@ -132,6 +134,14 @@ export class FixtureCore {
     this.resumes = [];
     /** The bodies of every `POST /sessions/stop` — P4-T2b. */
     this.stops = [];
+    /**
+     * The bodies of every `POST /sessions/rm` — P4-T2.
+     *
+     * An array the checks read, and the reason the smoke can assert that NOTHING reached the
+     * destructive route until the second button was pressed. A set would lose the order; a
+     * boolean would lose the count.
+     */
+    this.removals = [];
     /**
      * Every session a preview was asked about, in order — P5a-T4.
      *
@@ -243,6 +253,9 @@ export class FixtureCore {
     }
     if (request.method === 'POST' && path === '/sessions/stop') {
       return this.stopSession(await body(request));
+    }
+    if (request.method === 'POST' && path === '/sessions/rm') {
+      return this.removeSession(await body(request));
     }
     if (request.method === 'POST' && path === '/pty-ticket') {
       const raw = await body(request);
@@ -418,13 +431,41 @@ export class FixtureCore {
     return { ...held, lines: condense(held.lines) };
   }
 
+  /**
+   * `POST /sessions` — screened the way core screens it, which changed in P4-T2.
+   *
+   * A launch names a PROFILE FUNCTION rather than a subscription (D44), and a name is required
+   * unless the function pins its own. Both rules are repeated here rather than waved through,
+   * because the deck is the thing under test: a form that stopped sending one of them has to fail
+   * in the smoke rather than be papered over by a double that accepts anything.
+   */
   launch(raw) {
     const request = parseJson(raw);
-    if (typeof request?.prompt !== 'string' || request.prompt.trim() === '') {
+    if (!PROFILE_FUNCTIONS.some((known) => known === request?.profileFn)) {
+      return [400, { error: 'bad request' }];
+    }
+    if (typeof request.prompt !== 'string' || request.prompt.trim() === '') {
       return [400, { error: 'bad_request' }];
     }
+    const named = typeof request.name === 'string' && request.name.trim() !== '';
+    if (!named && !pinsSessionName(request.profileFn)) return [400, { error: 'bad_request' }];
     this.launches.push(request);
     return [201, { sessionId: randomUUID() }];
+  }
+
+  /**
+   * `POST /sessions/rm` — the destructive verb, screened exactly as `stop` is.
+   *
+   * `rm` takes the SHORT id and refuses the full uuid (F.8.4), the same way round as `stop`, so
+   * the fixture refuses the same shapes core refuses. The row is dropped from the fixture snapshot
+   * so a check can watch it disappear.
+   */
+  removeSession(raw) {
+    const ref = parseJson(raw);
+    if (!SHORT_SESSION_ID.test(ref?.shortId ?? '')) return [400, { error: 'bad_session' }];
+    if (!FULL_SESSION_ID.test(ref?.sessionId ?? '')) return [400, { error: 'bad_session' }];
+    this.removals.push(ref);
+    return [200, { sessionId: ref.sessionId }];
   }
 
   /**

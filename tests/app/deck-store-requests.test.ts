@@ -14,7 +14,9 @@ import {
   CORE_PROJECT_MAP_PATH,
   CORE_PROJECT_STATUS_PATH,
   CORE_PROJECTS_PATH,
+  CORE_REMOVE_PATH,
   CORE_SESSIONS_PATH,
+  CORE_STOP_PATH,
 } from '../../contracts/deck-routes.ts';
 import type { SessionRow } from '../../contracts/session-row.ts';
 import {
@@ -161,20 +163,80 @@ describe('DeckStore.refresh', () => {
   });
 });
 
+/** The four fields a launch carries since P4-T2 — a profile function, not a subscription (D44). */
+const LAUNCH = {
+  profileFn: 'claude-365',
+  prompt: 'do the thing',
+  name: 'fd-one',
+  cwd: '',
+} as const;
+
+describe('DeckStore.remove', () => {
+  const REF = {
+    sessionId: ROW.sessionId,
+    shortId: ROW.shortId,
+    subscription: ROW.subscription,
+  };
+
+  it('posts the whole ref to the delete route, which is not the stop route', async () => {
+    const { store, api } = rig();
+    api.willAnswer(200, { sessionId: ROW.sessionId });
+
+    expect(await store.remove(REF)).toBe(true);
+    expect(api.requests[0]?.path).toBe(CORE_REMOVE_PATH);
+    expect(api.requests[0]?.path).not.toBe(CORE_STOP_PATH);
+    expect(api.requests[0]?.body).toEqual(REF);
+  });
+
+  it('does not drop the row itself — the reconciler publishes session.gone', async () => {
+    // Guessing at the outcome of the one write that cannot be undone is the last place to do it.
+    const { store, api } = rig();
+    api.willAnswer(200, snapshot([ROW]));
+    await store.refresh();
+
+    api.willAnswer(200, { sessionId: ROW.sessionId });
+    await store.remove(REF);
+
+    expect(store.snapshot().rows).toHaveLength(1);
+  });
+
+  it('says a failed delete was a delete, not a stop', async () => {
+    const { store, api } = rig();
+    api.willAnswer(400, { error: 'remove_failed' });
+
+    expect(await store.remove(REF)).toBe(false);
+    expect(store.snapshot().error).toBe('Core could not delete that session.');
+  });
+
+  it('reports a request that reached nobody', async () => {
+    const { store, api } = rig();
+    api.willNotAnswer();
+
+    expect(await store.remove(REF)).toBe(false);
+    expect(store.snapshot().error).toBe('Could not reach flightdeck-core.');
+  });
+});
+
 describe('DeckStore.launch', () => {
   it('posts what core asks for, and nothing the page made up', async () => {
     const { store, api } = rig();
     api.willAnswer(201, { sessionId: ROW.sessionId });
 
-    await store.launch('365', 'do the thing', 'fd-one');
+    await store.launch({
+      profileFn: 'claude-365',
+      prompt: 'do the thing',
+      name: 'fd-one',
+      cwd: '',
+    });
 
     expect(api.requests).toEqual([
       {
         method: 'POST',
         path: CORE_SESSIONS_PATH,
-        // `cwd: ''` is what core reads as "no folder" (`optionalString`) — the launch form has
-        // none, and a preset is the caller that does (P4-T1).
-        body: { subscription: '365', prompt: 'do the thing', name: 'fd-one', cwd: '' },
+        // A PROFILE FUNCTION, not a subscription: the function is the account and the model, and
+        // sending both would be two fields the command line could contradict (D44, P4-T2).
+        // `cwd: ''` is what core reads as "no folder" — the form has none (P4-T1).
+        body: { profileFn: 'claude-365', prompt: 'do the thing', name: 'fd-one', cwd: '' },
       },
     ]);
   });
@@ -183,7 +245,7 @@ describe('DeckStore.launch', () => {
     const { store, api } = rig();
     api.willAnswer(201, { sessionId: ROW.sessionId });
 
-    expect(await store.launch('365', 'do the thing', undefined)).toBe(ROW.sessionId);
+    expect(await store.launch(LAUNCH)).toBe(ROW.sessionId);
     expect(store.snapshot().error).toBeUndefined();
   });
 
@@ -193,7 +255,7 @@ describe('DeckStore.launch', () => {
     const { store, api } = rig();
     api.willAnswer(201, { sessionId: ROW.sessionId });
 
-    await store.launch('365', 'do the thing', undefined);
+    await store.launch(LAUNCH);
 
     expect(store.snapshot().rows).toEqual([]);
   });
@@ -204,7 +266,7 @@ describe('DeckStore.launch', () => {
     const { store, api } = rig();
     api.willAnswer(201, { sessionId: '' });
 
-    expect(await store.launch('365', 'do the thing', undefined)).toBeUndefined();
+    expect(await store.launch(LAUNCH)).toBeUndefined();
     expect(store.snapshot().error).toBe(
       'flightdeck-core answered something the deck could not read.',
     );
@@ -214,27 +276,37 @@ describe('DeckStore.launch', () => {
     const { store, api } = rig();
     api.willAnswer(200, { sessionId: ROW.sessionId });
 
-    expect(await store.launch('365', 'do the thing', undefined)).toBeUndefined();
+    expect(await store.launch(LAUNCH)).toBeUndefined();
     expect(store.snapshot().error).toBe('Core answered 200.');
   });
 
   it('names the one failure that is the operator’s to fix, not the status it came under', async () => {
-    // `no_claude` is a 503, and a 503 otherwise reads as "core is not running" — which is exactly
-    // wrong here: core is running, it answered, and it cannot find claude.exe (LaunchRoute).
+    // `no_shell` is a 503, and a 503 otherwise reads as "core is not running" — which is exactly
+    // wrong here: core is running, it answered, and it cannot find powershell.exe (LaunchRoute).
     const { store, api } = rig();
-    api.willAnswer(503, { error: 'no_claude' });
+    api.willAnswer(503, { error: 'no_shell' });
 
-    expect(await store.launch('365', 'do the thing', undefined)).toBeUndefined();
+    expect(await store.launch(LAUNCH)).toBeUndefined();
     expect(store.snapshot().error).toBe(
-      'Core is running but cannot find claude.exe — run `npm run doctor`.',
+      'Core is running but cannot find powershell.exe — run `npm run doctor`.',
     );
+  });
+
+  it('says a session may exist when core could not read an id back — P4-T2', async () => {
+    // `no_session_id` is the one refusal that does NOT mean "it did not start". Folding it into
+    // `launch_failed` is how the owner ends up with two sessions.
+    const { store, api } = rig();
+    api.willAnswer(400, { error: 'no_session_id' });
+
+    expect(await store.launch(LAUNCH)).toBeUndefined();
+    expect(store.snapshot().error).toContain('check `claude agents`');
   });
 
   it('does not repeat core’s other codes at the owner, who cannot act on them', async () => {
     const { store, api } = rig();
     api.willAnswer(400, { error: 'launch_failed' });
 
-    expect(await store.launch('365', 'do the thing', undefined)).toBeUndefined();
+    expect(await store.launch(LAUNCH)).toBeUndefined();
     expect(store.snapshot().error).toBe('Core would not start that session.');
   });
 
@@ -242,7 +314,7 @@ describe('DeckStore.launch', () => {
     const { store, api } = rig();
     api.willNotAnswer();
 
-    expect(await store.launch('365', 'do the thing', undefined)).toBeUndefined();
+    expect(await store.launch(LAUNCH)).toBeUndefined();
     expect(store.snapshot().error).toBe('Could not reach flightdeck-core.');
     expect(store.snapshot().loading).toBe(false);
   });
@@ -254,7 +326,7 @@ describe('DeckStore.launch', () => {
     await store.refresh();
 
     api.willAnswer(400, { error: 'bad request' });
-    await store.launch('365', '', undefined);
+    await store.launch({ ...LAUNCH, prompt: '' });
 
     expect(store.snapshot().coreUp).toBe(true);
   });

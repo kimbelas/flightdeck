@@ -81,8 +81,19 @@ export const CORE_REWRITE = {
 export const CORE_SESSIONS_PATH = `${CORE_PREFIX}sessions`;
 /** Waking a stopped background session — P4-T2a. Its own path, matching core's route table. */
 export const CORE_RESUME_PATH = `${CORE_PREFIX}sessions/resume`;
-/** Stopping one without deleting it — P4-T2b. `rm` is not here and is not this button. */
+/** Stopping one without deleting it — P4-T2b. It keeps the session; `CORE_REMOVE_PATH` does not. */
 export const CORE_STOP_PATH = `${CORE_PREFIX}sessions/stop`;
+
+/**
+ * DELETING one, conversation and all — P4-T2.
+ *
+ * Its own literal path rather than a field on the stop body, and that is a control rather than
+ * tidiness: the two verbs are one character apart in English and permanent versus undoable in
+ * effect, so they are two rows in the table that says what is reachable. The confirm step lives in
+ * the deck (`SessionRowCard`); what this spelling buys is that nothing reaches the destructive
+ * route by a body field somebody got wrong.
+ */
+export const CORE_REMOVE_PATH = `${CORE_PREFIX}sessions/rm`;
 
 /**
  * One session's detail, for an expanded row — P2-T4.

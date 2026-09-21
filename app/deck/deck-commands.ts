@@ -20,7 +20,6 @@
 // trust the entries beside it. So the list grows when those tasks land, and not before.
 import type { PresetDraft, PresetLaunch, PresetRef } from '../../contracts/launch-preset.ts';
 import { PANE_LAYOUTS, type PaneLayout } from '../../contracts/pane-layout.ts';
-import type { SubscriptionId } from '../../contracts/session.ts';
 import {
   focusControl,
   focusRow,
@@ -42,7 +41,15 @@ export interface DeckActions {
   readonly onOpenShell: () => void;
   readonly onRefresh: () => void;
   readonly onOpenPane: (row: SessionRowViewModel) => void;
-  readonly onLaunch: (subscription: SubscriptionId, prompt: string, name: string) => void;
+  /**
+   * Starting a session, from the form or from a preset — one function as of P4-T2.
+   *
+   * They were two until the launcher went through the profile functions (D4): the form sent a
+   * subscription and a preset sent a folder, so they could not share a shape. Now both send a
+   * profile function, a prompt, a name and a folder, and two functions doing that would be the
+   * drift this interface exists to prevent.
+   */
+  readonly onLaunch: (request: PresetLaunch) => void;
   readonly onImportProject: (path: string) => void;
   readonly onForgetProject: (path: string) => void;
   /**
@@ -55,11 +62,19 @@ export interface DeckActions {
    * name, and naming one needs P3-T6's current project. That is the task that turns these into
    * `Start app-next · ticket`.
    */
-  readonly onLaunchPreset: (request: PresetLaunch) => void;
   readonly onSavePreset: (draft: PresetDraft) => void;
   readonly onForgetPreset: (ref: PresetRef) => void;
   readonly onResume: (row: SessionRowViewModel) => void;
   readonly onStop: (row: SessionRowViewModel) => void;
+  /**
+   * Deleting one — P4-T2, and deliberately NOT a palette entry.
+   *
+   * Every other verb here is reachable by typing its name into Ctrl+K. This one is not, and that
+   * is the point: `rm` destroys a conversation with no resume (RESEARCH.md F.2.8), and a fuzzy
+   * search where `Stop fd-t1` and `Delete fd-t1` sit one row apart is exactly the place to press
+   * the wrong one. It is reached by expanding the row and confirming, and by nothing else.
+   */
+  readonly onRemove: (row: SessionRowViewModel) => void;
   /**
    * Reads one session's screen — P5a-T4.
    *

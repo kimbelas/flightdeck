@@ -233,9 +233,14 @@ degrade one card's extras, never the deck. Fixture tests pin every observed shap
 
 ### 4.3 Session lifecycle — the key idea, now with the real states
 
-1. **Launch** — the deck runs `powershell -NoLogo -Command "<profile fn> --bg -n <name> '<prompt>'"`
-   for the chosen subscription. `--bg` **requires a prompt** (presets carry one) and returns a
-   short id. The `SessionStart` hook makes the row appear within a second.
+1. **Launch** — the deck runs `powershell -NoLogo -NonInteractive -EncodedCommand <script>` for
+   the chosen **profile function** (D44: the function is the account and the model, so there is no
+   subscription field beside it). The script is one of four fixed lines and the prompt and name
+   reach it as `FD_PROMPT` / `FD_NAME` — never as a command string, which is measured rather than
+   asserted (RESEARCH.md F.8.2: the interpolated form splits the prompt and executes `$(…)` in it).
+   `--bg` **requires a prompt** (presets carry one) and **a name is required too** (D7's
+   `unnamed`), except for `claude-isg-orch`, which names itself. It returns a short id, and the
+   `SessionStart` hook makes the row appear within a second. **Built in P4-T2.**
 2. **Observe** — feeds 1–5. State vocabulary is Claude Code's own (`working|blocked|done|failed|
    stopped`, `busy|waiting|idle`) plus derived flags: **needs-you, wedged, context-pressure,
    retired, errored, unnamed, attached** (D7).
@@ -247,7 +252,9 @@ degrade one card's extras, never the deck. Fixture tests pin every observed shap
    *retired*, not *dead*, with one-click **resume** (`--bg --resume <sessionId>`). `logs` stops
    working once the daemon exits; the preview falls back to the transcript tail.
 5. **Control** — `stop`, `rm`, `respawn`, rename, resume, fork-into-worktree as buttons, each run
-   under the right `$CFG`.
+   under the right `$CFG`. **`rm` is three deliberate acts away and never beside `stop`** (D45):
+   it lives inside the expanded row, the first press only arms it, and the second names the
+   session. It is the one verb that is deliberately not in the palette.
 
 **Sessions started outside Flightdeck** (a plain `claude-isg` in a terminal) are visible with full
 vitals but **read-only** — interactive sessions cannot be attached. When one exits, the deck
@@ -475,7 +482,9 @@ public→loopback requests (Local Network Access); other browsers may not. So (D
 6. Never read, log or serve `sessions/*.key`, `daemon/*.key`, or credentials. Transcript text
    never leaves the machine; fixtures are scrubbed.
 7. Launch only via the four profile functions with an allowlisted flag set; prompt text is passed
-   as a single quoted argument, never interpolated into a shell string.
+   as an **environment variable** read back in PowerShell's argument mode, never interpolated into
+   a shell string. Measured both ways in RESEARCH.md F.8.2 — the interpolated form executes a
+   `$(…)` that happens to be in the prompt.
 
 ---
 

@@ -2010,16 +2010,86 @@ phases:
           class name would have passed.
       - id: P4-T2
         title: Launcher adapter — PowerShell -EncodedCommand, profile-function allowlist, prompt via environment variable, --bg, name required
-        status: todo
+        status: done
+        done_on: 2026-09-20
         depends_on: [P4-T2a, P4-T2b]
+        deliverables:
+          [
+            core/ports/launch-commands.ts,
+            core/adapters/windows/powershell-launch-commands.ts,
+            core/application/session-launcher.ts,
+            core/application/session-remover.ts,
+            core/http/launch-route.ts,
+            core/http/remove-route.ts,
+            core/routes.ts,
+            core/main.ts,
+            contracts/launch-reply.ts,
+            contracts/launch-preset.ts,
+            contracts/deck-routes.ts,
+            app/deck/launch-form.tsx,
+            app/deck/session-row-card.tsx,
+            app/deck/session-row-view-model.ts,
+            app/deck/detail-slice.ts,
+            app/deck/deck-store.ts,
+            app/deck/deck-replies.ts,
+            app/deck/deck-commands.ts,
+            app/globals.css,
+            tests/fakes/fake-launch-commands.ts,
+            tests/core/adapters/powershell-launch-commands.test.ts,
+            tests/core/application/session-remover.test.ts,
+            tests/core/http/remove-route.test.ts,
+            tests/win/powershell-launch.test.ts,
+            tests/e2e/fixture-core.mjs,
+            tests/e2e/smoke/deck-checks.mjs,
+            DECISIONS.md D45,
+            RESEARCH.md F.8,
+            RESEARCH.md G.40,
+          ]
         notes: >-
-          RESEARCH.md F.2.7–F.2.8. Resume is `--bg --resume <full lowercase uuid>` and nothing else —
-          a short id, or any extra flag including -n, silently forks a copy under a new id and loses
-          the name. The prompt goes in after the wake, not on the resume command. rm deletes a live
-          session with no confirmation (F.2.8), so it needs its own confirm step and an audit row. A launch into a folder
-          the config dir has not trusted blocks on a modal that --dangerously-skip-permissions does
-          not bypass and Ctrl+C does not dismiss (F.3.6), so "started but never produced a session
-          id" is a distinct outcome the launcher reports, not a hang.
+          Two halves that pull in opposite directions — make starting a session easier, make
+          deleting one harder — and DECISIONS.md D45 argues both.
+          **The launch finally honours D4.** P2-T2's launcher spawned `claude.exe` with
+          `CLAUDE_CONFIG_DIR` set, which reproduces `claude-365` and `claude-isg` exactly and loses
+          everything the other two functions do; a deck offering four presets and running two of
+          them would have been P4-T0's `.bashrc` drift in a different file. It runs
+          `powershell.exe -NoLogo -NonInteractive -EncodedCommand <script>` now, one fixed script
+          per function, chosen from a four-member union so the table is exhaustive by type and a
+          reviewer can read every line of it.
+          **`-NoProfile` is the flag that must never be added**, which reads backwards and is why
+          it has a test asserting its absence: without the profile none of the four functions
+          exists (F.8.1). It costs ~135 ms on a 2.7 s launch.
+          **F.8.2 is the measurement SEC-PROC-1 was written on and nobody had taken.**
+          `$env:FD_PROMPT` in PowerShell's argument mode is a VALUE — a prompt with spaces,
+          quotes, `$`, `;` and `|` arrives as one argv element, and one that reads like flags
+          arrives as one element too. The same script with the prompt interpolated splits it into
+          thirteen AND executes a `$(Get-Date)` that happens to be in it, in the owner's shell.
+          That is not a style difference; it is whether a prompt can run a command, and
+          `tests/win/powershell-launch.test.ts` fails all four cases when the mechanism is removed.
+          **F.8.3 corrects the task note.** It predicted that a launch into an untrusted folder
+          would HANG on F.3.6's modal. A `--bg` launch into a directory `.claude-365` had never
+          seen exited 0 in 1.6 s with a session id — a background job has no terminal to render the
+          dialog on. What survives is the reporting: `no_session_id` is its own code now rather
+          than folded into `launch_failed`, because a run that exited 0 may well have started a
+          session and "it failed" is how the owner ends up with two. `no_claude` became `no_shell`
+          in the same move, so the sentence stops naming the wrong binary.
+          **`rm` is the other half, and it owed a confirm.** F.8.4 measured it: `rm` takes the
+          SHORT id and answers `No job matching '<uuid>'` for the full one — the same way round as
+          `stop` and the OPPOSITE of `--resume`, which forks silently on a short id, so the three
+          verbs still share no id helper. The button is three deliberate acts from a collapsed row
+          — expand, `delete…`, then a button labelled `delete <name>` — it is NOT in `.row-actions`
+          where `stop` lives, it is the one verb deliberately absent from the palette, and the
+          armed warning says something different about a live session than about a stopped one. Its
+          own route and its own failure union, so no body field and no shared code can point the
+          stop button at it.
+          Three sabotages, each watched to fail (G.40): interpolating the prompt breaks all four
+          win tests, arming on the first press instead of the second breaks four smoke checks, and
+          moving the expanded section above the action row breaks the geometry check. G.38 happened
+          again in the same session that quotes it — the third sabotage's first attempt matched
+          nothing after Prettier reformatted the target, and printed a green 220. The other lesson
+          is new: a check that reads `textContent` on an absent element CRASHES the runner and
+          hides the rest, which is what `Report.check` exists to prevent.
+          Verified live before any of it was written: the whole route measured against the owner's
+          real profile, two throwaway `--bg` sessions, and `rm` run on one of them.
         security: [SEC-PROC-1, SEC-PROC-2, SEC-PROC-3]
       - id: P4-T3
         title: Quota model and recommendation (most headroom, override allowed)

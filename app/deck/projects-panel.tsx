@@ -21,9 +21,9 @@ import { PresetsPanel } from './presets-panel.tsx';
 import type { ProjectLine, ProjectsViewModel } from './projects-view-model.ts';
 import { WorkflowMapPanel } from './workflow-map-panel.tsx';
 
-/** The four preset callbacks, as one prop: `max-params` applies to a component's props too. */
+/** The three preset callbacks, as one prop: `max-params` applies to a component's props too. */
 export interface PresetActions {
-  readonly onLaunchPreset: (request: PresetLaunch) => void;
+  readonly onLaunch: (request: PresetLaunch) => void;
   readonly onSavePreset: (draft: PresetDraft) => void;
   readonly onForgetPreset: (ref: PresetRef) => void;
 }
@@ -144,7 +144,7 @@ function ProjectRow({ line, disabled, onForget, presets }: ProjectRowProps): JSX
         projectPath={line.path}
         projectName={line.name}
         disabled={disabled}
-        onLaunch={presets.onLaunchPreset}
+        onLaunch={presets.onLaunch}
         onSave={presets.onSavePreset}
         onForget={presets.onForgetPreset}
       />

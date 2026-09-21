@@ -11,6 +11,7 @@
 import {
   parseLaunchAccepted,
   parseLaunchFailure,
+  parseRemoveFailure,
   parseResumeFailure,
   parseStopFailure,
   type LaunchAccepted,
@@ -43,8 +44,13 @@ export function whatStarted(reply: JsonReply): LaunchAccepted | undefined {
 export function whyNotLaunched(reply: JsonReply | undefined): string {
   if (reply === undefined) return UNREACHABLE;
   const failure = parseLaunchFailure(reply.body);
-  if (failure === 'no_claude') {
-    return 'Core is running but cannot find claude.exe — run `npm run doctor`.';
+  if (failure === 'no_shell') {
+    return 'Core is running but cannot find powershell.exe — run `npm run doctor`.';
+  }
+  // The one refusal that is NOT "it did not start". Exit 0 means a session may well exist, and
+  // telling the owner it failed is how they end up starting a second one (P4-T2).
+  if (failure === 'no_session_id') {
+    return 'Claude started but printed no session id — check `claude agents` before trying again.';
   }
   if (failure !== undefined) return 'Core would not start that session.';
   // A 201 that got this far carried something other than a session id.
@@ -84,6 +90,24 @@ export function whyNotStopped(reply: JsonReply | undefined): string {
   }
   if (failure === 'bad_session') return 'That row does not carry the ids core needs.';
   if (failure !== undefined) return 'Core could not stop that session.';
+  return describeStatus(reply.status);
+}
+
+/**
+ * Why a session would not be DELETED, on the same rule as the other three — P4-T2.
+ *
+ * A separate function rather than a shared one with `whyNotStopped`, for the reason the unions are
+ * separate: the two verbs sound alike and are not, and a sentence that said "could not stop" after
+ * a failed delete would leave the owner thinking the conversation survived when it may not have.
+ */
+export function whyNotRemoved(reply: JsonReply | undefined): string {
+  if (reply === undefined) return UNREACHABLE;
+  const failure = parseRemoveFailure(reply.body);
+  if (failure === 'no_claude') {
+    return 'Core is running but cannot find claude.exe — run `npm run doctor`.';
+  }
+  if (failure === 'bad_session') return 'That row does not carry the ids core needs.';
+  if (failure !== undefined) return 'Core could not delete that session.';
   return describeStatus(reply.status);
 }
 

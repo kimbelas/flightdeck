@@ -5,27 +5,34 @@
 // machine is permanently read-only in a pane. A deck that can *start* sessions is therefore the
 // difference between watching terminals and using them.
 //
-// `--bg` **requires an initial prompt** (RESEARCH.md B.4). The prompt is passed as an argv element
-// and never interpolated into a command string — it is user text heading for a process, which is
-// exactly SEC-PROC-1's case.
+// **P4-T2 changed what this runs, and nothing else about it.** Until this task it spawned
+// `claude.exe` with `CLAUDE_CONFIG_DIR` set, which reproduces `claude-365` and `claude-isg` and
+// silently loses what the other two functions do — `claude-isg-ticket` pins `opusplan[1m]` plus two
+// environment variables, `claude-isg-orch` pins a model, an agent and a name. D4 says model routing
+// lives in the profile, so the launch goes through the profile: `PowerShellLaunchCommands` builds
+// the argv, this class decides whether to run it and what the answer means.
 //
-// **The cwd is honoured as of P4-T1, and was parsed and dropped before it.** `LaunchRequest` has
-// carried one since P2-T2 and nothing passed it on, so every session started from the deck began
-// in core's own directory — which a preset naming a project folder would have turned from an
-// oversight into a button that lies. The path reaching here has been screened by
-// `PresetBook`/`ProjectRegistry`; this class does not re-screen it, and must never be given one
-// that has not been.
+// `--bg` **requires an initial prompt** (RESEARCH.md B.4) and **a name is required too** as of
+// P4-T2 — SPEC §5.7's "forced naming (no more `development-63`)", and D7's `unnamed` flag answered
+// at the only moment it can be. A session nobody named is one nobody can find again.
 //
-// **A launch into a folder Claude has not been trusted in is still the open question P4-T2 owns.**
-// F.3.6 measured an INTERACTIVE session blocking on an untrusted-folder modal that
-// `--dangerously-skip-permissions` does not bypass; what `--bg` does there is not measured. Today
-// that would present as a 60-second timeout and `launch_failed`, which is honest but slow — P4-T2
-// is where "started but never produced a session id" becomes its own reported outcome.
+// **The prompt never enters a command string.** It travels as `FD_PROMPT` and is read back by
+// `$env:FD_PROMPT` in argument mode, which is a value rather than source — measured against
+// spaces, apostrophes, `$`, `;`, `|` and a prompt that reads like flags (RESEARCH.md F.8.2). That
+// is SEC-PROC-1, and it is the port's promise rather than this class's.
+//
+// **The cwd is honoured as of P4-T1, and was parsed and dropped before it.** The path reaching here
+// has been screened by `PresetBook`/`ProjectRegistry`; this class does not re-screen it, and must
+// never be given one that has not been.
 import type { AuditOutcome } from '../../contracts/audit-row.ts';
 import type { LaunchFailure } from '../../contracts/launch-reply.ts';
-import type { SubscriptionId } from '../../contracts/session.ts';
-import type { ClaudeInstall } from '../adapters/claude-cli/claude-install.ts';
+import {
+  pinsSessionName,
+  subscriptionOfProfileFunction,
+  type ProfileFunction,
+} from '../../contracts/launch-preset.ts';
 import type { Logger } from '../ports/logger.ts';
+import type { LaunchCommands } from '../ports/launch-commands.ts';
 import type { ProcessRunner } from '../ports/process-runner.ts';
 import { err, ok, type Result } from '../shared/result.ts';
 import type { AuditLog } from './audit-log.ts';
@@ -35,32 +42,38 @@ import type { AuditLog } from './audit-log.ts';
 export type { LaunchFailure };
 
 export interface LaunchRequest {
-  readonly subscription: SubscriptionId;
+  /** SEC-PROC-2's allowlist, narrowed by the route's parser. It is the model AND the account (D44). */
+  readonly profileFn: ProfileFunction;
   readonly prompt: string;
-  readonly name: string | undefined;
+  readonly name: string;
   readonly cwd: string | undefined;
 }
 
-/** `--bg` returns as soon as the session is registered, but not instantly. */
+/**
+ * `--bg` returns as soon as the session is registered, but not instantly.
+ *
+ * F.8.1 measured the whole PowerShell route at 2.7 s warm — ~270 ms for the shell, ~135 ms for the
+ * profile, the rest `--bg`'s own. The budget is a cold daemon (5.4 s, F.2.9), not the shell.
+ */
 const LAUNCH_TIMEOUT_MS = 60_000;
 const MAX_PROMPT_CHARS = 8000;
 const MAX_NAME_CHARS = 80;
 
 export interface SessionLauncherParts {
-  readonly install: ClaudeInstall;
+  readonly commands: LaunchCommands;
   readonly runner: ProcessRunner;
   readonly audit: AuditLog;
   readonly logger: Logger;
 }
 
 export class SessionLauncher {
-  private readonly install: ClaudeInstall;
+  private readonly commands: LaunchCommands;
   private readonly runner: ProcessRunner;
   private readonly audit: AuditLog;
   private readonly logger: Logger;
 
   constructor(parts: SessionLauncherParts) {
-    this.install = parts.install;
+    this.commands = parts.commands;
     this.runner = parts.runner;
     this.audit = parts.audit;
     this.logger = parts.logger;
@@ -71,21 +84,24 @@ export class SessionLauncher {
    *
    * Writes exactly one audit row, on every path out — including the two refusals, which are the
    * rows a reviewer actually looks for (SEC-PROC-3). The row's `args` deliberately exclude the
-   * prompt: `contracts/audit-row.ts` says the argv as it was run, and the one place that rule
-   * bends is the field that carries the owner's own words into a table kept forever (SEC-DATA-2).
+   * prompt AND the name: `contracts/audit-row.ts` says the argv as it was run, and the one place
+   * that rule bends is the fields that carry the owner's own words into a table kept forever
+   * (SEC-DATA-2). Here that costs nothing, because neither is in the argv.
    *
    * @returns the new session's id, which the deck uses to open a pane straight away.
    */
   public async launch(request: LaunchRequest): Promise<Result<string, LaunchFailure>> {
-    const { executable } = this.install;
-    if (executable === undefined) return this.refuse(request, 'no_claude', 'claude.exe not found');
     if (!isSane(request)) return this.refuse(request, 'bad_request', 'prompt or name out of range');
+    const command = this.commands.forProfile(request.profileFn, {
+      name: request.name,
+      prompt: request.prompt,
+    });
+    if (command === undefined) return this.refuse(request, 'no_shell', 'powershell.exe not found');
 
-    const args = ['--bg', ...nameArgs(request.name), request.prompt];
     const result = await this.runner.run({
-      command: executable,
-      args,
-      env: this.install.envFor(request.subscription),
+      command: command.command,
+      args: command.args,
+      env: command.env,
       // The cwd the session will live in. Spread rather than passed as `undefined`, because
       // `exactOptionalPropertyTypes` is on and an absent property and an undefined one are
       // different values to this compiler (the shape `AuditLog`'s `reason` already takes).
@@ -96,7 +112,7 @@ export class SessionLauncher {
     if (result.code !== 0 || result.timedOut) {
       // The prompt is deliberately absent from the log: it is user text (SEC-DATA-2).
       this.logger.warn('launch_failed', {
-        subscription: request.subscription,
+        profileFn: request.profileFn,
         code: result.code,
         timedOut: result.timedOut,
       });
@@ -107,11 +123,13 @@ export class SessionLauncher {
 
     const id = firstSessionId(result.stdout);
     if (id === undefined) {
-      this.logger.warn('launch_id_not_found', { subscription: request.subscription });
+      // Its OWN code, not `launch_failed` — exit 0 means a session may well exist, and telling the
+      // owner it failed is how they end up with two (contracts/launch-reply.ts).
+      this.logger.warn('launch_id_not_found', { profileFn: request.profileFn });
       this.write(request, 'failed', 'no session id in output');
-      return err('launch_failed');
+      return err('no_session_id');
     }
-    this.logger.info('session_launched', { subscription: request.subscription, session: id });
+    this.logger.info('session_launched', { profileFn: request.profileFn, session: id });
     this.write(request, 'ok', undefined, id);
     return ok(id);
   }
@@ -134,30 +152,38 @@ export class SessionLauncher {
   ): void {
     this.audit.record({
       action: 'launch',
-      target: sessionId ?? request.subscription,
-      // The flags, never the prompt — see `launch`.
-      args: ['--bg', ...nameArgs(request.name)],
+      target: sessionId ?? subscriptionOfProfileFunction(request.profileFn),
+      // The profile function and the flag, never the prompt or the name — see `launch`.
+      args: [request.profileFn, '--bg'],
       outcome,
       ...(reason === undefined ? {} : { reason }),
     });
   }
 }
 
+/**
+ * A name is required now, which is the one rule here that is a product decision (SPEC §5.7).
+ *
+ * Except for the one function that names itself: `claude-isg-orch` passes `-n orchestrator`, so
+ * requiring a second name would be requiring one that is thrown away — a field the owner fills in
+ * and never sees again is worse than no field.
+ */
 function isSane(request: LaunchRequest): boolean {
   const prompt = request.prompt.trim();
   if (prompt === '' || prompt.length > MAX_PROMPT_CHARS) return false;
-  return request.name === undefined || request.name.length <= MAX_NAME_CHARS;
-}
-
-function nameArgs(name: string | undefined): readonly string[] {
-  return name === undefined || name.trim() === '' ? [] : ['--name', name];
+  const name = request.name.trim();
+  if (name.length > MAX_NAME_CHARS) return false;
+  return name !== '' || pinsSessionName(request.profileFn);
 }
 
 /**
  * The session id out of `--bg`'s output.
  *
  * It prints the id that `attach`, `logs`, `stop` and `rm` take (RESEARCH.md B.1), but the
- * surrounding wording is not a contract, so this matches the shape rather than the sentence.
+ * surrounding wording is not a contract, so this matches the shape rather than the sentence. What
+ * F.8.1 actually observed through the profile route is `backgrounded · 17d31085 · fd-t2-probe`
+ * followed by four help lines that repeat the short id — hence the FIRST match, and hence a uuid
+ * preferred over eight hex characters when both are present.
  */
 function firstSessionId(stdout: string): string | undefined {
   const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.exec(stdout);

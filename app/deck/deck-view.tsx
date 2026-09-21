@@ -12,7 +12,7 @@
 // fetches, polls or re-renders on a timer to stay current.
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type JSX } from 'react';
 import type { PtyTarget } from '../../contracts/pty-protocol.ts';
-import type { SubscriptionId } from '../../contracts/session.ts';
+import type { PresetLaunch } from '../../contracts/launch-preset.ts';
 import { BrowserDeckApi } from './browser-deck-api.ts';
 import { BrowserStreamTransport } from './browser-stream-transport.ts';
 import { CommandPalette } from './command-palette.tsx';
@@ -167,10 +167,11 @@ function useDeckActions(store: DeckStore, openPane: (pane: OpenPane) => void): D
     [openPane],
   );
 
+  // One function for the form and for a preset, as of P4-T2 — both send the same four fields now
+  // that the profile function is the routing (`DeckActions.onLaunch`).
   const onLaunch = useCallback(
-    (subscription: SubscriptionId, prompt: string, name: string) => {
-      // An empty name is the form's "let Claude Code choose one", not a name of zero characters.
-      void store.launch(subscription, prompt, name === '' ? undefined : name);
+    (request: PresetLaunch) => {
+      void store.launch(request);
     },
     [store],
   );
@@ -192,13 +193,19 @@ function useDeckActions(store: DeckStore, openPane: (pane: OpenPane) => void): D
 /** Start, stop, wake — the three that change what a session IS rather than what is on screen. */
 function lifecycleActions(
   store: DeckStore,
-): Pick<DeckActions, 'onResume' | 'onStop' | 'onPreview'> {
+): Pick<DeckActions, 'onResume' | 'onStop' | 'onRemove' | 'onPreview'> {
   return {
     onResume: (row: SessionRowViewModel) => {
       void store.resume(row.ref.subscription, row.ref.sessionId);
     },
     onStop: (row: SessionRowViewModel) => {
       void store.stop(row.ref);
+    },
+    // P4-T2. There is no confirmation here and there must not be: this is called only by the
+    // row's armed second button, and a second prompt on top of that is how people learn to click
+    // through prompts (`RowDelete`).
+    onRemove: (row: SessionRowViewModel) => {
+      void store.remove(row.ref);
     },
     // P5a-T4. Here rather than in the expand effect on purpose: a preview spawns `claude logs`
     // and waits 2.7 s for 330 KB (RESEARCH.md F.2.5, "never poll it"), so it happens when
@@ -213,25 +220,18 @@ function lifecycleActions(
  * The registry's two and the presets' three, which no other part of the deck touches (P3-T1, P4-T1).
  *
  * Together in one function because they are one panel's worth of verbs and `deck-view.tsx` has a
- * line limit it has already been split for twice. `onLaunchPreset` is the odd one: it starts a
- * session, so it could as well live in `lifecycleActions` — it is here because what makes it
- * different from the launch form is a PROJECT, and this is the function that knows about those.
+ * line limit it has already been split for twice. Launching is NOT here: as of P4-T2 a preset and
+ * the form send the same request, so there is one `onLaunch` above rather than two.
  */
 function projectActions(
   store: DeckStore,
-): Pick<
-  DeckActions,
-  'onImportProject' | 'onForgetProject' | 'onLaunchPreset' | 'onSavePreset' | 'onForgetPreset'
-> {
+): Pick<DeckActions, 'onImportProject' | 'onForgetProject' | 'onSavePreset' | 'onForgetPreset'> {
   return {
     onImportProject: (path: string) => {
       void store.importProject(path);
     },
     onForgetProject: (path: string) => {
       void store.forgetProject(path);
-    },
-    onLaunchPreset: (request) => {
-      void store.launchPreset(request);
     },
     onSavePreset: (draft) => {
       void store.savePreset(draft);

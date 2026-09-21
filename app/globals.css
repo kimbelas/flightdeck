@@ -981,6 +981,40 @@ button.ghost {
   align-items: center;
 }
 
+/* ---- Deleting a session (P4-T2) --------------------------------------------
+   The one control that destroys something. It is NOT in `.row-actions`: it is
+   inside the expanded row, below the preview, so reaching it takes expanding the
+   row and then two more presses — and `stop` never moves. */
+.row-delete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
+/* Armed: the warning takes the whole width, so the two buttons sit UNDER it and the
+   one that deletes cannot be pressed without the sentence having been on screen. */
+.row-delete-warning {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--bad);
+  font-size: 11px;
+}
+
+button.danger {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+button.danger:hover:not(:disabled) {
+  border-color: var(--bad);
+  background: var(--bad);
+  color: var(--bg);
+}
+
 /* The empty-state sentence is not a pane and must not be cut into a grid cell. */
 .panes > .pad {
   grid-column: 1 / -1;
