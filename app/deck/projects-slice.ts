@@ -28,21 +28,40 @@ import {
 } from '../../contracts/project.ts';
 import { parseProjectStatusList, type ProjectStatus } from '../../contracts/project-status.ts';
 import type { DeckApi } from './deck-api.ts';
+import { ObservedSlice, type Observations } from './observed-slice.ts';
 
-/** The three fields of `DeckState` this slice owns. */
+/** The four fields of `DeckState` this slice owns. */
 export interface ProjectsHeld {
   readonly projects: readonly ProjectRecord[];
   readonly importRefusal: ImportRefusal | undefined;
   readonly statuses: Readonly<Record<string, ProjectStatus>>;
+  /** What Claude actually did in each folder — P3-T5. No key at all until somebody asks. */
+  readonly observed: Observations;
 }
 
 export class ProjectsSlice {
   private readonly api: DeckApi;
   private readonly publish: (changes: Partial<ProjectsHeld>) => void;
+  /**
+   * The transcript readings — P3-T5, a slice inside a slice.
+   *
+   * Here rather than beside the others in the store because it is not a sixth INDEPENDENT
+   * read: a reading is a reading OF a project, and `forget` below has to drop it. Two peers
+   * where one has to reach into the other is the arrangement that lets them drift apart.
+   */
+  private readonly observations: ObservedSlice;
 
   constructor(api: DeckApi, publish: (changes: Partial<ProjectsHeld>) => void) {
     this.api = api;
     this.publish = publish;
+    this.observations = new ObservedSlice(api, (observed) => {
+      this.publish({ observed });
+    });
+  }
+
+  /** Reads one folder's transcripts — P3-T5. On a press and at no other time. */
+  public observe(path: string): Promise<void> {
+    return this.observations.read(path);
   }
 
   /**
@@ -95,7 +114,12 @@ export class ProjectsSlice {
    * would be guessing at the outcome of a write.
    */
   public async forget(path: string): Promise<boolean> {
-    return (await this.api.post(CORE_PROJECT_FORGET_PATH, { path })) !== undefined;
+    const answered = (await this.api.post(CORE_PROJECT_FORGET_PATH, { path })) !== undefined;
+    // The reading goes with the permission rather than with the row: core will refuse to read
+    // this folder from here, so a tally still on screen would be the deck showing what it may
+    // no longer look at.
+    if (answered) this.observations.forget(projectKey(path));
+    return answered;
   }
 }
 

@@ -1587,3 +1587,41 @@ had to migrate, because the old value became the answer to the state the deck st
 **Today's cost per project is P3-T5's, not this task's.** SPEC's by-project row asks for it;
 aggregating spend per path slug is the whole of the next task, and a number invented here is one
 that task would have had to contradict.
+
+## D54 — the observed reading is one project at a time, behind a button, and `agent-name` is the session's (decided 2026-09-21, P3-T5)
+
+SPEC §5.1(b) asks Flightdeck to show, per project, "what Claude actually did there" — sessions,
+cost, tools, skills, subagents, files touched, median context reached, compactions. Three decisions
+were needed to build it, and one of the eight fields turned out to name something that does not
+exist.
+
+**One project per request, where its three neighbours answer for all of them.**
+`/projects/status`, `/projects/map` and `/projects/presets` each answer about every imported folder
+in one GET, because each is milliseconds of work. This one is not: reading this repository's own
+slug is 42 files, 83.7 MB and 1 149 ms, and the biggest PROJECT on this machine is 85 files and
+423 MB, read in 9 933 ms (G.47 — and that number is four times the estimate, which is a thing
+only running it showed).
+Answering for every project at once would be that, times the registry, on one request — so
+`GET /projects/observed` takes `?path=` and answers about one folder.
+
+**And it is a button, not a poll.** P5a-T4 settled this shape for `claude logs`, which costs 2.7 s:
+nothing is fetched until somebody presses something. A second in a background refresh is a second
+of disk the owner never asked to spend, repeated for every project, forever. So the panel opens
+with a sentence saying what the read would cost and a button, and the reading that comes back says
+what it did cost — 84 MB in 1 149 ms. Core holds it five minutes on a signature of the two
+transcript directories, so pressing again usually costs 2 ms; re-asking is allowed, because "has
+anything happened since" is a real question and pressing is how you ask it.
+
+**`agent-name` is the SESSION's name, not a subagent's** — the correction, not a substitution.
+SPEC's list says "subagents", and the only field in a transcript that looks like one is
+`agent-name`. Read off this machine's own files it holds `flightdeck` 583 times, then `deck-demo`,
+`fd-pane-1`, `fd-t5-probe`: the values `--name` was given. There is no subagent roster in a
+transcript. Subagent USE is still reported — `Agent` appears in `tools` like any other tool — but
+WHICH subagent is `Agent`'s `input.subagent_type`, and tool input does not reach a record
+(SEC-UI-2, where `skill` is the one named exception, added for this task's skills field). So the
+panel says "session names" and the contract says why, rather than labelling a measured thing with
+the word SPEC guessed. That is G.43's rule a third time: a task note is a hypothesis.
+
+**Consequence.** The reading is withdrawn with the folder. `ProjectsSlice.forget` drops the tally
+when core accepts the withdrawal, because core will refuse to read that slug from that moment on
+(SEC-FS-1) and a tally left on screen would be the deck showing what it may no longer look at.

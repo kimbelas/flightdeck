@@ -411,14 +411,20 @@ button.ghost {
 /* ---- The workflow map (P3-T3, SPEC 5.1a) ------------------------------------
    Closed by default: the summary is the counts, the detail is behind the marker.
    A repository with 17 hooks does not fit on a row, and the shape of the config
-   is what answers "what does Claude do here" at a glance. */
-.project-map {
+   is what answers "what does Claude do here" at a glance.
+
+   `.project-detail` is the frame the observed reading shares (P3-T5); the two
+   are meant to look like one comparison. It is a class of its own rather than
+   the second panel borrowing `.project-map`, because `.project-map` names the
+   workflow map and a selector that quietly matched two things would be a
+   check that passed while looking at the wrong one. */
+.project-detail {
   grid-column: 1;
   margin-top: 3px;
   font-size: 11px;
 }
 
-.project-map > summary {
+.project-detail > summary {
   cursor: pointer;
   color: var(--dim);
   list-style-position: outside;
@@ -530,6 +536,88 @@ button.ghost {
 .map-permissions li {
   color: var(--dim);
   font-family: monospace;
+}
+
+/* ---- What Claude actually did here (P3-T5, SPEC 5.1b) -----------------------
+   It shares `.project-detail` with the map, because it sits beside it and the
+   two are meant to read as one comparison. What it adds is a button that says
+   what it costs, and a reading that says what it cost. */
+.project-observed-body {
+  margin: 4px 0 0 8px;
+}
+
+.project-observed-note {
+  margin: 3px 0 0;
+  max-width: 44em;
+}
+
+/* The drift alarm, SPEC 8 R2. Drawn only when it is non-zero, and coloured like
+   every other thing in this app that wants reading rather than glancing at. */
+.project-observed-drift {
+  color: var(--warn);
+}
+
+.project-observed-fields {
+  margin-top: 5px;
+}
+
+/* A definition list laid out as label-over-number, wrapping rather than
+   scrolling: the panel lives in a column and the count of subscriptions is not
+   fixed, so a fixed grid would clip the second account on a narrow deck. */
+.observed-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.observed-field dt {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
+
+.observed-field dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.observed-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+/* Wide enough for `session names`, which is the longest of the four and wrapped onto a
+   second line at 5.5em when this was run against the real deck. */
+.observed-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  flex: 0 0 8em;
+}
+
+/* A file path is the longest name on any of these rows, so the pill clips and
+   the count stays readable rather than being pushed off the end. */
+.observed-count {
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 4px;
+  max-width: 24em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.observed-count b {
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
 }
 
 .row {

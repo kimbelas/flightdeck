@@ -15,6 +15,7 @@ import type { InstallHealth, UpdateResult } from '../../contracts/install-health
 import type { RespawnReport } from './install-slice.ts';
 import type { AskRun } from './ask-slice.ts';
 import type { LaunchPreset, PresetRefusal } from '../../contracts/launch-preset.ts';
+import type { ObservedBehaviour } from '../../contracts/observed-behaviour.ts';
 import type { ImportRefusal, ProjectRecord } from '../../contracts/project.ts';
 import type { ProjectStatus } from '../../contracts/project-status.ts';
 import type { QuotaSummary } from '../../contracts/quota-summary.ts';
@@ -97,6 +98,15 @@ export interface DeckState {
    */
   readonly maps: Readonly<Record<string, WorkflowMap>>;
   /**
+   * What Claude actually did in each folder, keyed by `projectKey` — P3-T5.
+   *
+   * A fourth map beside `statuses` and `maps`, and the one with three states rather than two:
+   * a key ABSENT means nobody pressed the button, a key present holding `undefined` means a 90 MB
+   * read is in flight, and a key holding a reading is an answer. `previews` has the same shape for
+   * the same reason — both are reads nobody should pay for until they ask.
+   */
+  readonly observed: Readonly<Record<string, ObservedBehaviour | undefined>>;
+  /**
    * Every imported folder's launch presets, built-ins and saved together — P4-T1.
    *
    * A flat list rather than a map by `projectKey`, unlike the three above it, and the difference is
@@ -149,6 +159,7 @@ export const EMPTY: DeckState = {
   importRefusal: undefined,
   statuses: {},
   maps: {},
+  observed: {},
   presets: [],
   presetRefusal: undefined,
   coreUp: false,

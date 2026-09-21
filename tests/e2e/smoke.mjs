@@ -34,6 +34,7 @@ import { paneChecks } from './smoke/pane-checks.mjs';
 import { paneControlChecks } from './smoke/pane-control-checks.mjs';
 import { projectChecks } from './smoke/project-checks.mjs';
 import { projectViewChecks } from './smoke/project-view-checks.mjs';
+import { observedChecks } from './smoke/observed-checks.mjs';
 import { securityChecks } from './smoke/security-checks.mjs';
 import { LOOPBACK_ADDRESS, UI_PORT } from '../../contracts/origins.ts';
 
@@ -87,6 +88,9 @@ try {
   // Last, and it imports its own folder: `projectChecks` ends by forgetting the one it imported,
   // so an empty registry is the state this group starts from rather than one it has to undo.
   await projectViewChecks(page, report, core);
+  // After it, and on the folder it left imported: this group's first check is that NOTHING
+  // has been read yet, which only means anything once a project row has been on screen.
+  await observedChecks(page, report, core);
   if (DEV) devChecks(report, seen);
   else await securityChecks(page, report, core, seen);
   await page.screenshot({ path: SHOT });
