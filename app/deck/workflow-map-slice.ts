@@ -19,6 +19,7 @@
 // answer — `docs-tool` has no `.claude` at all and is half the P3 gate — so rendering "nothing
 // configured" because a request failed would say something false about the repository rather than
 // about the request.
+import { parseConfigDrifts, type ConfigDrift } from '../../contracts/config-snapshot.ts';
 import { CORE_PROJECT_MAP_PATH } from '../../contracts/deck-routes.ts';
 import { projectKey } from '../../contracts/project.ts';
 import { parseWorkflowMapList, type WorkflowMap } from '../../contracts/workflow-map.ts';
@@ -27,15 +28,24 @@ import type { DeckApi } from './deck-api.ts';
 /** Maps by `projectKey` — the same key the panel draws its rows under. */
 export type WorkflowMaps = Readonly<Record<string, WorkflowMap>>;
 
+/** The last config change per folder, keyed the same way — P3-T7. Absent means none. */
+export type ConfigDrifts = Readonly<Record<string, ConfigDrift>>;
+
+/** The two fields of `DeckState` this slice owns, published together because they arrive so. */
+export interface MapsHeld {
+  readonly maps: WorkflowMaps;
+  readonly drifts: ConfigDrifts;
+}
+
 export class WorkflowMapSlice {
   private readonly api: DeckApi;
-  private readonly publish: (maps: WorkflowMaps) => void;
+  private readonly publish: (held: MapsHeld) => void;
 
   /**
    * @param publish what to do with a new set of maps. A callback rather than the store itself, so
    * this class can be unit-tested against a function and knows nothing about `DeckState`.
    */
-  constructor(api: DeckApi, publish: (maps: WorkflowMaps) => void) {
+  constructor(api: DeckApi, publish: (held: MapsHeld) => void) {
     this.api = api;
     this.publish = publish;
   }
@@ -51,6 +61,22 @@ export class WorkflowMapSlice {
     const reply = await this.api.get(CORE_PROJECT_MAP_PATH);
     if (reply?.status !== 200) return;
     const maps = parseWorkflowMapList(reply.body);
-    this.publish(Object.fromEntries(maps.map((map) => [projectKey(map.path), map])));
+    // P3-T7. They arrive together and are published together: a map on screen beside a drift from
+    // the previous reply would be the deck saying a hook changed that is no longer there.
+    this.publish({
+      maps: Object.fromEntries(maps.map((map) => [projectKey(map.path), map])),
+      drifts: Object.fromEntries(
+        parseConfigDrifts(bodyField(reply.body, 'drifts')).map((drift) => [
+          projectKey(drift.path),
+          drift,
+        ]),
+      ),
+    });
   }
+}
+
+/** One field of a reply body, without asserting what the body is. */
+function bodyField(body: unknown, field: string): unknown {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return undefined;
+  return Object.fromEntries(Object.entries(body))[field];
 }

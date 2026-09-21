@@ -229,7 +229,7 @@ function ProjectPanels({
         onSave={presets.onSavePreset}
         onForget={presets.onForgetPreset}
       />
-      <WorkflowMapPanel model={line.map} project={line.name} />
+      <WorkflowMapPanel model={line.map} project={line.name} drift={line.drift} />
       <ObservedPanel
         path={line.path}
         name={line.name}

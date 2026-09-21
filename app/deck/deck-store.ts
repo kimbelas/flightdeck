@@ -114,8 +114,8 @@ export class DeckStore {
   constructor(transport: StreamTransport, api: DeckApi) {
     this.transport = transport;
     this.api = api;
-    this.workflowMaps = new WorkflowMapSlice(api, (maps) => {
-      this.set({ maps });
+    this.workflowMaps = new WorkflowMapSlice(api, (held) => {
+      this.set(held);
     });
     this.previews = new PreviewSlice(api, (previews) => {
       this.set({ previews });

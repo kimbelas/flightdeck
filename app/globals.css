@@ -498,6 +498,48 @@ button.ghost {
   white-space: nowrap;
 }
 
+/* ---- What changed in the config (P3-T7, SPEC 5.1 enhancement) ----------------
+   The chip rides in the CLOSED summary, because a config change is news and news
+   behind a disclosure triangle is not news. The names are the detail inside. */
+.map-changed {
+  margin-left: 6px;
+  border: 1px solid var(--warn);
+  border-radius: 3px;
+  padding: 0 4px;
+  color: var(--warn);
+  white-space: nowrap;
+}
+
+.map-changes {
+  margin-left: 8px;
+}
+
+.map-changes h4 {
+  color: var(--warn);
+}
+
+/* A hook command is the longest entry on any of these rows; the pill clips and
+   `title` carries the whole of it, like `.map-command` above. */
+.map-change-added,
+.map-change-removed {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 22em;
+}
+
+.map-change-added {
+  border-color: var(--good);
+  color: var(--good);
+}
+
+/* Struck through as well as coloured: the difference between arrived and left is
+   the whole content of this list, and colour alone is not a way to say it. */
+.map-change-removed {
+  border-color: var(--bad);
+  color: var(--bad);
+  text-decoration: line-through;
+}
+
 .map-hook-group {
   margin-top: 3px;
 }

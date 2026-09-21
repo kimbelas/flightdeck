@@ -26,6 +26,7 @@
 // the next reader might miss. That is a different kind of state, and it is admitted here rather
 // than smuggled in as an event whose absence somebody has to compute.
 import type { AuditRow, DraftAuditRow } from '../../contracts/audit-row.ts';
+import type { ConfigDigest } from '../../contracts/config-snapshot.ts';
 import type { LaunchPreset } from '../../contracts/launch-preset.ts';
 import type { DraftEvent, FdEvent } from '../../contracts/fd-event.ts';
 import type { ProjectRecord } from '../../contracts/project.ts';
@@ -128,4 +129,39 @@ export interface Store {
    * @throws as `savePreset`.
    */
   forgetPreset(projectKeyValue: string, id: string): boolean;
+
+  /**
+   * Records one folder's configuration as it was at this instant — P3-T7.
+   *
+   * An observation, which is what everything in here except the registry is: "at this instant the
+   * `.claude` of this folder held these hooks, these agents and these rules". It is written only
+   * when the digest MOVES, so the table is a history of changes rather than a log of reads — the
+   * map is re-read every time the deck loads, and a row per read would be a table that grows with
+   * attention rather than with events.
+   *
+   * @returns the stored snapshot, read back rather than echoed.
+   * @throws if the store cannot be written.
+   */
+  rememberConfigSnapshot(snapshot: DraftConfigSnapshot): ConfigSnapshot;
+
+  /**
+   * The most recent snapshots of one folder's configuration, newest first.
+   *
+   * Two is what the historian asks for: the current configuration and the one it replaced, which
+   * is what a diff is. More than two is the history, and P7's analytics is where that is drawn.
+   *
+   * @param projectKeyValue `projectKey(path)`, already canonical.
+   */
+  configSnapshots(projectKeyValue: string, limit: number): readonly ConfigSnapshot[];
+}
+
+/** One snapshot before it has been stored — the id and nothing else is missing. */
+export interface DraftConfigSnapshot {
+  readonly projectKey: string;
+  readonly takenAt: number;
+  readonly digest: ConfigDigest;
+}
+
+export interface ConfigSnapshot extends DraftConfigSnapshot {
+  readonly id: number;
 }

@@ -23,6 +23,8 @@ import { projectKey } from '../../contracts/project.ts';
 import type { ObservedBehaviour } from '../../contracts/observed-behaviour.ts';
 import { coachPlanUrl, type ProjectGates } from '../../contracts/project-gates.ts';
 import { NO_ACTIVITY, type ProjectActivity } from './project-scope.ts';
+import type { ConfigDrift } from '../../contracts/config-snapshot.ts';
+import { ConfigDriftViewModel } from './config-drift-view-model.ts';
 import type { WorkflowMap } from '../../contracts/workflow-map.ts';
 import { PresetsViewModel } from './presets-view-model.ts';
 import { WorkflowMapViewModel } from './workflow-map-view-model.ts';
@@ -105,6 +107,14 @@ export interface ProjectLine {
    */
   readonly observed: ObservedBehaviour | undefined;
   readonly observedAsked: boolean;
+  /**
+   * What last changed in this folder's configuration — P3-T7.
+   *
+   * Always a model, never `undefined`: a folder that has never changed answers `isKnown` false
+   * and the panel draws nothing, which is one branch in one place rather than two call sites
+   * each deciding what absence looks like.
+   */
+  readonly drift: ConfigDriftViewModel;
 }
 
 /**
@@ -131,6 +141,15 @@ export interface ProjectsInput {
   readonly unassigned?: number;
   /** Transcript readings, keyed by `projectKey` — P3-T5. A key absent means nobody asked. */
   readonly observed?: Readonly<Record<string, ObservedBehaviour | undefined>>;
+  /** The last config change per folder — P3-T7. A key absent means it has never changed. */
+  readonly drifts?: Readonly<Record<string, ConfigDrift>>;
+  /**
+   * Epoch ms, for the one age this panel prints.
+   *
+   * Passed in rather than read here, for the reason every age on this deck is: a view model that
+   * called `Date.now()` would be one whose test says something different every time it runs.
+   */
+  readonly now?: number;
 }
 
 /** What a repository with nothing outstanding says. Named, because blank would read as unread. */
@@ -160,6 +179,8 @@ export class ProjectsViewModel {
   private readonly current: string | undefined;
   private readonly unassignedCount: number;
   private readonly observed: Readonly<Record<string, ObservedBehaviour | undefined>>;
+  private readonly drifts: Readonly<Record<string, ConfigDrift>>;
+  private readonly now: number;
 
   constructor(input: ProjectsInput) {
     this.projects = input.projects;
@@ -172,6 +193,8 @@ export class ProjectsViewModel {
     this.current = input.current;
     this.unassignedCount = input.unassigned ?? 0;
     this.observed = input.observed ?? {};
+    this.drifts = input.drifts ?? {};
+    this.now = input.now ?? 0;
   }
 
   /** Whether the deck is showing every session. The state it starts in, and the one to return to. */
@@ -220,6 +243,7 @@ export class ProjectsViewModel {
         coachUrl: coachPlanUrl(project.name),
         observed: this.observed[key],
         observedAsked: key in this.observed,
+        drift: new ConfigDriftViewModel(this.drifts[key], this.now),
       };
     });
   }

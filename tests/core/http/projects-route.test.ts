@@ -11,6 +11,7 @@ import { ProjectStatusRoute } from '../../../core/http/project-status-route.ts';
 import { WorkflowMapRoute } from '../../../core/http/workflow-map-route.ts';
 import { ProjectsRoute } from '../../../core/http/projects-route.ts';
 import type { ProjectStatus } from '../../../contracts/project-status.ts';
+import type { ConfigDrift } from '../../../contracts/config-snapshot.ts';
 import type { WorkflowMap } from '../../../contracts/workflow-map.ts';
 import type { RequestFacts } from '../../../core/http/loopback-guard.ts';
 import { err, ok, type Result } from '../../../core/shared/result.ts';
@@ -220,27 +221,66 @@ describe('WorkflowMapRoute', () => {
     configured: false,
   };
 
-  it('is a GET on its own literal path — a third cost beside the other two', () => {
-    const route = new WorkflowMapRoute({ readAll: () => Promise.resolve([]) });
+  const DRIFT: ConfigDrift = {
+    path: PATH,
+    at: 1_700_000_000_000,
+    previousAt: 1_600_000_000_000,
+    changes: [{ facet: 'hooks', added: ['PostToolUse * node lint.mjs'], removed: [] }],
+  };
 
-    expect([route.method, route.path]).toEqual(['GET', '/projects/map']);
+  /** The two collaborators, with the history answering nothing unless a test says otherwise. */
+  function routeOver(
+    maps: readonly WorkflowMap[],
+    drifts: readonly ConfigDrift[] = [],
+  ): WorkflowMapRoute {
+    return new WorkflowMapRoute(
+      { readAll: () => Promise.resolve(maps) },
+      { observeAll: () => drifts },
+    );
+  }
+
+  it('is a GET on its own literal path — a third cost beside the other two', () => {
+    expect([routeOver([]).method, routeOver([]).path]).toEqual(['GET', '/projects/map']);
   });
 
   it('answers every map in one reply, wrapped in an object', async () => {
-    const route = new WorkflowMapRoute({ readAll: () => Promise.resolve([MAP]) });
-
-    expect(await route.handle()).toEqual({ status: 200, body: { maps: [MAP] } });
+    expect(await routeOver([MAP]).handle()).toEqual({
+      status: 200,
+      body: { maps: [MAP], drifts: [] },
+    });
   });
 
   it('answers an empty list on a machine that has imported nothing', async () => {
-    const route = new WorkflowMapRoute({ readAll: () => Promise.resolve([]) });
+    expect(await routeOver([]).handle()).toEqual({ status: 200, body: { maps: [], drifts: [] } });
+  });
 
-    expect(await route.handle()).toEqual({ status: 200, body: { maps: [] } });
+  // P3-T7. Two lists rather than a field on each map: they are two kinds of fact with two
+  // lifetimes, and the deck joins them by `projectKey` as it does every other project reading.
+  it('carries what changed beside what is configured, as its own list', async () => {
+    expect(await routeOver([MAP], [DRIFT]).handle()).toEqual({
+      status: 200,
+      body: { maps: [MAP], drifts: [DRIFT] },
+    });
+  });
+
+  it('asks the history about the maps it just read, so the two cannot disagree', async () => {
+    const seen: WorkflowMap[][] = [];
+    const route = new WorkflowMapRoute(
+      { readAll: () => Promise.resolve([MAP]) },
+      {
+        observeAll: (maps) => {
+          seen.push([...maps]);
+          return [];
+        },
+      },
+    );
+
+    await route.handle();
+
+    expect(seen).toEqual([[MAP]]);
   });
 
   it('spends the control budget and needs the token, like every other project route', () => {
-    const route = new WorkflowMapRoute({ readAll: () => Promise.resolve([]) });
-
-    expect([route.limit, route.credential]).toEqual(['control', 'token']);
+    expect([routeOver([]).limit, routeOver([]).credential]).toEqual(['control', 'token']);
   });
 });

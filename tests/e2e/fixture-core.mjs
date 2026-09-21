@@ -41,6 +41,8 @@ import { KeybindingPlanner } from '../../core/application/keybinding-planner.ts'
 import { ConnectPlanner } from '../../core/application/connect-planner.ts';
 import { StatuslinePatcher } from '../../core/adapters/statusline/statusline-patcher.ts';
 import { PresetCatalogue } from '../../core/domain/preset-catalogue.ts';
+import { ConfigHistorian } from '../../core/application/config-historian.ts';
+import { FakeStore } from '../fakes/fake-store.ts';
 import {
   byProjectThenName,
   parsePresetDraft,
@@ -50,6 +52,7 @@ import {
   PROFILE_FUNCTIONS,
 } from '../../contracts/launch-preset.ts';
 import { parseProjectPathBody, projectKey, projectName } from '../../contracts/project.ts';
+import { parseWorkflowMap } from '../../contracts/workflow-map.ts';
 import { ASK_MAX_BUDGET_USD } from '../../contracts/ask-run.ts';
 import { SUBSCRIPTION_IDS } from '../../contracts/session.ts';
 import { parseQuotaSummary } from '../../contracts/quota-summary.ts';
@@ -69,6 +72,27 @@ const FIXTURE = new URL('./fixtures/deck.json', import.meta.url);
  * branch would only ever run on the machines it breaks on.
  */
 const PASTE_DIRECTORY = String.raw`C:\Users\Ada Lovelace\AppData\Local\flightdeck\pasted`;
+
+/**
+ * A `Logger` that says nothing — P3-T7.
+ *
+ * The historian logs only when the store fails, which an in-memory one does not, and a double that
+ * printed into the smoke's own output would make a passing run harder to read than a failing one.
+ */
+const SILENT_LOGGER = {
+  info() {
+    return undefined;
+  },
+  warn() {
+    return undefined;
+  },
+  error() {
+    return undefined;
+  },
+};
+
+/** How long ago the fixture's FIRST config snapshot was taken — P3-T7. See `driftAgeMs`. */
+const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 
 /** Every key whose number is an instant. See the fixture's header — they are shifted, not pinned. */
 const TIME_KEYS = new Set([
@@ -169,6 +193,28 @@ export class FixtureCore {
      * a thing a test can stand in the middle of.
      */
     this.mintDelayMs = 0;
+    /**
+     * The config history, over the same `ConfigHistorian` core runs — P3-T7.
+     *
+     * A `FakeStore` behind it rather than a stub: the historian's whole behaviour is "compare with
+     * the two newest rows and write only when they differ", so a store that forgot would make
+     * every read report a change and a store that never wrote would make none report one.
+     */
+    this.historian = new ConfigHistorian({
+      store: new FakeStore(),
+      clock: { now: () => new Date(Date.now() - this.driftAgeMs) },
+      logger: SILENT_LOGGER,
+    });
+    /** 0 until a check calls `driftConfig()`, after which the fixture's `.claude` has moved. */
+    this.driftedAt = 0;
+    /**
+     * How far in the past the historian stamps a snapshot.
+     *
+     * The smoke makes both snapshots within a second of each other, so `changed 0s ago` is what
+     * the row would say — true, and useless as a check that the AGE is drawn at all. Backdating
+     * the first one makes the gap a real number the check can read.
+     */
+    this.driftAgeMs = THREE_DAYS_MS;
     /** Every request core answered, so a check can ask what the deck actually sent. */
     this.requests = [];
     /** The bodies of every `POST /sessions`. The launch form's real destination. */
@@ -368,7 +414,11 @@ export class FixtureCore {
       return [200, { statuses: [...this.projects.values()].map((held) => reading(held)) }];
     }
     if (request.method === 'GET' && path === '/projects/map') {
-      return [200, { maps: [...this.projects.values()].map((held) => workflowMap(held)) }];
+      // P3-T7. The REAL historian over an in-memory store, not a hand-made drift: what the
+      // smoke is checking is that a change made on disk turns into a line on the row, and a
+      // double that invented the drift would have proved only that the deck can draw one.
+      const maps = [...this.projects.values()].map((held) => workflowMap(held, this.driftedAt));
+      return [200, { maps, drifts: this.historian.observeAll(maps) }];
     }
     if (request.method === 'GET' && path === '/projects/observed') {
       return this.observed(url.searchParams.get('path'));
@@ -401,6 +451,20 @@ export class FixtureCore {
     const project = { path, name: projectName(path), importedAt: Date.now() };
     this.projects.set(projectKey(path), project);
     return [201, { project }];
+  }
+
+  /**
+   * Edits the fixture's `.claude` — P3-T7.
+   *
+   * One hook added and one deny rule added, which is what one commit to a `settings.json` looks
+   * like from out here. The next `GET /projects/map` walks the new config, the historian sees a
+   * digest it has not seen, and a drift comes back with it.
+   */
+  driftConfig() {
+    this.driftedAt = Date.now();
+    // The NEW snapshot is stamped now, so the change is `0s ago` and the config it replaced
+    // had stood three days — which is the pair of numbers the row is for.
+    this.driftAgeMs = 0;
   }
 
   /**
@@ -1044,8 +1108,12 @@ function reading(project) {
  * The two hooks share an event on purpose — grouping a run of adjacent rows under one heading is
  * the one thing the panel does to the timeline, and a single hook could not show it.
  */
-function workflowMap(project) {
-  return {
+function workflowMap(project, driftedAt = 0) {
+  // Through the deck's own parser, which is this file's rule for every fixture and was not being
+  // applied to this one: it was hand-written in P3-T3 with no `ask` on its `PermissionRules`, and
+  // nothing noticed for four tasks because nothing in CORE consumed a map from here. P3-T7's
+  // historian does, and it crashed on the missing field rather than on anything of its own.
+  return parseWorkflowMap({
     path: project.path,
     at: Date.now(),
     instructions: [
@@ -1066,11 +1134,21 @@ function workflowMap(project) {
         timeout: 20,
       },
       { event: 'PreCompact', command: 'node state-dump.mjs', timeout: 15 },
+      // P3-T7. The edit the smoke makes: `FixtureCore.driftConfig()` adds a hook and a deny rule,
+      // which is what somebody committing a `settings.json` change looks like from out here.
+      ...(driftedAt === 0
+        ? []
+        : [{ event: 'SessionStart', command: 'node warm-cache.mjs', timeout: 10 }]),
     ],
     servers: [{ name: 'chrome-devtools', transport: 'stdio' }],
     plugins: ['context-hygiene@claude-kit'],
     marketplaces: ['claude-kit'],
-    permissions: { allow: ['Bash(git status:*)', 'Bash(npm run:*)'], deny: ['Read(.env)'] },
+    permissions: {
+      allow: ['Bash(git status:*)', 'Bash(npm run:*)'],
+      deny: driftedAt === 0 ? ['Read(.env)'] : ['Read(.env)', 'Read(secrets/**)'],
+      ask: [],
+      defaultMode: undefined,
+    },
     conventions: [
       { folder: 'rules', files: 6 },
       { folder: 'specs', files: 9 },
@@ -1101,7 +1179,7 @@ function workflowMap(project) {
       ],
     },
     configured: true,
-  };
+  });
 }
 
 /**

@@ -198,6 +198,10 @@ function DeckProjects({
           current: project.key,
           unassigned: scope.unassigned(state.rows),
           observed: state.observed,
+          drifts: state.drifts,
+          // The one age the projects panel prints (P3-T7). Read at render, which is what
+          // makes `changed 3d ago` become `4d` without a fetch.
+          now: Date.now(),
         })
       }
       disabled={!state.coreUp}

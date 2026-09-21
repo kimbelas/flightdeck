@@ -18,15 +18,29 @@
 import type { JSX } from 'react';
 import type { ClaudeAsset } from '../../contracts/claude-assets.ts';
 import type { HookStep } from '../../contracts/hook-timeline.ts';
+import type { ConfigDriftViewModel } from './config-drift-view-model.ts';
 import type { WorkflowMapViewModel } from './workflow-map-view-model.ts';
 
 interface WorkflowMapPanelProps {
   readonly model: WorkflowMapViewModel;
   /** For the `aria-label`, so two open panels are distinguishable to a screen reader. */
   readonly project: string;
+  /**
+   * What last CHANGED in this map — P3-T7.
+   *
+   * Inside the map panel rather than beside it, for two reasons. It is about this map: "what does
+   * Claude do here" and "what did somebody change about that" are one question asked twice. And
+   * the map and the observed reading are deliberately adjacent (SPEC §5.1(b)'s contrast, P3-T5), so
+   * a fourth panel between them would break the one piece of layout that carries an argument.
+   */
+  readonly drift: ConfigDriftViewModel;
 }
 
-export function WorkflowMapPanel({ model, project }: WorkflowMapPanelProps): JSX.Element | null {
+export function WorkflowMapPanel({
+  model,
+  project,
+  drift,
+}: WorkflowMapPanelProps): JSX.Element | null {
   // Nothing at all until the first reply — a folder whose map has not arrived draws no section
   // rather than an empty one, which is the same rule `ProjectMeta` follows for git.
   if (!model.isKnown) return null;
@@ -34,7 +48,15 @@ export function WorkflowMapPanel({ model, project }: WorkflowMapPanelProps): JSX
     <details className="project-detail project-map">
       <summary aria-label={`workflow map for ${project}`}>
         <Summary model={model} />
+        {/* In the CLOSED line, because a config change is news and news behind a triangle is
+            not news. The names behind it are the detail. */}
+        {drift.isKnown && (
+          <span className="map-changed" data-map-changed>
+            {drift.headline}
+          </span>
+        )}
       </summary>
+      <Changes drift={drift} />
       <Stack model={model} />
       {/*
         Outside `Configured` on purpose (P3-T4): a worktree is a fact about the repository, not
@@ -46,6 +68,41 @@ export function WorkflowMapPanel({ model, project }: WorkflowMapPanelProps): JSX
       <Names title="worktrees" names={model.worktrees} />
       {model.isConfigured ? <Configured model={model} /> : null}
     </details>
+  );
+}
+
+/**
+ * What changed, and how long the configuration it replaced had stood — P3-T7.
+ *
+ * First in the body, above the instruction stack: it is the only thing in this panel that is about
+ * an EVENT rather than about a state, and it is the reason somebody opened the panel today rather
+ * than last week. Absent entirely when nothing has ever changed, which is most folders.
+ */
+function Changes({ drift }: { readonly drift: ConfigDriftViewModel }): JSX.Element | null {
+  if (!drift.isKnown) return null;
+  return (
+    <div className="map-section map-changes" data-map-changes>
+      <h4>
+        {drift.headline} {drift.stood}
+      </h4>
+      <ul>
+        {drift.lines.map((line) => (
+          <li key={line.facet} data-map-change={line.facet}>
+            <span className="map-asset-name">{line.count}</span>
+            {line.added.map((name) => (
+              <span key={`+${name}`} className="map-badge map-change-added" title={name}>
+                + {name}
+              </span>
+            ))}
+            {line.removed.map((name) => (
+              <span key={`-${name}`} className="map-badge map-change-removed" title={name}>
+                − {name}
+              </span>
+            ))}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
