@@ -9,7 +9,7 @@ import type { HandoffOffer } from './handoff-view-model.ts';
 import { LaunchForm } from './launch-form.tsx';
 import type { SessionDetailViewModel } from './session-detail-view-model.ts';
 import type { SessionPreviewViewModel } from './session-preview-view-model.ts';
-import { SessionRowCard } from './session-row-card.tsx';
+import { SessionRowCard, type SessionRowCardProps } from './session-row-card.tsx';
 import type { SessionRowViewModel } from './session-row-view-model.ts';
 
 interface SessionListProps {
@@ -48,6 +48,7 @@ interface SessionListProps {
   readonly onLaunch: (request: PresetLaunch) => void;
   readonly onOpen: (row: SessionRowViewModel) => void;
   readonly onResume: (row: SessionRowViewModel) => void;
+  readonly onAdopt: (row: SessionRowViewModel) => void;
   readonly onStop: (row: SessionRowViewModel) => void;
   readonly onRemove: (row: SessionRowViewModel) => void;
   readonly onPreview: (row: SessionRowViewModel) => void;
@@ -90,43 +91,83 @@ export function SessionList(props: SessionListProps): JSX.Element {
  * regardless: the section above it is four controls that do not change when a session does.
  */
 function SessionRows(props: SessionListProps): JSX.Element {
-  const { rows, now, expanded, details, previews, onToggle, onOpen, onResume, onStop } = props;
   return (
     <>
-      {rows.map((row) => (
-        <SessionRowCard
-          key={row.key}
-          row={row}
-          now={now}
-          expanded={expanded.has(row.key)}
-          detail={details[row.key]}
-          preview={previews[row.key]}
-          previewAsked={row.key in previews}
-          handoff={props.offers[row.key] ?? NOWHERE}
-          handoffRefusal={refusalFor(props.handoffRefusal, row.key)}
-          onHandOff={(path, name) => props.onHandOff(row, path, name)}
-          onToggle={() => {
-            onToggle(row);
-          }}
-          onResume={() => {
-            onResume(row);
-          }}
-          onStop={() => {
-            onStop(row);
-          }}
-          onRemove={() => {
-            props.onRemove(row);
-          }}
-          onOpen={() => {
-            onOpen(row);
-          }}
-          onPreview={() => {
-            props.onPreview(row);
-          }}
-        />
+      {props.rows.map((row) => (
+        <Row key={row.key} row={row} list={props} />
       ))}
     </>
   );
+}
+
+/**
+ * One row, and every callback bound to it.
+ *
+ * Split from the map above because the card takes fourteen props and the list has a line limit,
+ * and the seam is honest: `SessionRows` decides WHICH rows are drawn and this decides what each
+ * one is given. Nothing is memoised — the whole list re-renders on a stream frame anyway, which
+ * is P2-T4's shape and what keeps the row a pure function of its view model.
+ */
+function Row({
+  row,
+  list,
+}: {
+  readonly row: SessionRowViewModel;
+  readonly list: SessionListProps;
+}): JSX.Element {
+  return (
+    <SessionRowCard
+      row={row}
+      now={list.now}
+      expanded={list.expanded.has(row.key)}
+      detail={list.details[row.key]}
+      preview={list.previews[row.key]}
+      previewAsked={row.key in list.previews}
+      handoff={list.offers[row.key] ?? NOWHERE}
+      handoffRefusal={refusalFor(list.handoffRefusal, row.key)}
+      {...handlersFor(row, list)}
+    />
+  );
+}
+
+/**
+ * Every callback the card takes, bound to one row.
+ *
+ * Lifted out of the element for the list's line limit, and it reads better for it: the element
+ * above is now what the row IS, and this is what pressing anything on it does. The list's own
+ * callbacks all take the row, so binding is the whole of the work.
+ */
+function handlersFor(
+  row: SessionRowViewModel,
+  list: SessionListProps,
+): Pick<
+  SessionRowCardProps,
+  'onHandOff' | 'onToggle' | 'onResume' | 'onAdopt' | 'onStop' | 'onRemove' | 'onOpen' | 'onPreview'
+> {
+  return {
+    onHandOff: (path, name) => list.onHandOff(row, path, name),
+    onToggle: () => {
+      list.onToggle(row);
+    },
+    onResume: () => {
+      list.onResume(row);
+    },
+    onAdopt: () => {
+      list.onAdopt(row);
+    },
+    onStop: () => {
+      list.onStop(row);
+    },
+    onRemove: () => {
+      list.onRemove(row);
+    },
+    onOpen: () => {
+      list.onOpen(row);
+    },
+    onPreview: () => {
+      list.onPreview(row);
+    },
+  };
 }
 
 /**

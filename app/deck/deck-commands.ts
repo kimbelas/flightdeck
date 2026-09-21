@@ -85,6 +85,16 @@ export interface DeckActions {
   readonly onResume: (row: SessionRowViewModel) => void;
   readonly onStop: (row: SessionRowViewModel) => void;
   /**
+   * Adopting an ended interactive session — P6-T7, SPEC §4.3, and NOT a palette entry.
+   *
+   * `onResume`'s twin, and it is not in the palette for the reason `onPreview` is not: what makes
+   * it pressable is a row that says the terminal has closed, and the sentence beside the button is
+   * half of what the button means (`SessionRowViewModel.adoptHint` — the session gets renamed).
+   * A fuzzy match that adopted a session with nothing on screen to say which would be a different
+   * verb wearing the same word.
+   */
+  readonly onAdopt: (row: SessionRowViewModel) => void;
+  /**
    * Hands a session to Windows Terminal — P6-T2, and NOT a palette entry.
    *
    * It is reached from the pane, because what it does is about the pane: it detaches this

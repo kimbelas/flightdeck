@@ -1,4 +1,4 @@
-// The three groups of actions that are pure store-wiring — P4-T4, P4-T2, P3-T1, P6-T3, P6-T6.
+// The four groups of actions that are pure store-wiring — P4-T4, P4-T2, P3-T1, P6-T4, P6-T7.
 //
 // Out of `deck-view.tsx` for the reason that file's own comment already gave: it has a 250-line
 // limit it has been split for twice, and of what it does, this is the piece with the least to do
@@ -6,10 +6,12 @@
 // `DeckStore` into the bag of callbacks `DeckActions` describes, and the decisions in them are
 // about WHEN a store method is called rather than about what is on screen.
 //
-// They stay three functions rather than becoming one, because they are three different answers to
+// They stay four functions rather than becoming one, because they are four different answers to
 // "why is this fire-and-forget": an Ask is over when its answer is (D48), a lifecycle verb is
-// reported by the next sweep rather than by its own reply, and a project read is deliberate
-// because it costs a walk of the disk. `onHandOff` is the one exception in the file and says so
+// reported by the next sweep rather than by its own reply, a project read is deliberate because it
+// costs a walk of the disk, and a group press is reported by a banner of its own. `onHandOff` is
+// the one exception in the file and says so where it is defined — a fork has no sweep to report
+// it, so the form that pressed gets the answer. `onHandOff` is the one exception in the file and says so
 // where it is defined — a fork has no sweep to report it, so the form that pressed gets the answer.
 import type { AskRequest } from '../../contracts/ask-run.ts';
 import type { DeckActions } from './deck-commands.ts';
@@ -41,18 +43,16 @@ export function lifecycleActions(
   store: DeckStore,
 ): Pick<
   DeckActions,
-  | 'onResume'
-  | 'onStop'
-  | 'onRemove'
-  | 'onPreview'
-  | 'onHandOff'
-  | 'onMute'
-  | 'onLaunchGroup'
-  | 'onClearGroup'
+  'onResume' | 'onAdopt' | 'onStop' | 'onRemove' | 'onPreview' | 'onHandOff' | 'onMute'
 > {
   return {
     onResume: (row: SessionRowViewModel) => {
-      void store.resume(row.ref.subscription, row.ref.sessionId);
+      void store.resume(row.ref);
+    },
+    // P6-T7. Fire-and-forget like its twin `onResume`: the adopted session comes back on the next
+    // sweep as a background row, which is the same report a resume gets.
+    onAdopt: (row: SessionRowViewModel) => {
+      void store.adopt(row.ref);
     },
     onStop: (row: SessionRowViewModel) => {
       void store.stop(row.ref);
@@ -80,7 +80,21 @@ export function lifecycleActions(
     onMute: (row: SessionRowViewModel, muted: boolean) => {
       void store.setMuted(row.ref, muted);
     },
-    // P6-T4, D17. The one action here that spends quota per press — N sessions, N first turns.
+  };
+}
+
+/**
+ * The preset group's two — P6-T4, D17.
+ *
+ * Its own pair rather than a member of `lifecycleActions`, on that function's own rule: everything
+ * there acts on ONE session that already exists, and a group press starts N that do not. It is
+ * also the only action in this file that spends quota per press — N sessions, N first turns — and
+ * a verb with a cost that different should not be found by reading past seven that have none.
+ */
+export function groupActions(
+  store: DeckStore,
+): Pick<DeckActions, 'onLaunchGroup' | 'onClearGroup'> {
+  return {
     onLaunchGroup: (group: string) => {
       void store.launchGroup(group);
     },

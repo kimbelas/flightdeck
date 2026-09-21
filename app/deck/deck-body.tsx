@@ -138,6 +138,7 @@ function DeckSessions(props: DeckLeftProps): JSX.Element {
       onLaunch={actions.onLaunch}
       onOpen={actions.onOpenPane}
       onResume={actions.onResume}
+      onAdopt={actions.onAdopt}
       onStop={actions.onStop}
       onRemove={actions.onRemove}
       onPreview={actions.onPreview}

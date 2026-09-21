@@ -3120,7 +3120,7 @@ phases:
 
   - id: P6
     name: One browser, zero terminals
-    status: todo
+    status: done
     goal: F7 is true day to day.
     gate: A full working day with no terminal window opened by hand.
     depends_on: [P5a]
@@ -3541,7 +3541,82 @@ phases:
           `npm run check` 215 files / 2 709 tests; `npm run smoke` 413 checks.
       - id: P6-T7
         title: Adopt externally started sessions when they exit
-        status: todo
+        status: done
+        done_on: 2026-09-21
+        deliverables:
+          [
+            contracts/session-row.ts,
+            contracts/launch-reply.ts,
+            contracts/deck-routes.ts,
+            core/application/session-rows.ts,
+            core/application/reconciler.ts,
+            core/application/deck-query.ts,
+            core/application/session-adopter.ts,
+            core/http/adopt-route.ts,
+            core/routes.ts,
+            core/verbs.ts,
+            core/main.ts,
+            app/deck/session-row-view-model.ts,
+            app/deck/lifecycle-slice.ts,
+            app/deck/deck-replies.ts,
+            app/deck/deck-store.ts,
+            app/deck/deck-actions.ts,
+            app/deck/deck-commands.ts,
+            app/deck/deck-view.tsx,
+            app/deck/deck-body.tsx,
+            app/deck/session-list.tsx,
+            app/deck/session-row-card.tsx,
+            tests/core/application/reconciler-adoption.test.ts,
+            tests/core/application/session-adopter.test.ts,
+            tests/core/application/deck-query.test.ts,
+            tests/core/http/adopt-route.test.ts,
+            tests/app/deck-store-adopt.test.ts,
+            tests/app/session-row-view-model.test.ts,
+            tests/e2e/fixture-core.mjs,
+            tests/e2e/smoke/adopt-checks.mjs,
+            RESEARCH.md G.55,
+          ]
+        notes: >-
+          SPEC 4.3's migration path to F7 — "sessions started outside Flightdeck are visible with
+          full vitals but read-only; when one exits, the deck offers to adopt it". **The blocker
+          was not the argv, and finding that is most of the task** (RESEARCH.md G.55). Measured on
+          this machine: `claude agents --json --all` keeps a background session forever with
+          `state: done` and no pid, and FORGETS an interactive one the instant its terminal closes
+          — eleven records, eight dead background sessions, three live interactive ones, and no
+          such thing as a dead interactive record. So the reconciler saw the session vanish,
+          published `gone`, deleted the row, and SPEC's moment had nothing on screen to hang on.
+          **An interactive session that vanishes has ENDED; a background one that vanishes was
+          DELETED.** `rm` takes a job directory, which an interactive session has never had, so it
+          cannot be why one disappears. That asymmetry is what the reconciler now implements: an
+          interactive row lingers as an ended row — `live: false`, no runState, and a THIRD reason,
+          because "already bound to its own terminal" stops being true at exactly that moment — for
+          thirty minutes, then goes `gone` as before. Bounded in time and in count
+          (`VitalsRegistry`'s reason), cleared the moment the session comes back, and the window
+          restarts if it ends again.
+          `DeckQuery` merges them, because `GET /sessions` takes a FRESH sweep and cannot see one:
+          without the merge a refresh would clear the offer and the next stream frame would put it
+          back, which is a deck disagreeing with itself. Not for a subscription whose sweep failed
+          — that one had no gone-detection run against it either.
+          **Then the argv, measured at zero token cost** on a throwaway session, because an adopted
+          session comes back idle. `--bg --resume <uuid>` keeps the id and turns the session into a
+          background job; `-n` beside it starts a COPY, which on 2.1.278 the binary now says out
+          loud; and a session with no `--bg` history has no saved options, so it runs in the
+          PROCESS cwd. That last one is what `SessionAdopter` exists for — core runs as a logon
+          task, so an adoption without a cwd would restart a terminal's work in core's own folder,
+          silently, looking like it worked. The folder is core's OWN reading of where the session
+          was, never the request's: the body is a ref and no path (SEC-FS-1), and the smoke asserts
+          the absence. A resumed background session keeps its saved cwd and needs none of this,
+          which is why `SessionResumer` was left alone.
+          **The name cannot be kept** — `-n` would keep it and `-n` forks — so an adopted session is
+          called after its own short id. Said on the button rather than discovered afterwards.
+          Eighteen sabotages, each watched to land and then to fail, including both directions of
+          the asymmetry. Verified live against the real core: the route refuses a short id as
+          `bad_request`, a live interactive session as `still_running` and a background session as
+          `not_adoptable`; the deck draws no adopt button on any of the five open terminals and
+          keeps their permanent reason, with no page errors. The ended-to-offer transition itself
+          is covered by the unit suite and by sixteen smoke checks against the production bundle —
+          reproducing it live needs a real terminal to close, which is the owner's to do.
+          `npm run check` 219 files / 2 780 tests; `npm run smoke` 429 checks.
 
   - id: P7
     name: Search and analytics

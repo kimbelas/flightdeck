@@ -4,7 +4,12 @@
 // (SPEC §5.2), so every interactive session is permanently read-only in a pane. A deck that got
 // this wrong would render an "open pane" button that cannot work, on the majority of rows.
 import { describe, expect, it } from 'vitest';
-import { INTERACTIVE_NOT_ATTACHABLE, NOT_LIVE } from '../../../contracts/session-row.ts';
+import {
+  ENDED_ADOPTABLE,
+  INTERACTIVE_NOT_ATTACHABLE,
+  NOT_LIVE,
+  type SessionRow,
+} from '../../../contracts/session-row.ts';
 import type { SubscriptionId } from '../../../contracts/session.ts';
 import { DeckQuery } from '../../../core/application/deck-query.ts';
 import { Session } from '../../../core/domain/session.ts';
@@ -35,11 +40,30 @@ function session(spec: Spec, subscription: SubscriptionId): Session {
   );
 }
 
-function deckOf(sweeps: Map<SubscriptionId, Sweep>): DeckQuery {
+function deckOf(sweeps: Map<SubscriptionId, Sweep>, ended: SessionRow[] = []): DeckQuery {
   const source = new FakeSessionSource();
   for (const sweep of sweeps.values()) source.willSweep(sweep);
   // The same instant the inline FixedClock used, so every ordering assertion below is unchanged.
-  return new DeckQuery(source, new FakeClock(1_700_000_000_000));
+  return new DeckQuery(source, new FakeClock(1_700_000_000_000), { ended });
+}
+
+/** An ended interactive row, as `Reconciler` holds one — P6-T7. */
+function endedRow(over: Partial<SessionRow> = {}): SessionRow {
+  return {
+    sessionId: 'eeeeeeee-0000-0000-0000-000000000000',
+    shortId: 'eeeeeeee',
+    subscription: '365',
+    kind: 'interactive',
+    name: 'apex',
+    cwd: 'C:\\work',
+    startedAt: 900,
+    live: false,
+    runState: undefined,
+    status: undefined,
+    attachable: false,
+    notAttachableBecause: ENDED_ADOPTABLE,
+    ...over,
+  };
 }
 
 function sweepOf(subscription: SubscriptionId, specs: Spec[], failed = false): Sweep {
@@ -162,5 +186,69 @@ describe('DeckQuery — ordering', () => {
     const { rows } = await deckOf(sweeps).snapshot();
 
     expect(rows.map((row) => row.name)).toEqual(['cccccccc', 'bbbbbbbb', 'aaaaaaaa']);
+  });
+});
+
+/**
+ * The sessions a sweep cannot see — P6-T7, SPEC §4.3.
+ *
+ * `claude agents --json --all` forgets an interactive session the moment its terminal closes
+ * (G.55), which is why the reconciler holds it. `GET /sessions` takes a fresh sweep, so without
+ * the merge a refresh would clear the adopt offer and the next stream frame would put it back —
+ * a deck disagreeing with itself about a row somebody is looking at.
+ */
+describe('DeckQuery — ended interactive sessions', () => {
+  it('includes one the listing has forgotten', async () => {
+    const deck = deckOf(new Map([['365', sweepOf('365', [])]]), [endedRow()]);
+
+    const snapshot = await deck.snapshot();
+
+    expect(snapshot.rows.map((row) => row.shortId)).toEqual(['eeeeeeee']);
+    expect(snapshot.rows[0]?.notAttachableBecause).toBe(ENDED_ADOPTABLE);
+  });
+
+  // The sweep is the newer answer. Somebody adopted it, it is a background job now, and a
+  // remembered row beside it would be the same session twice in two states.
+  it('leaves out one the sweep carries, rather than listing it twice', async () => {
+    const adopted = { id: 'eeeeeeee', kind: 'background', live: true } as const;
+    const deck = deckOf(new Map([['365', sweepOf('365', [adopted])]]), [endedRow()]);
+
+    const snapshot = await deck.snapshot();
+
+    expect(snapshot.rows).toHaveLength(1);
+    expect(snapshot.rows[0]).toMatchObject({ kind: 'background', attachable: true });
+  });
+
+  // A session id is only unique within a config directory, so the same uuid under the other
+  // account is a different session and must not be matched against this one.
+  it('matches on BOTH ids, not on the uuid alone', async () => {
+    const other = { id: 'eeeeeeee', kind: 'background', live: true } as const;
+    const deck = deckOf(new Map([['isg', sweepOf('isg', [other])]]), [endedRow()]);
+
+    const snapshot = await deck.snapshot();
+
+    expect(snapshot.rows).toHaveLength(2);
+  });
+
+  /**
+   * A failed sweep had no gone-detection run against it either (`Reconciler`).
+   *
+   * Adding its remembered rows here would be this class forming an opinion the reconciler
+   * declined to form — and the deck already says "could not look" for that subscription, which
+   * is a different answer from a session having ended.
+   */
+  it('says nothing about a subscription whose sweep failed', async () => {
+    const deck = deckOf(new Map([['365', sweepOf('365', [], true)]]), [endedRow()]);
+
+    const snapshot = await deck.snapshot();
+
+    expect(snapshot.rows).toEqual([]);
+    expect(snapshot.unreadable).toEqual(['365']);
+  });
+
+  it('holds none of them by default, so the listing is still the listing', async () => {
+    const deck = deckOf(new Map([['365', sweepOf('365', [])]]));
+
+    expect((await deck.snapshot()).rows).toEqual([]);
   });
 });

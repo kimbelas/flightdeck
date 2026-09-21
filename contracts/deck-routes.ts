@@ -121,6 +121,15 @@ export const CORE_GROUP_LAUNCH_PATH = `${CORE_PREFIX}sessions/group`;
 export const CORE_HANDOFF_PATH = `${CORE_PREFIX}sessions/handoff`;
 
 /**
+ * `POST /sessions/adopt` — bring an ended interactive session back as a background one (P6-T7).
+ *
+ * The body is a session ref and nothing else. Unlike a handoff it carries no folder: core looks up
+ * where that session was from its own reading of the machine, because a browser naming the
+ * directory a process starts in is the thing SEC-FS-1 exists to prevent (`SessionAdopter`).
+ */
+export const CORE_ADOPT_PATH = `${CORE_PREFIX}sessions/adopt`;
+
+/**
  * DELETING one, conversation and all — P4-T2.
  *
  * Its own literal path rather than a field on the stop body, and that is a control rather than

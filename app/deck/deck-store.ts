@@ -31,7 +31,6 @@ import { CORE_SESSIONS_PATH } from '../../contracts/deck-routes.ts';
 import type { PresetDraft, PresetLaunch, PresetRef } from '../../contracts/launch-preset.ts';
 import type { SessionRef } from '../../contracts/session-ref.ts';
 import { parseDeckSnapshot, sessionKey, type DeckSnapshot } from '../../contracts/session-row.ts';
-import type { SubscriptionId } from '../../contracts/session.ts';
 import type { DeckApi } from './deck-api.ts';
 import {
   describeStatus,
@@ -295,8 +294,10 @@ export class DeckStore {
   };
 
   /** Wakes a stopped background session so a pane can attach to it — P4-T2a. */
-  public resume = (subscription: SubscriptionId, sessionId: string): Promise<boolean> =>
-    this.lifecycle.resume(subscription, sessionId);
+  public resume = (ref: SessionRef): Promise<boolean> => this.lifecycle.resume(ref);
+
+  /** Brings an ended interactive session back as a background one — P6-T7, SPEC §4.3. */
+  public adopt = (ref: SessionRef): Promise<boolean> => this.lifecycle.adopt(ref);
 
   /** Stops a running background session, without deleting it — P4-T2b. */
   public stop = (ref: SessionRef): Promise<boolean> => this.lifecycle.stop(ref);

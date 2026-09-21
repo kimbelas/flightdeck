@@ -296,8 +296,12 @@ function buildHttp(parts: HttpParts): HttpSide {
         // P5a-T4. The one reader that spawns a process per request, which is why it is asked for
         // by its own route and its own click rather than riding the detail (`preview-route.ts`).
         preview: buildPreviewReader({ ...feeds, install, runner: parts.runner, clock, logger }),
-        deck: new DeckQuery(parts.sessions, clock),
-        ...sessionSlice(parts, panes),
+        // P6-T7. The third argument is the reconciler's memory of ended interactive
+        // sessions — a sweep cannot see one, which is why it is held (`DeckQuery`).
+        deck: new DeckQuery(parts.sessions, clock, feeds.reconciler),
+        // P6-T7. `directory` is the reconciler's memory of where each session was seen — an
+        // adoption runs in that folder, and the browser never names one (SEC-FS-1).
+        ...sessionSlice({ ...parts, directory: feeds.reconciler }, panes),
         asker: buildAsker({ ...parts, publisher: feeds.ask }),
         tickets,
         // P5a-T8. The directory is made on first paste, not at boot: a machine where nobody has

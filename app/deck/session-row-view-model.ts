@@ -112,6 +112,34 @@ export class SessionRowViewModel {
   }
 
   /**
+   * Whether this row can be ADOPTED — P6-T7, SPEC §4.3.
+   *
+   * An interactive session that has ENDED, and nothing else. A live one is somebody's open
+   * terminal — adopting it would start a second process against a conversation being typed into —
+   * and a background session is already what an adoption produces, which is what `canResume` is
+   * for. Between the two, every row that says "not running" now has exactly one button.
+   *
+   * It is the complement of `canResume` across `kind`, and deliberately so: the pair is the whole
+   * of SPEC §4.3's migration path, where a terminal you close becomes a session the deck can put
+   * in a pane.
+   */
+  public get canAdopt(): boolean {
+    return this.row.kind === 'interactive' && !this.row.live;
+  }
+
+  /**
+   * What adopting costs, in a sentence — the one thing about it that is not obvious.
+   *
+   * `-n` would keep the session's name and `-n` starts a COPY (RESEARCH.md G.55), so an adopted
+   * session is called after its own short id until somebody renames it. Said on the button rather
+   * than discovered afterwards: a row that quietly changed its own name is a row somebody spends a
+   * minute looking for.
+   */
+  public get adoptHint(): string {
+    return `Bring this conversation back as a background session in ${this.project}. It will be renamed ${this.row.shortId}.`;
+  }
+
+  /**
    * Whether this row can be RESPAWNED — P5a-T6.
    *
    * Any background session, running or not, which makes it wider than `canStop` on purpose:

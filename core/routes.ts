@@ -18,6 +18,7 @@ import { AskRoute } from './http/ask-route.ts';
 import { ConnectPlanRoute, ConnectWriteRoute } from './http/connect-routes.ts';
 import { DoctorRoute, RespawnRoute, UpdateRoute } from './http/install-routes.ts';
 import { GroupLaunchRoute, type GroupStarter } from './http/group-route.ts';
+import { AdoptRoute, type SessionAdopterPort } from './http/adopt-route.ts';
 import { HandoffRoute, type SessionForker } from './http/handoff-route.ts';
 import { LaunchRoute } from './http/launch-route.ts';
 import { MutesReadRoute, MutesWriteRoute } from './http/mutes-route.ts';
@@ -82,6 +83,14 @@ export interface RouterParts {
    * own id and a handoff makes a second one, and the two are one word apart in English.
    */
   readonly forker: SessionForker;
+  /**
+   * Brings an ended interactive session back as a background one — P6-T7, SPEC §4.3.
+   *
+   * Its own field beside `resumer` for `forker`'s reason and a sharper one: the argv is the same
+   * two flags, and what differs is where core gets the folder from (`SessionAdopter`). One field
+   * doing both would hide exactly that.
+   */
+  readonly adopter: SessionAdopterPort;
   /** The one verb that destroys something — its own route, and its own confirm in the deck (P4-T2). */
   readonly remover: SessionRemover;
   /** One headless question at a time, streamed onto `/stream` (P4-T4, D47, D48). */
@@ -168,8 +177,8 @@ function subscriptionPaths(install: ClaudeInstall): SubscriptionPaths {
  * forks, ends or hands over one session. Everything left in `buildRouter` answers a question
  * about the machine instead.
  *
- * **The order is not alphabetical and is not accidental.** `launch`, `resume` and `handoff` make a
- * session exist; `stop` and `rm` end one; `popout` and `group` are the two that do something to
+ * **The order is not alphabetical and is not accidental.** `launch`, `resume`, `adopt` and
+ * `handoff` make a session exist or usable; `stop` and `rm` end one; `popout` and `group` are the two that do something to
  * more than one thing at a time. Reading them in that order is how somebody works out which verb
  * they want — and `rm` sits alone at the end with the comment that says why.
  */
@@ -177,6 +186,8 @@ function sessionRoutes(parts: RouterParts): readonly Route[] {
   return [
     new LaunchRoute(parts.launcher),
     new ResumeRoute(parts.resumer),
+    // What `resume` is for a session that was never a `--bg` job — P6-T7, SPEC §4.3.
+    new AdoptRoute(parts.adopter),
     // The only verb in the table that ADDS a session without being able to lose one — P6-T6.
     new HandoffRoute(parts.forker),
     new StopRoute(parts.stopper),
