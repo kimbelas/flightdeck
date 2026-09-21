@@ -1,5 +1,11 @@
 // A unified diff of two whole files, so Connect can show what it would do (D13, SEC-FS-3).
 //
+// **In contracts/ because two sides render it.** `npm run connect` prints it to a terminal and the
+// deck's Connect panel draws it in a `<details>` (P4-T6), and contracts/ is the only folder both
+// TypeScript projects compile — `tsconfig.app.json` cannot see `core/shared/`, which is where this
+// lived until then. Two diff implementations would be two accounts of the same write, and the
+// whole promise is that the owner approved THE diff.
+//
 // Hand-written rather than a dependency for the reason the repo keeps giving: this is one screen
 // of pure code with one test, and the alternative is a package on the critical path of the one
 // command that edits the owner's live config. It renders whole-file before/after pairs — never a

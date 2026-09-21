@@ -12,10 +12,11 @@
 // and skips one that has finished (F.10.4), so the button says what it did — by id — rather than
 // claiming a number it did not earn.
 //
-// **Nothing here renders a path.** `claude doctor` prints the binary's location, which carries the
-// Windows account name; `contracts/install-health.ts` drops it before it leaves core, and this
-// draws only the fields that survived (SEC-DATA-2).
-import type { JSX } from 'react';
+// **None of doctor's fields renders a path.** `claude doctor` prints the binary's location, which
+// carries the Windows account name; `contracts/install-health.ts` drops it before it leaves core,
+// and this draws only the fields that survived (SEC-DATA-2). The Connect panel in `children` does
+// render config paths, and has to: they are what the owner is approving a write to (P4-T6).
+import type { JSX, ReactNode } from 'react';
 import type { InstallHealth } from '../../contracts/install-health.ts';
 import { SUBSCRIPTION_IDS, type SubscriptionId } from '../../contracts/session.ts';
 import type { RespawnReport } from './install-slice.ts';
@@ -29,6 +30,15 @@ interface InstallPanelProps {
   readonly onUpdate: (subscription: SubscriptionId) => void;
   readonly onRespawnAll: (subscription: SubscriptionId) => void;
   readonly onClose: () => void;
+  /**
+   * The Connect panel — P4-T6.
+   *
+   * A slot rather than another six props, because what goes in it talks to core on its own and
+   * keeps its own state (`ConnectPanelModel`). It is HERE because this panel is already
+   * machine-wide — it draws both subscriptions whichever chip opened it — and because connecting
+   * is what makes this installation report anything to Flightdeck at all.
+   */
+  readonly children: ReactNode;
 }
 
 export function InstallPanel(props: InstallPanelProps): JSX.Element {
@@ -58,6 +68,7 @@ export function InstallPanel(props: InstallPanelProps): JSX.Element {
         />
       ))}
       <InstallOutcomes update={props.update} respawn={props.respawn} />
+      {props.children}
     </section>
   );
 }

@@ -38,6 +38,8 @@ import { CORE_PORT, LOOPBACK_ADDRESS } from '../../contracts/origins.ts';
 import { PASTED_IMAGE_PATH } from '../../contracts/pasted-image.ts';
 import { PastedImage } from '../../core/domain/pasted-image.ts';
 import { KeybindingPlanner } from '../../core/application/keybinding-planner.ts';
+import { ConnectPlanner } from '../../core/application/connect-planner.ts';
+import { StatuslinePatcher } from '../../core/adapters/statusline/statusline-patcher.ts';
 import { PresetCatalogue } from '../../core/domain/preset-catalogue.ts';
 import {
   byProjectThenName,
@@ -79,6 +81,45 @@ const TIME_KEYS = new Set([
   'lastToolAt',
   'spendSince',
 ]);
+
+/**
+ * The three files Connect rewrites — P4-T6. Fixture paths, never `~/.claude*`.
+ *
+ * The statusline source carries the two anchors `StatuslinePatcher` splices between, and the isg
+ * settings.json is **CRLF while the 365 one is LF**, which is the difference on the real machine
+ * and the one G.13 turned into a whole-file rewrite. A smoke that used the same line endings for
+ * both would render a diff that could never show that bug coming back.
+ */
+const CONNECT_SETTINGS = {
+  365: String.raw`C:\cfg\.claude-365\settings.json`,
+  isg: String.raw`C:\cfg\.claude-isg\settings.json`,
+};
+const CONNECT_STATUSLINE = String.raw`C:\cfg\.claude\hooks\statusline.py`;
+const CONNECT_SETTINGS_365_SOURCE = '{\n  "model": "opus"\n}\n';
+const CONNECT_SETTINGS_ISG_SOURCE = '{\r\n  "model": "sonnet"\r\n}\r\n';
+const STATUSLINE_SOURCE = [
+  '#!/usr/bin/env python3',
+  'import json',
+  'import sys',
+  '',
+  '',
+  'def cache_flush():',
+  '    pass',
+  '',
+  '',
+  'def main():',
+  '    data = json.load(sys.stdin)',
+  '    sys.stdout.write("ctx 21%")',
+  '    cache_flush()',
+  '',
+  '',
+  'if __name__ == "__main__":',
+  '    main()',
+  '',
+].join('\n');
+
+/** The REAL patcher, reading the real block out of the repo — the diff has to be the diff. */
+const STATUSLINE_PATCHER = StatuslinePatcher.fromRepo();
 
 /** What a pane sees before it types anything. Long enough that "xterm painted" is a real check. */
 const BANNER = 'fixture shell — echo only, no PTY was spawned\r\n$ ';
@@ -175,6 +216,25 @@ export class FixtureCore {
       [String.raw`C:\cfg\.claude-365\keybindings.json`, undefined],
       [String.raw`C:\cfg\.claude-isg\keybindings.json`, undefined],
     ]);
+    /**
+     * The three files Connect rewrites, in memory — P4-T6.
+     *
+     * A Map for `keybindings`' reason: a smoke run must never go near `~/.claude*`, and Connect is
+     * the one feature in this repo whose real target IS the owner's live config on both profiles.
+     * The CONTENTS are real enough for the real planner — two settings.json with no hooks block,
+     * and a statusline.py carrying the two anchors `StatuslinePatcher` splices between — because
+     * what the deck renders is a diff, and a diff of a stub would prove nothing about the diff of
+     * a file.
+     */
+    this.connectFiles = new Map([
+      [CONNECT_SETTINGS['365'], CONNECT_SETTINGS_365_SOURCE],
+      [CONNECT_SETTINGS.isg, CONNECT_SETTINGS_ISG_SOURCE],
+      [CONNECT_STATUSLINE, STATUSLINE_SOURCE],
+    ]);
+    /** Whether the ingest key would reach a new session. `SessionEnvironment`, as a boolean. */
+    this.ingestKeyPublished = false;
+    /** Every direction `POST /connect` was asked for, in order. */
+    this.connectWrites = [];
     /** Every `input` frame the PTY socket received, so a check can ask what the pane SENT. */
     this.typed = [];
     /**
@@ -285,6 +345,12 @@ export class FixtureCore {
     }
     if (request.method === 'GET' && path === '/keybindings') {
       return this.keybindingPlan(url.searchParams.get('direction') ?? 'apply');
+    }
+    if (request.method === 'GET' && path === '/connect') {
+      return this.connectPlan(url.searchParams.get('direction') ?? 'connect');
+    }
+    if (request.method === 'POST' && path === '/connect') {
+      return this.connectWrite(await body(request));
     }
     if (request.method === 'POST' && path === '/keybindings') {
       return this.keybindingWrite(await body(request));
@@ -635,6 +701,77 @@ export class FixtureCore {
         alreadyDone: plan.alreadyDone,
       },
     ];
+  }
+
+  /**
+   * `GET /connect` — P4-T6, planned with core's OWN `ConnectPlanner` and the REAL patcher.
+   *
+   * The same argument `keybindingPlan` makes: the deck is what is under test, so the plan it
+   * renders has to be the plan core would produce — down to `JsonFormat` re-printing isg's CRLF
+   * settings.json in CRLF, which is the bug G.13 cost a whole-file rewrite to find. What is
+   * fixture is only WHERE the files are.
+   */
+  connectPlan(direction) {
+    if (direction !== 'connect' && direction !== 'disconnect')
+      return [400, { error: 'bad request' }];
+    const planner = this.connectPlanner();
+    return [
+      200,
+      { direction, plan: direction === 'connect' ? planner.connect() : planner.disconnect() },
+    ];
+  }
+
+  connectWrite(raw) {
+    const direction = parseJson(raw)?.direction;
+    if (direction !== 'connect' && direction !== 'disconnect')
+      return [400, { error: 'bad request' }];
+
+    const planner = this.connectPlanner();
+    const plan = direction === 'connect' ? planner.connect() : planner.disconnect();
+    if (!plan.ok) return [409, { error: 'refused', reason: 'the plan was refused', applied: [] }];
+
+    this.connectWrites.push(direction);
+    const applied = plan.changes.map((change) => {
+      this.connectFiles.set(change.path, change.after);
+      return { path: change.path, backup: `${change.path}.bak-fixture` };
+    });
+    if (plan.environment !== 'none') this.ingestKeyPublished = plan.environment === 'publish';
+    return [
+      200,
+      {
+        direction,
+        applied,
+        environment: plan.environment,
+        environmentLabel: plan.environmentLabel,
+        alreadyDone: plan.alreadyDone,
+      },
+    ];
+  }
+
+  /** Core's planner, over this double's Map and a `SessionEnvironment` that is one boolean. */
+  connectPlanner() {
+    return new ConnectPlanner({
+      settings: SUBSCRIPTION_IDS.map((subscription) => ({
+        subscription,
+        path: CONNECT_SETTINGS[subscription],
+        contents: this.connectFiles.get(CONNECT_SETTINGS[subscription]),
+      })),
+      statusline: {
+        path: CONNECT_STATUSLINE,
+        contents: this.connectFiles.get(CONNECT_STATUSLINE),
+      },
+      patcher: STATUSLINE_PATCHER,
+      environment: {
+        isPublished: () => this.ingestKeyPublished,
+        publish: () => {
+          this.ingestKeyPublished = true;
+        },
+        withdraw: () => {
+          this.ingestKeyPublished = false;
+        },
+        describe: () => '$FLIGHTDECK_TOKEN (user environment)',
+      },
+    });
   }
 
   keybindingSources() {

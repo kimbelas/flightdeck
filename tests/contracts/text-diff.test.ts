@@ -1,6 +1,6 @@
 // The diff is what the owner approves before anything is written (D13), so it has to be honest.
 import { describe, expect, it } from 'vitest';
-import { unifiedDiff } from '../../../core/shared/text-diff.ts';
+import { unifiedDiff } from '../../contracts/text-diff.ts';
 
 describe('unifiedDiff', () => {
   it('is empty for identical text, which is how "nothing to do" is told apart from a no-op diff', () => {

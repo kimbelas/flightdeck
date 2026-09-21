@@ -13,7 +13,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { StatuslinePatcher } from './statusline-patch.ts';
+import { StatuslinePatcher } from '../core/adapters/statusline/statusline-patcher.ts';
 import {
   RenderProbe,
   StatuslineReceiver,
@@ -33,7 +33,9 @@ const PYTHON = process.env['FD_PYTHON'] ?? 'python';
 const STATUSLINE =
   process.env['FD_STATUSLINE'] ?? join(homedir(), '.claude', 'hooks', 'statusline.py');
 const FIXTURES = fileURLToPath(new URL('../fixtures/statusline/', import.meta.url));
-const BLOCK = fileURLToPath(new URL('./statusline-block.py', import.meta.url));
+const BLOCK = fileURLToPath(
+  new URL('../core/adapters/statusline/statusline-block.py', import.meta.url),
+);
 const COST_DRIVER = fileURLToPath(new URL('./statusline-cost.py', import.meta.url));
 
 /** statusline.py's own imports, so the numbers below are marginal cost, not absolute. */

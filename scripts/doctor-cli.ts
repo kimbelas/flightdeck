@@ -11,7 +11,6 @@
 import { execFileSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { CORE_PORT, UI_PORT } from '../contracts/origins.ts';
 import { ingestKeyFile } from '../contracts/ingest-key.ts';
@@ -20,14 +19,11 @@ import { coreTokenFile } from '../contracts/core-token.ts';
 import { SUBSCRIPTION_IDS } from '../contracts/session.ts';
 import { ClaudeInstall } from '../core/adapters/claude-cli/claude-install.ts';
 import { ConsoleLogger } from '../core/adapters/console-logger.ts';
-import { BackingUpConfigFile } from '../core/adapters/node/backing-up-config-file.ts';
-import { HttpCoreHealth } from '../core/adapters/node/http-core-health.ts';
-import { UserEnvironmentVariable } from '../core/adapters/windows/user-environment-variable.ts';
 import { WindowsFileAcl } from '../core/adapters/windows/windows-file-acl.ts';
 import { SchtasksLogonTask } from '../core/adapters/windows/schtasks-logon-task.ts';
-import { Connector } from '../core/application/connector.ts';
+import type { Connector } from '../core/application/connector.ts';
+import { buildConnector } from '../core/connect.ts';
 import { ReadPolicy } from '../core/domain/read-policy.ts';
-import { StatuslinePatcher } from './statusline-patch.ts';
 import { readStatus } from './core-status.ts';
 import { recentTranscripts, allTranscripts, readWhole } from './transcript-probe.ts';
 import {
@@ -150,18 +146,7 @@ function names(directory: string): readonly string[] {
 
 /** The same construction `npm run connect` uses, so `plan()` compares against the real template. */
 function connector(): Connector {
-  return new Connector({
-    files: new BackingUpConfigFile(),
-    health: new HttpCoreHealth(),
-    patcher: StatuslinePatcher.fromRepo(),
-    environment: new UserEnvironmentVariable(),
-    settingsPaths: SUBSCRIPTION_IDS.map((id) => ({
-      subscription: id,
-      path: join(install.configDirFor(id), 'settings.json'),
-    })),
-    statuslinePath: join(homedir(), '.claude', 'hooks', 'statusline.py'),
-    logger: new ConsoleLogger(),
-  });
+  return buildConnector(install, new ConsoleLogger());
 }
 
 function logonTask(): SchtasksLogonTask {

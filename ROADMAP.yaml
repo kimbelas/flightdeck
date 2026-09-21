@@ -1771,7 +1771,7 @@ phases:
 
   - id: P4
     name: Launcher, quota-aware routing, Ask and Dispatch
-    status: todo
+    status: doing
     goal: Every way the owner starts Claude today is one click, on the right subscription.
     gate: A new ticket session for app-next starts from the deck on the subscription with more headroom, named, in the right worktree, and no terminal command was typed.
     depends_on: [P3]
@@ -2311,7 +2311,74 @@ phases:
         security: [SEC-DATA-2, SEC-PROC-3]
       - id: P4-T6
         title: Connect / Disconnect subscription UI with dry-run diff
-        status: todo
+        status: done
+        done_on: 2026-09-21
+        depends_on: [P1-T11, P4-T5]
+        deliverables:
+          [
+            contracts/connect-plan.ts,
+            contracts/text-diff.ts,
+            contracts/deck-routes.ts,
+            contracts/ingest-key.ts,
+            contracts/keybinding-plan.ts,
+            core/connect.ts,
+            core/http/connect-routes.ts,
+            core/routes.ts,
+            core/main.ts,
+            core/adapters/statusline/statusline-patcher.ts,
+            core/adapters/statusline/statusline-block.py,
+            core/ports/source-patcher.ts,
+            app/deck/connect-panel.tsx,
+            app/deck/connect-panel-model.ts,
+            app/deck/install-panel.tsx,
+            app/deck/deck-install.tsx,
+            scripts/connect-cli.ts,
+            scripts/doctor-cli.ts,
+            tests/core/http/connect-routes.test.ts,
+            tests/contracts/connect-plan.test.ts,
+            tests/contracts/text-diff.test.ts,
+            tests/core/adapters/statusline-patcher.test.ts,
+            tests/e2e/smoke/connect-checks.mjs,
+            tests/e2e/fixture-core.mjs,
+            DECISIONS.md D50,
+            RESEARCH.md G.44,
+          ]
+        notes: >-
+          DECISIONS.md D50, measured in RESEARCH.md G.44. P1-T11's two objects reach the browser
+          with nothing loosened: `GET /connect` cannot write, `POST /connect` re-plans from disk,
+          and the page sends a `direction` from a two-member union and nothing else — no path, no
+          content, no subscription. `/keybindings`' shape (P5a-T7), which was copied from here in
+          the first place. The write button is not rendered until a plan has been, so D13's promise
+          is structural rather than remembered, and there is no confirm on top of that: two presses
+          with a whole unified diff between them, and Disconnect is exactly reversible (P4-T2's
+          rule about a second prompt).
+          It lives in the version chip's panel because that panel is already machine-wide — it
+          draws both subscriptions whichever chip opened it — and connecting is what makes that
+          installation report anything to Flightdeck at all.
+          **Whole-machine, not per subscription**, and the title's word describes what is being
+          connected rather than a control: a per-subscription Disconnect would have to decide
+          whether the SHARED statusline.py and the machine-wide `FLIGHTDECK_TOKEN` stay, and the
+          answer depends on the other subscription. The two settings files are separate rows with
+          separate diffs, which is the useful part of "per subscription".
+          Core answers the route, so a core that is down cannot be disconnected from here.
+          `npm run disconnect` stays the repair tool for that case (SECURITY §5.3), and the
+          asymmetry holds: Connect refuses against a core that is not answering, Disconnect never
+          asks.
+          **Three moves, each forced by the deck becoming a second reader.** `StatuslinePatcher`
+          and its Python block moved from `scripts/` into `core/adapters/statusline/`, because
+          `main.ts` importing from `scripts/` is the dependency rule backwards and the port's own
+          header said so. `unifiedDiff` moved to `contracts/`, because `tsconfig.app.json` cannot
+          see `core/`. And `INGEST_KEY_ENV_VAR` moved out of `ingest-key.ts` — G.44 — because that
+          file reads the key off the disk, and `keybinding-plan.ts` had been holding the
+          `'use client'` boundary with a **type-only import** that this task turned into a value
+          one. `npm run check` and both typechecks stayed green; `next build` is what refused.
+          Three sabotages on the smoke and one on the unit suite, each watched to fail (G.43). The
+          LF sabotage found a check that could not see G.13's own bug: "contains a CRLF" passed on
+          a whole-file LF rewrite, because the trailing one survived. It counts now.
+          Live on this machine the panel's honest answer is "nothing to do" — connected since
+          P1-T11, four unchanged lines and no write button. The reverse plan is the one with
+          something to say, and it was read, not pressed.
+        security: [SEC-FS-3, SEC-OPS-2, SEC-ING-3, SEC-PROC-3, SEC-DATA-4]
 
   - id: P5a
     name: Terminal grid

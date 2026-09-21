@@ -205,3 +205,16 @@ export const CORE_DOCTOR_PATH = `${CORE_PREFIX}doctor`;
 export const CORE_UPDATE_PATH = `${CORE_PREFIX}update`;
 /** One session by SHORT id, or `{subscription, all: true}` — and `--all` skips what has finished. */
 export const CORE_RESPAWN_PATH = `${CORE_PREFIX}sessions/respawn`;
+
+/**
+ * Connect and Disconnect — `GET` for the plan, `POST` to write it (P4-T6, D13, SEC-FS-3).
+ *
+ * One path and two methods, exactly as `/keybindings` is, because the promise is the same one: the
+ * diff is shown by something that cannot write, and the thing that writes re-plans from disk. The
+ * browser sends a `direction` and nothing else — no path, no content, no subscription.
+ *
+ * Core answers it, so a core that is down cannot be disconnected from here. That is not a gap this
+ * panel can close: `npm run disconnect` is the repair tool for that case and always was
+ * (SECURITY.md §5.3 — a repair tool that needs the broken thing to work is not a repair tool).
+ */
+export const CORE_CONNECT_PATH = `${CORE_PREFIX}connect`;

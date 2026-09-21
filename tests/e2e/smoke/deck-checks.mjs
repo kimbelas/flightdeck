@@ -816,10 +816,16 @@ export async function installChecks(page, report, core) {
   report.check('the panel draws the fields doctor reported', fields);
 
   // The SEC-DATA-2 assertion, made on what is RENDERED rather than on what was sent.
-  const text = (await panel.allTextContents()).join(' ');
+  //
+  // Scoped to doctor’s OWN fields since P4-T6, because the Connect panel now shares this section
+  // and renders config paths on purpose — they are what the owner approves a write to. The claim
+  // was always about what `claude doctor` printed; this is that claim, spelled so that a sibling
+  // cannot make it pass or fail for a reason it never meant.
+  const text = (await panel.locator('.install-fields').allTextContents()).join(' ');
   report.check(
-    'and no filesystem path — doctor prints one with the account name in it (F.10.1)',
-    !/[A-Za-z]:\\/u.test(text) && !text.includes('AppData'),
+    'doctor’s fields render no filesystem path — it prints one with the account name (F.10.1)',
+    text !== '' && !/[A-Za-z]:\\/u.test(text) && !text.includes('AppData'),
+    text.slice(0, 90),
   );
   report.check(
     'it says auto-updates are on, so the update button reads as a check rather than a chore',
