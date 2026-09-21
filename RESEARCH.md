@@ -3281,3 +3281,74 @@ simpler and unambiguous when one project is imported, which is what the checks u
 `14 sessions outside every imported folder` of 16, and focusing it narrowed the list to 2 while the
 header still said 16. `groundwork` was imported for one reading — `coach gates 8 · denies 5 · asks
 1`, which is exactly what its `gates.json` contains — and forgotten again.
+
+### G.47 Eight fields, seven sources, and one that had none (P3-T5, 2026-09-21)
+
+Every field SPEC §5.1(b) asks for was traced to a place in a real transcript before it was typed.
+Measured on this machine's own files, `claude-365` plus `claude-isg`.
+
+| field | source | this repository's slug |
+| --- | --- | --- |
+| sessions | one `.jsonl` per session, both config dirs | 68 |
+| cost | `costUSD` on assistant records, summed per subscription | 365 and isg both non-zero |
+| tools | `tool_use` blocks by `name` | `Read`, `Bash`, `Edit` lead |
+| skills | `Skill` tool calls — the only trace a skill leaves | `ship`, `run` |
+| subagents | **no source** — see below | — |
+| files | `Read`/`Edit`/`Write` targets | — |
+| median context | `message.usage`, per session's PEAK | — |
+| compactions | `isCompactSummary` | 0, a real answer |
+
+**The seventh field had no source until `message.usage` turned up on every assistant record.**
+"Median context reached" reads like something a transcript reports and nothing reports it. What is
+there is `usage` on each assistant message, so the peak is derivable per session; the median is
+taken over SESSIONS rather than over turns, because the question is how close the work in a folder
+gets to the window, and a median over turns is dominated by the cheap turns at the start of each
+one.
+
+**The eighth field named something that is not in a transcript.** `agent-name` holds the session's
+`--name` — `flightdeck` 583 times here — not a subagent. D54 has the argument and the panel says
+"session names".
+
+**Cost: 90 MB, 68 sessions, 976 ms for this repository; 2 ms on the second press.** The
+single-slug detail is 42 files, 83.7 MB, 30 058 lines in 1 149 ms — 73 MB/s. Nothing new was
+needed to read a transcript: `TranscriptFile.read` caps a slice at 1 MB and `TranscriptTail`
+already assembles lines across slice boundaries, so the largest single file here (21.7 MB) is
+read in about 22 bounded slices rather than one 22 MB allocation.
+
+**And the worst case is four times what the estimate said, which only running it showed.** The
+estimate was "the biggest slug on this machine is 201 MB, so ~2.8 s". It was taken over
+`.claude-365` alone. A READING is of both config dirs, and the biggest project is `xpert-new`:
+75 transcripts in isg plus 10 in 365, **423 MB in 9 933 ms** against the real core. So the panel's
+warning — "tens of megabytes and about a second" — was an underestimate by ten times, on the very
+project the owner would press it on first. **A button whose warning understates the cost is worse
+than a button with no warning**, because the warning is the reason somebody decides to press it.
+It now says hundreds of megabytes and up to ten seconds.
+
+Two other things the real read showed that no fixture would have: `medianPeakContextTokens` is
+376k for that project (the window is being filled, which is what the field was for), and a file
+entry can be an absolute path into a config directory — `…\.claude-isg\projects\…\memory\
+MEMORY.md`, read 20 times — so `.observed-count` clips at 24em with the whole value in `title`.
+The `session names` label wrapped onto two lines at `flex: 0 0 5.5em` while the other three did
+not; 8em fixes it. None of that is visible in a 200-line fixture.
+
+**Four sabotages, each watched to land and then to fail** (G.38's rule).
+
+| sabotage | what failed |
+| --- | --- |
+| the reading outlives the folder's withdrawal | smoke: `the reading did not survive the withdrawal — the button is back, unpressed` |
+| draw only the first subscription's share | smoke: `and BOTH subscriptions, each with its own cost` |
+| draw the reading above the map | smoke: `the configured map and the observed reading sit side by side, in that order`, detail `observed then map` |
+| read every project's transcripts when the registry loads | smoke: three checks, led by `nothing is read before the panel is even open` — detail `3 reads so far` |
+
+The fourth is the one worth keeping: turning the button back into a poll fails the check that says
+nothing was read, AND the check that says the panel explains the cost, AND the withdrawal check —
+because all three are statements about a read nobody asked for. A single check on the button's
+click handler would have passed under it.
+
+**A shared CSS class made an existing check ambiguous, and it failed loudly rather than quietly.**
+The new panel first reused `.project-map` for its frame, which is a `<details>` that looks the same.
+`project-checks.mjs` then counted two workflow maps where it expects one, and
+`page.locator('.project-map > summary')` threw strict-mode with two matches. Splitting the frame
+into `.project-detail` and keeping `.project-map` for the map alone is the fix: **a class name is
+part of the test surface**, and widening one silently is how a check starts passing about the wrong
+element. Playwright's strict mode is what turned this into a stack trace instead of a green run.

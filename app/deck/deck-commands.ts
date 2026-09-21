@@ -57,6 +57,15 @@ export interface DeckActions {
   readonly onImportProject: (path: string) => void;
   readonly onForgetProject: (path: string) => void;
   /**
+   * Reading one folder's transcripts — P3-T5, and deliberately NOT a palette entry.
+   *
+   * Every verb here that is one is cheap. This one walks every transcript of a folder in both
+   * subscriptions — 90 MB and about a second for this repository's own — so it belongs where the
+   * sentence explaining that cost is, which is the row. A fuzzy search that could start it by
+   * accident would be a second of work nobody asked for and no way to see why.
+   */
+  readonly onObserveProject: (path: string) => void;
+  /**
    * The three preset verbs — P4-T1.
    *
    * On this interface rather than threaded into the projects panel on their own, because that is

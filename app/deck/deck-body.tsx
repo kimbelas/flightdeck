@@ -197,12 +197,14 @@ function DeckProjects({
           activity: scope.activity(state.rows),
           current: project.key,
           unassigned: scope.unassigned(state.rows),
+          observed: state.observed,
         })
       }
       disabled={!state.coreUp}
       onImport={actions.onImportProject}
       onForget={actions.onForgetProject}
       onChoose={project.choose}
+      onObserve={actions.onObserveProject}
       presets={actions}
     />
   );

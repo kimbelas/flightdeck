@@ -20,6 +20,7 @@ import type { LaunchPreset, PresetRefusal } from '../../contracts/launch-preset.
 import type { ProjectStatus, StackLabel } from '../../contracts/project-status.ts';
 import type { ImportRefusal, ProjectRecord } from '../../contracts/project.ts';
 import { projectKey } from '../../contracts/project.ts';
+import type { ObservedBehaviour } from '../../contracts/observed-behaviour.ts';
 import { coachPlanUrl, type ProjectGates } from '../../contracts/project-gates.ts';
 import { NO_ACTIVITY, type ProjectActivity } from './project-scope.ts';
 import type { WorkflowMap } from '../../contracts/workflow-map.ts';
@@ -95,6 +96,15 @@ export interface ProjectLine {
   readonly gates: ProjectGates | undefined;
   /** Coach's page for this project. Always present — it is a URL, not a claim that coach is up. */
   readonly coachUrl: string;
+  /**
+   * What Claude actually did here, or `undefined` — P3-T5.
+   *
+   * Three states rather than two, which is why `observedAsked` is beside it: absent means nobody
+   * pressed the button, present-and-`undefined` means a 90 MB read is in flight, and a reading is
+   * an answer. Same shape as a session preview's, for the same reason.
+   */
+  readonly observed: ObservedBehaviour | undefined;
+  readonly observedAsked: boolean;
 }
 
 /**
@@ -119,6 +129,8 @@ export interface ProjectsInput {
   readonly current?: string | undefined;
   /** Sessions in no imported folder at all. Drawn beside "All projects", never hidden. */
   readonly unassigned?: number;
+  /** Transcript readings, keyed by `projectKey` — P3-T5. A key absent means nobody asked. */
+  readonly observed?: Readonly<Record<string, ObservedBehaviour | undefined>>;
 }
 
 /** What a repository with nothing outstanding says. Named, because blank would read as unread. */
@@ -147,6 +159,7 @@ export class ProjectsViewModel {
   private readonly activity: Readonly<Record<string, ProjectActivity>>;
   private readonly current: string | undefined;
   private readonly unassignedCount: number;
+  private readonly observed: Readonly<Record<string, ObservedBehaviour | undefined>>;
 
   constructor(input: ProjectsInput) {
     this.projects = input.projects;
@@ -158,6 +171,7 @@ export class ProjectsViewModel {
     this.activity = input.activity ?? {};
     this.current = input.current;
     this.unassignedCount = input.unassigned ?? 0;
+    this.observed = input.observed ?? {};
   }
 
   /** Whether the deck is showing every session. The state it starts in, and the one to return to. */
@@ -204,6 +218,8 @@ export class ProjectsViewModel {
         isCurrent: this.current === key,
         gates: this.maps[key]?.gates,
         coachUrl: coachPlanUrl(project.name),
+        observed: this.observed[key],
+        observedAsked: key in this.observed,
       };
     });
   }

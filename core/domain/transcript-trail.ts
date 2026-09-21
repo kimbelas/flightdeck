@@ -111,11 +111,25 @@ function read(line: string): TranscriptRecord | undefined {
  * non-consecutively, where the run-length collapse below could not reach them.
  */
 function rowOf(record: TranscriptRecord, now: number): string | undefined {
+  if (record.kind === 'tool') return row(record.at, now, 'tool', record.tool);
+  if (record.kind === 'file') return row(record.at, now, 'file', record.path);
+  if (record.kind === 'away') return row(record.at, now, 'away', record.summary);
+  return sentenceRowOf(record, now);
+}
+
+/**
+ * The two rows whose text is a sentence rather than a name, and every kind that draws none.
+ *
+ * Split from `rowOf` when P3-T5 added two kinds and pushed one switch over the complexity limit.
+ * The seam is real rather than arbitrary: above are the rows that print a value, and here are the
+ * ones that have to compose one — plus the list of what a trail deliberately never shows, which is
+ * named case by case so a kind added later is a type error rather than a silent blank row.
+ */
+function sentenceRowOf(
+  record: Exclude<TranscriptRecord, { kind: 'tool' | 'file' | 'away' }>,
+  now: number,
+): string | undefined {
   switch (record.kind) {
-    case 'tool':
-      return row(record.at, now, 'tool', record.tool);
-    case 'file':
-      return row(record.at, now, 'file', record.path);
     case 'turn':
       return row(
         record.at,
@@ -130,12 +144,16 @@ function rowOf(record: TranscriptRecord, now: number): string | undefined {
         'pack',
         `compacted ${String(record.preTokens)} to ${String(record.postTokens)} tokens (${record.trigger})`,
       );
-    case 'away':
-      return row(record.at, now, 'away', record.summary);
+    // P3-T5's two join the four that were already here. A context reading is on every assistant
+    // turn, so a trail that drew them would be one row of "carrying 412k" per turn and nothing
+    // else; a scheduled fire belongs to the folder's history rather than to this session's last
+    // twenty rows (`ObservedTally` is what reads both).
     case 'prompt':
     case 'title':
     case 'agent':
     case 'cost':
+    case 'context':
+    case 'scheduled':
       return undefined;
   }
 }

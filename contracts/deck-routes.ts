@@ -185,6 +185,20 @@ export const CORE_PROJECT_MAP_PATH = `${CORE_PROJECTS_PATH}/map`;
 export const CORE_PRESETS_PATH = `${CORE_PROJECTS_PATH}/presets`;
 
 /**
+ * What Claude ACTUALLY did in one folder — `GET`, P3-T5, SPEC §5.1(b).
+ *
+ * The fifth project route and the only one that answers about ONE folder, because it is the only
+ * one whose cost is measured in seconds: every transcript of the folder in both subscriptions, 90
+ * MB and 976 ms for this repository's own, 423 MB and 9 933 ms for the biggest. Its three
+ * neighbours answer for the whole registry
+ * because each of them is milliseconds; this one would be that, times the registry, on one request.
+ *
+ * It takes `?path=` and the path is LOOKED UP in the registry rather than used — a folder nobody
+ * imported is a 404 and is never read (D26, SEC-FS-1).
+ */
+export const CORE_PROJECT_OBSERVED_PATH = `${CORE_PROJECTS_PATH}/observed`;
+
+/**
  * Removing one saved preset — `POST`, at its own literal path.
  *
  * Spelled here rather than composed at the call site, for `CORE_PROJECT_FORGET_PATH`'s reason: the

@@ -1755,7 +1755,74 @@ phases:
         security: [SEC-FS-1, SEC-PROC-5]
       - id: P3-T5
         title: Observed behaviour — aggregate both subscriptions' transcripts per slug (sessions, cost, tools, skills, files, compactions)
-        status: todo
+        status: done
+        done_on: 2026-09-21
+        deliverables:
+          [
+            contracts/observed-behaviour.ts,
+            contracts/transcript-drift.ts,
+            contracts/transcript-record.ts,
+            contracts/deck-routes.ts,
+            core/domain/observed-tally.ts,
+            core/domain/transcript-digest.ts,
+            core/domain/transcript-trail.ts,
+            core/application/observed-reader.ts,
+            core/http/observed-route.ts,
+            core/projects.ts,
+            app/deck/observed-slice.ts,
+            app/deck/observed-panel.tsx,
+            app/deck/projects-slice.ts,
+            app/deck/projects-panel.tsx,
+            app/deck/projects-view-model.ts,
+            app/deck/deck-state.ts,
+            app/deck/deck-store.ts,
+            app/deck/deck-commands.ts,
+            app/deck/deck-body.tsx,
+            app/deck/deck-view.tsx,
+            app/deck/workflow-map-panel.tsx,
+            app/globals.css,
+            tests/core/domain/observed-tally.test.ts,
+            tests/core/http/observed-route.test.ts,
+            tests/fixtures/transcript.test.ts,
+            tests/e2e/fixture-core.mjs,
+            tests/e2e/smoke/observed-checks.mjs,
+            DECISIONS.md D54,
+            RESEARCH.md G.47,
+          ]
+        notes: >-
+          SPEC §5.1(b)'s other half, beside P3-T3's workflow map and deliberately adjacent to it on
+          the row: the contrast between what Claude is CONFIGURED to do in a folder and what it
+          ACTUALLY did is the part nothing else shows, so the two are neighbouring `<details>` and
+          a smoke check asserts that order rather than only their existence.
+          **It is the widest read in the product, so it is a button.** 90 MB and 976 ms across 68
+          sessions for this repository's own folder — and 423 MB in 9 933 ms for `xpert-new`, the
+          owner's biggest, measured live. **That is four times the estimate, and only running it
+          showed it**: the estimate had taken the biggest slug in ONE config dir and a reading is
+          of both, so the panel's warning said "about a second" about a ten-second read (G.47).
+          It now says hundreds of megabytes and up to ten seconds. The panel opens with that
+          sentence, and the reading says what it did cost. Held five minutes on a signature of the
+          two transcript directories, so a second press is 2 ms, and re-asking is allowed because
+          "has anything happened since" is a real question. One project per request, unlike its
+          three neighbours, for the reason D54 gives.
+          **One of SPEC's eight fields names something that is not in a transcript.** `agent-name`
+          is the SESSION's name — `flightdeck` 583 times here, then `deck-demo`, `fd-pane-1` — not
+          a subagent. Subagent USE is reported, in `tools`, where `Agent` appears like any other
+          tool; WHICH subagent is `Agent`'s `input.subagent_type`, and tool input does not reach a
+          record (SEC-UI-2, whose one named exception is `skill`, added here so the skills field
+          has a source at all). So the panel says "session names" and D54 says why. G.43's rule a
+          third time: a task note is a hypothesis.
+          Nothing new was needed to read a transcript — `TranscriptFile.read` caps a slice at 1 MB
+          and `TranscriptTail` already assembles lines across slice boundaries, so the 21.7 MB
+          largest file is read in ~22 bounded slices. `unknownLines` rides along as SPEC §8 R2's
+          drift alarm over a whole folder: this is the widest read in the product, so a Claude Code
+          release that moves the transcript format shows up here first and in bulk.
+          **A shared CSS class made an existing check ambiguous, and Playwright's strict mode is
+          the only reason it was loud.** The panel first reused `.project-map` for its frame;
+          `project-checks.mjs` then counted two workflow maps and `.project-map > summary` threw on
+          two matches. A class name is part of the test surface, so the frame became
+          `.project-detail` and `.project-map` still means the map. Four sabotages, each watched to
+          land and then to fail — the one that turns the button back into a poll takes down three
+          checks at once, which is the shape of a property rather than of an assertion (G.47).
       - id: P3-T6
         title: By-project view, project groups, coach gates.json verdict deep link
         status: done

@@ -16,6 +16,8 @@
 // **Every string in here is model- or user-written text.** Titles, prompts, away summaries and tool
 // names are displayed as text and never interpreted (CODING-STANDARDS §11.3).
 
+import { isKnown } from './transcript-drift.ts';
+
 /** One model's slice of a `cost-state`. Claude Code computes the cost; nothing here recomputes it (D5). */
 export interface ModelSpend {
   readonly model: string;
@@ -74,61 +76,41 @@ export type TranscriptRecord =
       readonly at: number | undefined;
     }
   | { readonly kind: 'file'; readonly path: string; readonly at: number | undefined }
-  | { readonly kind: 'tool'; readonly tool: string; readonly at: number | undefined };
-
-/**
- * Record types seen on this machine — the P1-T7 survey of 315 transcripts, plus RESEARCH.md §C.
- *
- * This is not a list of what is parsed; it is a list of what has been **observed**, and most of it
- * is deliberately unread. Its only job is to separate "a record this build ignores" from "a record
- * this build has never seen", because those look identical at the parser and could not be less
- * alike: the first is 95 % of every transcript, and the second is the first sign that a Claude
- * Code update moved the format (SPEC §8 R2 — what `scripts/doctor` exists to catch).
- */
-export const KNOWN_RECORD_TYPES: readonly string[] = [
-  'agent-name',
-  'agent-setting',
-  'ai-title',
-  'artifact-autoreact-ledger',
-  'artifact-comment-monitor',
-  'assistant',
-  'atis-latch',
-  'attachment',
-  'bridge-session',
-  'continued-in',
-  'cost-state',
-  'custom-title',
-  'file-history-delta',
-  'file-history-snapshot',
-  'frame-link',
-  'last-prompt',
-  'mode',
-  'permission-mode',
-  'pr-link',
-  'pr-comment-monitor',
-  'queue-operation',
-  // A session whose `cwd` moved, and the worktree it was forked into. P3 wants both — they are
-  // the only in-transcript evidence that two sessions are the same piece of work in two places.
-  'relocated',
-  'worktree-state',
-  'system',
-  'user',
-];
-
-/** `system` subtypes seen. A new one is drift too — `system` is a bag, not a shape. */
-export const KNOWN_SYSTEM_SUBTYPES: readonly string[] = [
-  'agents_killed',
-  'away_summary',
-  'bridge_status',
-  'compact_boundary',
-  'informational',
-  'local_command',
-  'model_consent_fallback',
-  'model_refusal_fallback',
-  'scheduled_task_fire',
-  'stop_hook_summary',
-  'turn_duration',
-];
+  | {
+      readonly kind: 'tool';
+      readonly tool: string;
+      /**
+       * Which skill, when the tool was `Skill` — P3-T5.
+       *
+       * Skills leave no record type of their own. Measured over this repository's own transcripts:
+       * every skill invocation is a `Skill` tool call whose `input.skill` names it (run 11,
+       * ship 7, loop 4, capture 2, keybindings-help 1). So "skills triggered" is a projection of
+       * the tool list rather than a second source, and a skill that stops being a tool call stops
+       * being counted rather than being counted wrongly.
+       */
+      readonly skill: string | undefined;
+      /** See the `context` kind. Carried here too, because one line can be both. */
+      readonly contextTokens: number | undefined;
+      readonly at: number | undefined;
+    }
+  /**
+   * How much context an assistant turn actually used — P3-T5, SPEC §5.1(b)'s "median context".
+   *
+   * `message.usage` is on **every** assistant record (1 777 of 1 777, measured), and the context a
+   * turn was carrying is `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`.
+   * The alternative source was `compact_boundary.preTokens`, and this repository's own slug has
+   * **no compactions at all** — a median over an empty list is the sort of number that gets
+   * invented rather than measured.
+   *
+   * A kind of its own only for assistant lines with no `tool_use` in them; a line with both
+   * reports the tool and carries the tokens on it.
+   */
+  | { readonly kind: 'context'; readonly contextTokens: number; readonly at: number | undefined }
+  | {
+      /** `system`/`scheduled_task_fire` — a loop or cron firing in this folder (SPEC §5.1(b)). */
+      readonly kind: 'scheduled';
+      readonly at: number | undefined;
+    };
 
 export interface TranscriptLine {
   /** What this build reads out of the line, or `undefined` when it reads nothing out of it. */
@@ -151,14 +133,6 @@ export function readTranscriptLine(value: unknown): TranscriptLine {
   const type = fields === undefined ? undefined : stringAt(fields, 'type');
   if (fields === undefined || type === undefined) return { record: undefined, known: false };
   return { record: parseTranscriptRecord(value), known: isKnown(type, fields) };
-}
-
-function isKnown(type: string, fields: Readonly<Record<string, unknown>>): boolean {
-  if (!KNOWN_RECORD_TYPES.includes(type)) return false;
-  if (type !== 'system') return true;
-  const subtype = stringAt(fields, 'subtype');
-  // A `system` record with no subtype at all is a shape nobody has seen, so it is drift as well.
-  return subtype !== undefined && KNOWN_SYSTEM_SUBTYPES.includes(subtype);
 }
 
 /**
@@ -219,6 +193,9 @@ function parseSystem(fields: Readonly<Record<string, unknown>>): TranscriptRecor
       if (durationMs === undefined || messageCount === undefined) return undefined;
       return { kind: 'turn', durationMs, messageCount, at };
     }
+    // P3-T5. A loop or a cron firing here. Seven of them in this repository's own slug.
+    case 'scheduled_task_fire':
+      return { kind: 'scheduled', at };
     // A `system` record with no subtype at all; `isKnown` has already counted it as drift.
     case undefined:
     default:
@@ -249,17 +226,51 @@ function parseCompaction(
  * Only the tool's NAME. `input` carries the prompt, the command or the file being written, which is
  * the most sensitive field in the record and is never what a deck row needs (SEC-UI-2).
  */
+/**
+ * One assistant turn: which tool it called, which skill that was, and what it cost in context.
+ *
+ * Three facts off one line, because they are one line's worth: a `tool_use` block names the tool
+ * and — for `Skill` — the skill, while `message.usage` beside it says how much context the turn
+ * was carrying. A turn with no tool call still reports its context, which is the `context` kind.
+ */
 function parseAssistant(fields: Readonly<Record<string, unknown>>): TranscriptRecord | undefined {
   const message = asRecord(fields['message']);
+  const at = instantAt(fields, 'timestamp');
+  const contextTokens = contextOf(asRecord(message?.['usage']));
   const content: unknown = message?.['content'];
   if (!Array.isArray(content)) return undefined;
+
   for (const item of content) {
     const entry = asRecord(item);
     if (entry === undefined || stringAt(entry, 'type') !== 'tool_use') continue;
     const tool = stringAt(entry, 'name');
-    if (tool !== undefined) return { kind: 'tool', tool, at: instantAt(fields, 'timestamp') };
+    if (tool === undefined) continue;
+    return { kind: 'tool', tool, skill: skillOf(tool, entry), contextTokens, at };
   }
-  return undefined;
+  return contextTokens === undefined ? undefined : { kind: 'context', contextTokens, at };
+}
+
+/** The skill a `Skill` call names. Anything else is not a skill call and answers `undefined`. */
+function skillOf(tool: string, entry: Readonly<Record<string, unknown>>): string | undefined {
+  if (tool !== 'Skill') return undefined;
+  const input = asRecord(entry['input']);
+  return input === undefined ? undefined : stringAt(input, 'skill');
+}
+
+/**
+ * What the turn was carrying, in tokens.
+ *
+ * The three that make up the window: what was sent, what was read from cache and what was written
+ * to it. `output_tokens` is deliberately not in the sum — it is what came back, not what was
+ * held. `undefined` when there is no usage at all rather than `0`, because a turn that reported
+ * nothing and a turn that carried nothing are different things and only one of them is possible.
+ */
+function contextOf(usage: Readonly<Record<string, unknown>> | undefined): number | undefined {
+  if (usage === undefined) return undefined;
+  const parts = ['input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens'];
+  const counted = parts.map((name) => countAt(usage, name));
+  if (counted.every((value) => value === undefined)) return undefined;
+  return counted.reduce((sum: number, value) => sum + (value ?? 0), 0);
 }
 
 function parseCost(fields: Readonly<Record<string, unknown>>): TranscriptRecord {

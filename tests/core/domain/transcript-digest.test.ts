@@ -68,8 +68,16 @@ describe('TranscriptDigest', () => {
   });
 
   it('does not blank a good timestamp with a record that has none', () => {
-    const digest = TranscriptDigest.EMPTY.with({ kind: 'tool', tool: 'Bash', at: 500 }).with({
+    const digest = TranscriptDigest.EMPTY.with({
       kind: 'tool',
+      skill: undefined,
+      contextTokens: undefined,
+      tool: 'Bash',
+      at: 500,
+    }).with({
+      kind: 'tool',
+      skill: undefined,
+      contextTokens: undefined,
       tool: 'Read',
       at: undefined,
     });

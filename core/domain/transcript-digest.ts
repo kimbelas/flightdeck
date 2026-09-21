@@ -186,6 +186,18 @@ interface Fields {
  * which is the whole value of the union (R12).
  */
 function fieldsFor(record: TranscriptRecord, current: Readonly<Fields>): Fields {
+  // P3-T5's two, before the three-way split below. They are about a FOLDER over weeks — how much
+  // context turns reach, and how often something fires on a schedule — and this digest is about
+  // one live session's row. `ObservedTally` is what reads them.
+  if (record.kind === 'context' || record.kind === 'scheduled') return {};
+  return sessionFieldsFor(record, current);
+}
+
+/** The three groups the header describes, over the kinds that are about one session. */
+function sessionFieldsFor(
+  record: Exclude<TranscriptRecord, { kind: 'context' | 'scheduled' }>,
+  current: Readonly<Fields>,
+): Fields {
   switch (record.kind) {
     case 'title':
     case 'agent':

@@ -17,6 +17,7 @@
 import { useState, type JSX, type SyntheticEvent } from 'react';
 import type { PresetDraft, PresetLaunch, PresetRef } from '../../contracts/launch-preset.ts';
 import { PROJECT_PATH_ID } from './deck-keyboard.ts';
+import { ObservedPanel } from './observed-panel.tsx';
 import { PresetsPanel } from './presets-panel.tsx';
 import type { ProjectLine, ProjectsViewModel } from './projects-view-model.ts';
 import { WorkflowMapPanel } from './workflow-map-panel.tsx';
@@ -35,6 +36,8 @@ interface ProjectsPanelProps {
   readonly onForget: (path: string) => void;
   /** Points the deck at one project, or at all of them with `undefined` — P3-T6. */
   readonly onChoose: (key: string | undefined) => void;
+  /** Reads one folder's transcripts — P3-T5. On a press and at no other time. */
+  readonly onObserve: (path: string) => void;
   readonly presets: PresetActions;
 }
 
@@ -44,6 +47,7 @@ export function ProjectsPanel({
   onImport,
   onForget,
   onChoose,
+  onObserve,
   presets,
 }: ProjectsPanelProps): JSX.Element {
   return (
@@ -66,6 +70,7 @@ export function ProjectsPanel({
               disabled={disabled}
               onForget={onForget}
               onChoose={onChoose}
+              onObserve={onObserve}
               presets={presets}
             />
           ))}
@@ -151,6 +156,7 @@ interface ProjectRowProps {
   readonly disabled: boolean;
   readonly onForget: (path: string) => void;
   readonly onChoose: (key: string | undefined) => void;
+  readonly onObserve: (path: string) => void;
   readonly presets: PresetActions;
 }
 
@@ -162,7 +168,14 @@ interface ProjectRowProps {
  * buy nothing and would teach the owner to click through dialogues. `title` carries the full path
  * for a folder whose name is the interesting part and whose path is long.
  */
-function ProjectRow({ line, disabled, onForget, onChoose, presets }: ProjectRowProps): JSX.Element {
+function ProjectRow({
+  line,
+  disabled,
+  onForget,
+  onChoose,
+  onObserve,
+  presets,
+}: ProjectRowProps): JSX.Element {
   return (
     <li className={line.isCurrent ? 'project is-current' : 'project'}>
       <ProjectFocus line={line} onChoose={onChoose} />
@@ -181,6 +194,32 @@ function ProjectRow({ line, disabled, onForget, onChoose, presets }: ProjectRowP
       <ProjectMeta line={line} />
       <ProjectSessions line={line} />
       <ProjectGatesLine line={line} />
+      <ProjectPanels line={line} disabled={disabled} onObserve={onObserve} presets={presets} />
+    </li>
+  );
+}
+
+/**
+ * The three things you open when the summary line is not enough — the presets, what Claude is
+ * CONFIGURED to do here, and what it ACTUALLY did.
+ *
+ * One component because they are one idea, and because the third of them is what pushed
+ * `ProjectRow` over its line limit. The order is the argument: SPEC §5.1(b)'s whole point is
+ * the contrast between the map and the reading, so the two are adjacent.
+ */
+function ProjectPanels({
+  line,
+  disabled,
+  onObserve,
+  presets,
+}: {
+  readonly line: ProjectLine;
+  readonly disabled: boolean;
+  readonly onObserve: (path: string) => void;
+  readonly presets: PresetActions;
+}): JSX.Element {
+  return (
+    <>
       <PresetsPanel
         model={line.presets}
         projectPath={line.path}
@@ -191,7 +230,15 @@ function ProjectRow({ line, disabled, onForget, onChoose, presets }: ProjectRowP
         onForget={presets.onForgetPreset}
       />
       <WorkflowMapPanel model={line.map} project={line.name} />
-    </li>
+      <ObservedPanel
+        path={line.path}
+        name={line.name}
+        reading={line.observed}
+        asked={line.observedAsked}
+        disabled={disabled}
+        onRead={onObserve}
+      />
+    </>
   );
 }
 

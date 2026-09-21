@@ -37,6 +37,10 @@ import { ProjectStatusRoute } from './http/project-status-route.ts';
 import { ProjectsRoute } from './http/projects-route.ts';
 import { WorkflowMapRoute } from './http/workflow-map-route.ts';
 import type { Route } from './http/route.ts';
+import { ObservedReader } from './application/observed-reader.ts';
+import { ObservedRoute, type ObservedSource } from './http/observed-route.ts';
+import { FsTranscriptFile } from './adapters/node/fs-transcript-file.ts';
+import { projectKey } from '../contracts/project.ts';
 import type { Clock } from './ports/clock.ts';
 import type { Logger } from './ports/logger.ts';
 import type { ProcessRunner } from './ports/process-runner.ts';
@@ -107,10 +111,42 @@ export function projectRoutes(parts: ProjectParts): readonly Route[] {
     new ForgetProjectRoute(registry),
     new ProjectStatusRoute(buildStatusReader(registry, files, locator, parts)),
     new WorkflowMapRoute(buildMapReader(registry, files, locator, parts)),
+    // P3-T5. One project per request, unlike its three neighbours — see the route's header.
+    new ObservedRoute(buildObservedSource(registry, files, parts)),
     new PresetsRoute(presets),
     new SavePresetRoute(presets),
     new ForgetPresetRoute(presets),
   ];
+}
+
+/**
+ * What Claude actually did in one folder — P3-T5.
+ *
+ * The registry is what turns a path into a project, and it is the SAME registry the import route
+ * wrote to: a path nobody imported has no record here and the route answers 404 without reading
+ * anything. `registry.policy()` is passed rather than a policy built here for the same reason —
+ * "which folders may be read" is not a question two objects may answer differently.
+ */
+function buildObservedSource(
+  registry: ProjectRegistry,
+  files: FsProjectFiles,
+  parts: ProjectParts,
+): ObservedSource {
+  const reader = new ObservedReader({
+    files,
+    transcripts: new FsTranscriptFile(),
+    policy: registry.policy(),
+    configDirs: {
+      '365': parts.install.configDirFor('365'),
+      isg: parts.install.configDirFor('isg'),
+    },
+    clock: parts.clock,
+    logger: parts.logger,
+  });
+  return {
+    find: (path) => registry.list().find((record) => projectKey(record.path) === projectKey(path)),
+    read: (project) => reader.read(project),
+  };
 }
 
 /**

@@ -31,7 +31,7 @@ export function WorkflowMapPanel({ model, project }: WorkflowMapPanelProps): JSX
   // rather than an empty one, which is the same rule `ProjectMeta` follows for git.
   if (!model.isKnown) return null;
   return (
-    <details className="project-map">
+    <details className="project-detail project-map">
       <summary aria-label={`workflow map for ${project}`}>
         <Summary model={model} />
       </summary>

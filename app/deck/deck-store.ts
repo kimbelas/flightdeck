@@ -96,7 +96,12 @@ export class DeckStore {
   private readonly previews: PreviewSlice;
   /** The fifth — see `presets-slice.ts` (P4-T1). */
   private readonly presets: PresetsSlice;
-  /** The registry and its readings, lifted out for the line count when the fifth arrived. */
+  /**
+   * The registry and its readings, lifted out for the line count when the fifth arrived.
+   *
+   * It owns the sixth fetch path too, as of P3-T5: a transcript reading is a reading OF a
+   * project, and it is withdrawn by the same act that withdraws the folder.
+   */
   private readonly projects: ProjectsSlice;
   /** The preview's twin, split out for the same reason — see `detail-slice.ts` (P4-T2). */
   private readonly details: DetailSlice;
@@ -338,6 +343,14 @@ export class DeckStore {
     ]);
   }
 
+  /**
+   * Reads one folder's transcripts — P3-T5. See `ObservedSlice` for the rules.
+   *
+   * On a press and at no other time: 90 MB and ~1 s for this repository's own folder, which is the
+   * same bargain `preview` makes about `claude logs`.
+   */
+  public observe = (path: string): Promise<void> => this.projects.observe(path);
+
   /** Stack and git for every imported folder — P3-T2. See `ProjectsSlice` for the rules. */
   public loadProjectStatuses = (): Promise<void> => this.projects.loadStatuses();
 
@@ -352,7 +365,13 @@ export class DeckStore {
     return imported;
   }
 
-  /** Withdraws one folder, taking the read permission — and its presets — with it. */
+  /**
+   * Withdraws one folder, taking the read permission — and its presets and its reading — with it.
+   *
+   * The reading is dropped inside `ProjectsSlice.forget`, for the reason P3-T2 gave about the
+   * git line: a cache that outlived the permission would be the deck showing what it is no
+   * longer allowed to look at.
+   */
   public async forgetProject(path: string): Promise<void> {
     if (await this.projects.forget(path)) await this.loadProjects();
   }

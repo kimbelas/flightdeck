@@ -370,6 +370,9 @@ export class FixtureCore {
     if (request.method === 'GET' && path === '/projects/map') {
       return [200, { maps: [...this.projects.values()].map((held) => workflowMap(held)) }];
     }
+    if (request.method === 'GET' && path === '/projects/observed') {
+      return this.observed(url.searchParams.get('path'));
+    }
     if (request.method === 'GET' && path === '/projects/presets') {
       return [200, { presets: this.presetList() }];
     }
@@ -398,6 +401,20 @@ export class FixtureCore {
     const project = { path, name: projectName(path), importedAt: Date.now() };
     this.projects.set(projectKey(path), project);
     return [201, { project }];
+  }
+
+  /**
+   * `GET /projects/observed?path=` — P3-T5, and the registry lookup is the point.
+   *
+   * `ObservedRoute` answers 404 for a folder nobody imported rather than reading it, which is
+   * SEC-FS-1 at the route rather than at the filesystem. The double repeats that rule so the
+   * deck's own half — drop the key, put the button back — is reachable from the smoke.
+   */
+  observed(asked) {
+    if (asked === null || asked === '') return [400, { error: 'bad request' }];
+    const project = this.projects.get(projectKey(asked));
+    if (project === undefined) return [404, { error: 'not imported' }];
+    return [200, observedBehaviour(project)];
   }
 
   forget(raw) {
@@ -1084,6 +1101,53 @@ function workflowMap(project) {
       ],
     },
     configured: true,
+  };
+}
+
+/**
+ * One folder's transcripts, added up — P3-T5, SPEC §5.1(b).
+ *
+ * Shaped on the real reading this repository's own slug gave (RESEARCH.md G.47) and cut to
+ * what the panel draws. Two subscriptions on purpose: a folder worked on from both accounts is
+ * the case Flightdeck exists for, and a single share would let a panel that only ever drew the
+ * first one pass.
+ *
+ * `unknownLines` is non-zero on purpose too — it is SPEC §8 R2's drift alarm, and an alarm
+ * that is never drawn in any test is an alarm nobody would notice had stopped working.
+ */
+function observedBehaviour(project) {
+  return {
+    path: project.path,
+    at: Date.now(),
+    tookMs: 1149,
+    sessions: 42,
+    sessionsThisWeek: 9,
+    bytesRead: 83_700_000,
+    shares: [
+      { subscription: '365', sessions: 31, costUsd: 18.4 },
+      { subscription: 'isg', sessions: 11, costUsd: 6.05 },
+    ],
+    tools: [
+      { name: 'Read', count: 1204 },
+      { name: 'Bash', count: 883 },
+      { name: 'Edit', count: 512 },
+    ],
+    skills: [
+      { name: 'ship', count: 27 },
+      { name: 'run', count: 14 },
+    ],
+    sessionNames: [
+      { name: 'ledger', count: 583 },
+      { name: 'fd-t5-probe', count: 6 },
+    ],
+    files: [
+      { name: 'app/deck/deck-store.ts', count: 61 },
+      { name: 'ROADMAP.yaml', count: 44 },
+    ],
+    medianPeakContextTokens: 137_000,
+    compactions: 3,
+    scheduledFires: 2,
+    unknownLines: 5,
   };
 }
 

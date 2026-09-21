@@ -266,13 +266,21 @@ function lifecycleActions(
  */
 function projectActions(
   store: DeckStore,
-): Pick<DeckActions, 'onImportProject' | 'onForgetProject' | 'onSavePreset' | 'onForgetPreset'> {
+): Pick<
+  DeckActions,
+  'onImportProject' | 'onForgetProject' | 'onObserveProject' | 'onSavePreset' | 'onForgetPreset'
+> {
   return {
     onImportProject: (path: string) => {
       void store.importProject(path);
     },
     onForgetProject: (path: string) => {
       void store.forgetProject(path);
+    },
+    // P3-T5, and the same bargain `onPreview` above makes: this walks every transcript of the
+    // folder in both subscriptions, so it happens on a press and at no other time.
+    onObserveProject: (path: string) => {
+      void store.observe(path);
     },
     onSavePreset: (draft) => {
       void store.savePreset(draft);

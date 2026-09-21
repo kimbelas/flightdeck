@@ -8,8 +8,8 @@
 // session that has not spent anything.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { KNOWN_RECORD_TYPES } from '../../contracts/transcript-drift.ts';
 import {
-  KNOWN_RECORD_TYPES,
   parseTranscriptRecord,
   readTranscriptLine,
   type TranscriptRecord,
@@ -44,6 +44,37 @@ function typeOf(value: unknown): string | undefined {
 /** The `trackedFileBackups` map on a `file-history-snapshot`, or an empty one. */
 function backupsOf(value: unknown): Readonly<Record<string, unknown>> {
   return fieldsOf(fieldsOf(fieldsOf(value)['snapshot'])['trackedFileBackups']);
+}
+
+/**
+ * Every string a captured `tool_use` block carries in its `input` — the text that must not leak.
+ *
+ * Read off the capture rather than listed here, so a fixture refreshed with a new tool brings its
+ * own input along and the check widens with it (the `capture` skill's whole bargain).
+ */
+/** Every string of six characters or more anywhere inside `value`, however deeply nested. */
+function stringsIn(value: unknown): readonly string[] {
+  if (typeof value === 'string') return value.length >= 6 ? [value] : [];
+  if (Array.isArray(value)) return value.flatMap(stringsIn);
+  if (typeof value !== 'object' || value === null) return [];
+  return Object.values(value).flatMap(stringsIn);
+}
+
+function toolInputsInCapture(): readonly string[] {
+  const found: string[] = [];
+  for (const record of RECORDS) {
+    const content = fieldsOf(fieldsOf(record)['message'])['content'];
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      const entry = fieldsOf(block);
+      if (entry['type'] !== 'tool_use') continue;
+      // NESTED, not just the top level: the first version of this read `Object.values(input)` and
+      // found nothing, because the capture's inputs hold their strings inside arrays and objects.
+      // A check that looked right and asserted over an empty list is the trap G.38 names.
+      found.push(...stringsIn(entry['input']));
+    }
+  }
+  return found;
 }
 
 function kindsOf(kind: TranscriptRecord['kind']): readonly TranscriptRecord[] {
@@ -158,7 +189,7 @@ describe('every captured shape through the real parser', () => {
     }
   });
 
-  it('reads the tool name off an assistant turn and nothing else from it', () => {
+  it('reads the tool name off an assistant turn, and no part of its input but a skill name', () => {
     const tools = kindsOf('tool');
 
     expect(tools.length).toBeGreaterThan(0);
@@ -166,9 +197,29 @@ describe('every captured shape through the real parser', () => {
       if (record.kind !== 'tool') continue;
       expect(record.tool).toBeTypeOf('string');
       // The tool INPUT is the most sensitive field in the record — a command, a prompt, a file
-      // being written — and never reaches a record (SEC-UI-2).
-      expect(Object.keys(record)).toEqual(['kind', 'tool', 'at']);
+      // being written — and none of it reaches a record (SEC-UI-2). `skill` is the one named
+      // exception, added in P3-T5: a `Skill` call's `input.skill` is the name of a local skill
+      // and is the only trace a skill leaves anywhere, which is what SPEC §5.1(b) asks to count.
+      expect(Object.keys(record)).toEqual(['kind', 'tool', 'skill', 'contextTokens', 'at']);
+      // Nothing that came out of `input` except that name. A Bash call is the sharp case: its
+      // input is a command line, and the record must not be carrying one.
+      if (record.tool !== 'Skill') expect(record.skill).toBeUndefined();
     }
+  });
+
+  /**
+   * The same claim, made against the bytes rather than against the shape.
+   *
+   * A key list says what the record HAS; this says that what it has is not the input. The captured
+   * transcript carries real tool inputs — a command, a file path, a prompt — and none of their text
+   * may appear in any value of any record this build produces (SEC-UI-2, SEC-DATA-1).
+   */
+  it('carries no tool input text at all, checked against the capture', () => {
+    const inputs = toolInputsInCapture();
+    expect(inputs.length).toBeGreaterThan(0);
+
+    const rendered = JSON.stringify(kindsOf('tool'));
+    for (const input of inputs) expect(rendered).not.toContain(input);
   });
 
   it('reads a touched file off a file-history-delta', () => {
