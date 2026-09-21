@@ -22,13 +22,17 @@ export async function groupChecks(page, report, core) {
   // Two saved presets under one name, standing for something the owner did last week.
   core.seedGroup(PROJECT, 'morning');
   await page.reload();
-  const ready = await waitFor(async () => (await page.locator('.palette').count()) === 0, {
+  // **Clicked, not merely waited for.** `Ctrl+K` is a capturing WINDOW listener, and a page that
+  // has just reloaded has focus nowhere the listener can be reached from — so the palette never
+  // opened, `.palette-input` never appeared, and the fill threw thirty seconds later. It passed
+  // locally against the production bundle and failed in CI against `next dev`, which is exactly
+  // the split `npm run smoke:dev` exists to catch.
+  const ready = await waitFor(async () => (await page.locator('main.deck').count()) === 1, {
     timeout: 20_000,
   });
-  if (!ready) {
-    report.check('the deck came back after a reload', false);
-    return;
-  }
+  report.check('the deck came back after a reload', ready);
+  if (!ready) return;
+  await page.locator('main.deck').click({ position: { x: 5, y: 5 } });
 
   if (!(await paletteChecks(page, report))) return;
   await pressChecks(page, report, core);
@@ -37,7 +41,7 @@ export async function groupChecks(page, report, core) {
 
 /** The entry D17 put in the palette, and the hint that says what pressing it will cost. */
 async function paletteChecks(page, report) {
-  await openPalette(page, 'morn');
+  if (!(await openPalette(page, report, 'morn'))) return false;
   const list = await paletteText(page);
   const offered = /launch morning/iu.test(list);
   report.check('the palette offers the group, labelled to launch it', offered, list);
@@ -92,7 +96,7 @@ async function refusalChecks(page, report, core) {
   const before = core.groupPresses.length;
   core.presets.clear();
 
-  await openPalette(page, 'morn');
+  if (!(await openPalette(page, report, 'morn'))) return;
   await page.keyboard.press('Enter');
 
   const banner = page.locator('[data-group-banner]');
@@ -106,10 +110,23 @@ async function refusalChecks(page, report, core) {
   report.check('and core recorded no press for it', core.groupPresses.length === before);
 }
 
-async function openPalette(page, query) {
+/**
+ * Ctrl+K, and a REPORTED failure rather than a thrown one.
+ *
+ * A `fill` on a locator that never appears throws thirty seconds later and takes the whole run
+ * down with it — which is what happened, and which hid every check after this group. The scoreboard
+ * exists so one failure does not hide the thirty after it (`report.mjs`), and a helper that throws
+ * opts out of that.
+ */
+async function openPalette(page, report, query) {
   await page.keyboard.press('Control+k');
-  await waitFor(async () => (await page.locator('.palette').count()) > 0, { timeout: 10_000 });
+  const open = await waitFor(async () => (await page.locator('.palette-input').count()) > 0, {
+    timeout: 10_000,
+  });
+  report.check('Ctrl+K opens the palette', open);
+  if (!open) return false;
   await page.locator('.palette-input').fill(query);
+  return true;
 }
 
 async function paletteText(page) {
