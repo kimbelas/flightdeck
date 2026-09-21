@@ -146,6 +146,11 @@ export class FixtureCore {
     this.removals = [];
     /** The bodies of every `POST /run` — the Ask panel's destination (P4-T4). */
     this.asks = [];
+    /** The bodies of every `POST /update` and `POST /sessions/respawn` — P4-T5. */
+    this.updates = [];
+    this.respawns = [];
+    /** How many times `GET /doctor` was asked. The panel must not poll it (F.10.1: ~2 s). */
+    this.doctorReads = 0;
     /** The open run's id, or `undefined`. Core allows one at a time and so does this. */
     this.askRunId = undefined;
     this.askSubscription = '365';
@@ -265,6 +270,11 @@ export class FixtureCore {
       return this.removeSession(await body(request));
     }
     if (request.method === 'POST' && path === '/run') return this.startAsk(await body(request));
+    if (request.method === 'GET' && path === '/doctor') return this.doctor(url);
+    if (request.method === 'POST' && path === '/update') return this.update(await body(request));
+    if (request.method === 'POST' && path === '/sessions/respawn') {
+      return this.respawn(await body(request));
+    }
     if (request.method === 'POST' && path === '/pty-ticket') {
       const raw = await body(request);
       if (this.mintDelayMs > 0) await new Promise((done) => setTimeout(done, this.mintDelayMs));
@@ -459,6 +469,60 @@ export class FixtureCore {
     if (!named && !pinsSessionName(request.profileFn)) return [400, { error: 'bad_request' }];
     this.launches.push(request);
     return [201, { sessionId: randomUUID() }];
+  }
+
+  /**
+   * `GET /doctor` — the installation's health, ALREADY NARROWED (P4-T5).
+   *
+   * The fixture answers the shape core answers, which is the narrowed one: no `Path`, because
+   * core drops it before it leaves (SEC-DATA-2, F.10.1). A fixture that sent the raw doctor output
+   * would let a deck that rendered a path pass the smoke.
+   */
+  doctor(url) {
+    const subscription = url.searchParams.get('subscription');
+    if (!SUBSCRIPTION_IDS.includes(subscription)) return [400, { error: 'bad_subscription' }];
+    this.doctorReads += 1;
+    return [
+      200,
+      {
+        subscription,
+        healthy: true,
+        autoUpdates: true,
+        fields: [
+          { key: 'Running', value: 'npm-global (2.1.278)' },
+          { key: 'Platform', value: 'win32-x64' },
+          { key: 'Auto-updates', value: 'enabled' },
+          { key: 'Last update attempt', value: 'success -> 2.1.278 (2026-09-19)' },
+        ],
+      },
+    ];
+  }
+
+  /** `POST /update` — the ordinary answer, because auto-updates are on (F.10.1). */
+  update(raw) {
+    const request = parseJson(raw);
+    if (!SUBSCRIPTION_IDS.includes(request?.subscription)) {
+      return [400, { error: 'bad_subscription' }];
+    }
+    this.updates.push(request);
+    return [200, { subscription: request.subscription, changed: false, version: '2.1.278' }];
+  }
+
+  /**
+   * `POST /sessions/respawn` — and `--all` does NOT restart everything (F.10.4).
+   *
+   * Measured, it skipped a session that had finished. The fixture answers one id for a two-session
+   * machine on purpose, so a deck that printed "all sessions restarted" would be printing
+   * something this double never said.
+   */
+  respawn(raw) {
+    const request = parseJson(raw);
+    if (!SUBSCRIPTION_IDS.includes(request?.subscription)) {
+      return [400, { error: 'bad_session' }];
+    }
+    this.respawns.push(request);
+    const respawned = request.all === true ? ['d1b2f43c'] : [request.shortId];
+    return [200, { subscription: request.subscription, respawned }];
   }
 
   /**

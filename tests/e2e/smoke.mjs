@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { FixtureCore } from './fixture-core.mjs';
 import { Report, waitFor } from './smoke/report.mjs';
-import { askChecks, deckChecks } from './smoke/deck-checks.mjs';
+import { askChecks, deckChecks, installChecks } from './smoke/deck-checks.mjs';
 import { devChecks } from './smoke/dev-checks.mjs';
 import { keyboardChecks, keyboardHelperChecks } from './smoke/keyboard-checks.mjs';
 import { paneChecks } from './smoke/pane-checks.mjs';
@@ -72,6 +72,7 @@ try {
   await page.goto(DECK, { waitUntil: 'domcontentloaded' });
   await deckChecks(page, report, core);
   await askChecks(page, report, core);
+  await installChecks(page, report, core);
   await projectChecks(page, report, core);
   await keyboardChecks(page, report);
   await keyboardHelperChecks(page, report, core);

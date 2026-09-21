@@ -784,3 +784,75 @@ export async function askChecks(page, report, core) {
   report.check('a second run while one is open says so rather than doing nothing', refused);
   core.askRunId = undefined;
 }
+
+/**
+ * The version chip and what it opens — P4-T5.
+ *
+ * Four properties, and three of them are measurements rather than preferences:
+ *
+ *  - the chip is a BUTTON now, not the label P2-T3 left;
+ *  - the panel never draws a filesystem path, because `claude doctor` prints one with the Windows
+ *    account name in it and core drops it before it leaves (SEC-DATA-2, F.10.1);
+ *  - the panel SAYS auto-updates are on, so the update button reads as a check rather than a chore;
+ *  - a respawn reports the ids the CLI named — `--all` skips a session that has finished (F.10.4),
+ *    so "all sessions restarted" would be a sentence the CLI never earned.
+ */
+export async function installChecks(page, report, core) {
+  report.group('The version chip — doctor, updates, respawn (P4-T5)');
+  const chip = page.locator('[aria-label="installation 365"]');
+
+  report.check(
+    'the version chip is a button, not the label it used to be',
+    (await chip.count()) === 1 && (await chip.evaluate((node) => node.tagName)) === 'BUTTON',
+  );
+
+  const before = core.doctorReads;
+  await chip.click();
+  const opened = await waitFor(() => core.doctorReads > before);
+  report.check('pressing it opens the panel and takes a reading', opened);
+
+  const panel = page.locator('section.install');
+  const fields = await waitFor(async () => (await panel.locator('.install-field').count()) > 0);
+  report.check('the panel draws the fields doctor reported', fields);
+
+  // The SEC-DATA-2 assertion, made on what is RENDERED rather than on what was sent.
+  const text = (await panel.allTextContents()).join(' ');
+  report.check(
+    'and no filesystem path — doctor prints one with the account name in it (F.10.1)',
+    !/[A-Za-z]:\\/u.test(text) && !text.includes('AppData'),
+  );
+  report.check(
+    'it says auto-updates are on, so the update button reads as a check rather than a chore',
+    text.includes('Auto-updates are on'),
+    text.includes('Auto-updates are on') ? '' : text.slice(0, 160),
+  );
+
+  const updatesBefore = core.updates.length;
+  await panel.locator('button', { hasText: 'check for updates' }).first().click();
+  const checked = await waitFor(() => core.updates.length > updatesBefore);
+  report.check('the update button reaches core', checked);
+  const said = await waitFor(async () =>
+    ((await panel.locator('[aria-label="update result"]').allTextContents())[0] ?? '').includes(
+      'already up to date',
+    ),
+  );
+  report.check('and reports the ordinary answer rather than implying something happened', said);
+
+  await panel.locator('button', { hasText: 'respawn background sessions' }).first().click();
+  const restarted = await waitFor(
+    async () =>
+      ((await panel.locator('[aria-label="respawn result"]').allTextContents())[0] ?? '') !== '',
+  );
+  const sentence =
+    (await panel.locator('[aria-label="respawn result"]').allTextContents())[0] ?? '';
+  report.check('a respawn reaches core', restarted && core.respawns.length === 1);
+  report.check(
+    'and names the ids the CLI restarted rather than claiming it restarted all of them',
+    sentence.includes('d1b2f43c') && !sentence.includes('all sessions'),
+    sentence,
+  );
+
+  await panel.locator('[aria-label="close installation"]').click();
+  const closed = await waitFor(async () => (await panel.count()) === 0);
+  report.check('closing it puts it away', closed);
+}
