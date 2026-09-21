@@ -3422,7 +3422,49 @@ phases:
           `npm run check` 210 files / 2 618 tests; `npm run smoke` 384 checks.
       - id: P6-T5
         title: Duplicate-cwd warning across subscriptions
-        status: todo
+        status: done
+        done_on: 2026-09-21
+        deliverables:
+          [
+            contracts/duplicate-cwd.ts,
+            app/deck/session-row-view-model.ts,
+            app/deck/session-row-card.tsx,
+            app/deck/deck-view.tsx,
+            app/globals.css,
+            tests/contracts/duplicate-cwd.test.ts,
+            tests/app/session-row-view-model.test.ts,
+            tests/e2e/smoke/duplicate-cwd-checks.mjs,
+          ]
+        notes: >-
+          SPEC §5.6, four words: *"Duplicate warning: same cwd under both subscriptions."*
+          **What makes it worth a warning is that nothing else on the machine can see it.**
+          `claude agents` reads ONE config directory, so each account's listing shows its own
+          session in `C:epo` and neither mentions the other. Flightdeck is the only thing looking
+          at both, which is why this lives here rather than being left to the CLI.
+          **It is not a `SessionFlag`, and could not be.** Every flag `deriveFlags` reports is a
+          fact about ONE session; this one is only true of a PAIR, so it is computed over the set
+          and handed to the row view models rather than derived per row.
+          **Same subscription is deliberately NOT warned about.** `claude-isg-orch` and
+          `claude-isg-ticket` are two of the four built-in presets and both default to the project
+          root, so two sessions in one folder on one account is what a normal morning looks like.
+          SPEC scopes it to "under both subscriptions" for that reason, and warning about the other
+          case would be warning about the product working.
+          **Live only** — G.24's lesson again. A row's `runState` is the last state it was SEEN in,
+          so a finished session keeps saying `working` forever; anything that reads as a hazard has
+          to check the session is still running, or the deck warns about history.
+          **Canonicalised, because the two spellings are the LIKELY shape of this rather than the
+          unlikely one**: the two sessions were started from two different places, so `C:\Repo` and
+          `c:epo\` are exactly how it arrives.
+          On the COLLAPSED row, amber rather than red: it is very often deliberate for an hour and
+          a mistake by the afternoon, and a warning you have to open a row to find is one that
+          never reaches somebody who was not looking for it.
+          Seven sabotages on the rules, each watched to land and then to fail. The smoke PUSHES a
+          snapshot rather than editing the fixture — the fixture is a healthy machine on purpose,
+          and making it unhealthy would make every other group assert against one with a warning
+          on it. That smoke check expected TWO warnings and found four, and the code was right:
+          the fixture holds three live 365 sessions in that folder, so moving one isg session in
+          makes four sharing one tree and all four are warned. It derives the count now.
+          `npm run check` 211 files / 2 639 tests; `npm run smoke` 393 checks.
       - id: P6-T6
         title: Session handoff — resume into a new worktree with --resume --fork-session
         status: todo

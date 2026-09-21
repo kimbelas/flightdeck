@@ -48,6 +48,17 @@ export function SessionRowCard(props: SessionRowCardProps): JSX.Element {
         />
         <span className="tag">{row.subscriptionLabel}</span>
         <span className="tag">{row.kindLabel}</span>
+        {/*
+          P6-T5, SPEC §5.6. On the collapsed row rather than inside the expansion, because the
+          whole point is that nobody is looking for it: `claude agents` reads one config directory,
+          so neither account's listing mentions the other's session in the folder. A warning you
+          have to open a row to find is one this never reaches.
+        */}
+        {row.sharesWorkingTree && (
+          <span className="tag tag-warn" data-row-shared-tree title={row.sharedTreeWarning}>
+            shared folder
+          </span>
+        )}
       </div>
       <div className="row-meta">
         <span>{row.project}</span>

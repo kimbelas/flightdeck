@@ -905,6 +905,13 @@ button.ghost {
   font-size: 11px;
 }
 
+/* P6-T5. Two live sessions in one working tree, across accounts — SPEC §5.6. Amber rather than
+   red: it is very often deliberate for an hour and a mistake by the afternoon. */
+.tag-warn {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
 .chip {
   border-radius: 3px;
   padding: 0 6px;
