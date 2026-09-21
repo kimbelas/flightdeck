@@ -1552,3 +1552,38 @@ conversation). Every task in both phases was verified live on this machine as it
 gate sentence — a named ticket session started from the deck into a worktree — would spend real
 quota to re-prove a launcher that P4-T2 already proved live. The gate sentences stay in the file as
 what the phases were for.
+
+## D53 — the by-project view is a filter, and `gates.json` has no verdict in it (decided 2026-09-21, P3-T6)
+
+SPEC §5.6 offers two views, "by project (default)" and "by session". What shipped is **one list with
+a current project**, because the two would have been the same rows twice: every field SPEC's
+by-project row asks for — git, the workflow map, the launch presets — is already on the projects
+panel, and what was missing was only the join between a folder and the sessions running in it. So
+the panel gained a session count and the list gained a filter, and switching is one click or
+`Ctrl+K`.
+
+**The filter narrows the LIST and nothing else.** The header still counts every session on the
+machine, the palette still reaches every session, and the sessions in no imported folder are counted
+out loud beside "All projects" — measured live at 14 of 16. A deck that hid sessions without saying
+how many would be the one thing this app exists to prevent.
+
+**A project is its folder and its worktrees, and that is what SPEC calls a project group.** P3-T4
+already discovers every checkout, so the grouping is a derivation over data the deck holds rather
+than something to store. What is NOT built is a group of unrelated sibling folders (SPEC's
+`app-core` + `app-next`): nothing on this machine is one, and a group nobody can name a member of
+would need a name, a store and a UI for no user.
+
+**`gates.json` holds no verdict.** SPEC §5.1(a)'s table says to show one; read off the only one on
+this machine, the file is `denyPaths`, `askPaths` and three lists of commands — the gate
+DEFINITIONS, with no score, no pass, no fail and no date. So the row says what the gates are — live,
+"coach gates 8 · denies 5 · asks 1" — and links to `:4747/plans/<name>`, which is where coach keeps
+the verdict it computes. D12 is now enforced by a fact rather than by restraint: there is nothing
+here to re-score.
+
+**The pane layout is per project, which is what P5a-T5 deferred and why.** `layoutKeyFor` keys it,
+and the unkeyed `flightdeck.pane-layout` P5a-T5 wrote is still what "All projects" reads — nothing
+had to migrate, because the old value became the answer to the state the deck starts in.
+
+**Today's cost per project is P3-T5's, not this task's.** SPEC's by-project row asks for it;
+aggregating spend per path slug is the whole of the next task, and a number invented here is one
+that task would have had to contradict.

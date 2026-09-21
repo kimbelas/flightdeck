@@ -20,6 +20,8 @@ import type { LaunchPreset, PresetRefusal } from '../../contracts/launch-preset.
 import type { ProjectStatus, StackLabel } from '../../contracts/project-status.ts';
 import type { ImportRefusal, ProjectRecord } from '../../contracts/project.ts';
 import { projectKey } from '../../contracts/project.ts';
+import { coachPlanUrl, type ProjectGates } from '../../contracts/project-gates.ts';
+import { NO_ACTIVITY, type ProjectActivity } from './project-scope.ts';
 import type { WorkflowMap } from '../../contracts/workflow-map.ts';
 import { PresetsViewModel } from './presets-view-model.ts';
 import { WorkflowMapViewModel } from './workflow-map-view-model.ts';
@@ -74,6 +76,25 @@ export interface ProjectLine {
    * (`PresetCatalogue`).
    */
   readonly presets: PresetsViewModel;
+  /**
+   * The sessions in this project and its worktrees, across both subscriptions — P3-T6.
+   *
+   * SPEC §5.6's by-project row asks for this, for git (above) and for today's cost. Cost is
+   * **not** here and is not missing: aggregating spend per path slug is P3-T5's whole task, and a
+   * number invented here would be the one that task then had to contradict.
+   */
+  readonly activity: ProjectActivity;
+  /** Whether the deck is currently pointed at this one. */
+  readonly isCurrent: boolean;
+  /**
+   * What coach gates in this folder, or `undefined` when it does not — P3-T6, D12.
+   *
+   * `gates.json` carries the gate DEFINITIONS and no verdict (`contracts/project-gates.ts`), so
+   * this is what the gates are and `coachUrl` is where the verdict lives. Flightdeck never scores.
+   */
+  readonly gates: ProjectGates | undefined;
+  /** Coach's page for this project. Always present — it is a URL, not a claim that coach is up. */
+  readonly coachUrl: string;
 }
 
 /**
@@ -92,6 +113,12 @@ export interface ProjectsInput {
   readonly maps?: Readonly<Record<string, WorkflowMap>>;
   readonly presets?: readonly LaunchPreset[];
   readonly presetRefusal?: PresetRefusal | undefined;
+  /** What each project's sessions add up to, from `ProjectScope.activity` — P3-T6. */
+  readonly activity?: Readonly<Record<string, ProjectActivity>>;
+  /** The current project's key, or `undefined` for all projects. */
+  readonly current?: string | undefined;
+  /** Sessions in no imported folder at all. Drawn beside "All projects", never hidden. */
+  readonly unassigned?: number;
 }
 
 /** What a repository with nothing outstanding says. Named, because blank would read as unread. */
@@ -117,6 +144,9 @@ export class ProjectsViewModel {
   private readonly maps: Readonly<Record<string, WorkflowMap>>;
   private readonly presets: readonly LaunchPreset[];
   private readonly presetRefusal: PresetRefusal | undefined;
+  private readonly activity: Readonly<Record<string, ProjectActivity>>;
+  private readonly current: string | undefined;
+  private readonly unassignedCount: number;
 
   constructor(input: ProjectsInput) {
     this.projects = input.projects;
@@ -125,6 +155,27 @@ export class ProjectsViewModel {
     this.maps = input.maps ?? {};
     this.presets = input.presets ?? [];
     this.presetRefusal = input.presetRefusal;
+    this.activity = input.activity ?? {};
+    this.current = input.current;
+    this.unassignedCount = input.unassigned ?? 0;
+  }
+
+  /** Whether the deck is showing every session. The state it starts in, and the one to return to. */
+  public get showingAll(): boolean {
+    return this.current === undefined;
+  }
+
+  /**
+   * What "All projects" says beside it.
+   *
+   * It names the sessions that belong to no imported folder, because that is the number a person
+   * loses sight of the moment they focus a project — and losing sight of a session is the one
+   * thing this deck exists to prevent.
+   */
+  public get unassignedLabel(): string | undefined {
+    if (this.unassignedCount === 0) return undefined;
+    const plural = this.unassignedCount === 1 ? 'session' : 'sessions';
+    return `${String(this.unassignedCount)} ${plural} outside every imported folder`;
   }
 
   /**
@@ -149,6 +200,10 @@ export class ProjectsViewModel {
         progress: git?.progress,
         map: new WorkflowMapViewModel(this.maps[key]),
         presets: new PresetsViewModel(this.presets, project.path, this.presetRefusal),
+        activity: this.activity[key] ?? NO_ACTIVITY,
+        isCurrent: this.current === key,
+        gates: this.maps[key]?.gates,
+        coachUrl: coachPlanUrl(project.name),
       };
     });
   }

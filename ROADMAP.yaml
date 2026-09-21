@@ -1758,13 +1758,55 @@ phases:
         status: todo
       - id: P3-T6
         title: By-project view, project groups, coach gates.json verdict deep link
-        status: todo
+        status: done
+        done_on: 2026-09-21
+        deliverables:
+          [
+            contracts/project-gates.ts,
+            contracts/workflow-map.ts,
+            core/application/workflow-map-reader.ts,
+            app/deck/project-scope.ts,
+            app/deck/use-current-project.ts,
+            app/deck/use-pane-grid.ts,
+            app/deck/projects-view-model.ts,
+            app/deck/projects-panel.tsx,
+            app/deck/deck-commands.ts,
+            app/deck/deck-top.tsx,
+            app/deck/deck-view.tsx,
+            app/deck/deck-body.tsx,
+            app/globals.css,
+            tests/contracts/project-gates.test.ts,
+            tests/app/project-scope.test.ts,
+            tests/e2e/smoke/project-view-checks.mjs,
+            tests/e2e/fixture-core.mjs,
+            DECISIONS.md D53,
+            RESEARCH.md G.46,
+          ]
         notes: >-
-          Two things wait on this rather than on themselves, because both need a CURRENT PROJECT and
-          nothing in the deck has one yet. The palette's "switch project" is the older of them
-          (deck-commands.ts, since P2-T5). The newer is P5a-T5's pane layout, which SPEC §5.3 says is
-          saved per project and which is saved per browser today — a `localStorage` key invented
-          before there was a project to name would be a key this task had to migrate off.
+          DONE under D53, measured in G.46. **Both things that were waiting on this shipped with
+          it**: the palette's "switch project" (waiting since P2-T5) and the pane layout saved per
+          project (deferred by P5a-T5, which said a key invented before there was a project would
+          be one this task had to migrate off — it did not have to, because `layoutKeyFor` leaves
+          the old unkeyed value as what "All projects" reads).
+          **One list with a current project, not two views.** Every field SPEC §5.6's by-project row
+          asks for is already on the projects panel; what was missing was the join between a folder
+          and the sessions in it. So the panel gained a session count and the list gained a filter.
+          The filter narrows the LIST only — the header still counts the machine, and the sessions
+          in no imported folder are counted out loud beside "All projects" (14 of 16, live).
+          **A project is its folder AND its worktrees**, which is the half of SPEC's "project
+          groups" that exists: P3-T4 already discovers every checkout, so grouping is a derivation.
+          A group of unrelated sibling folders is not built and D53 says why.
+          **`gates.json` holds no verdict** — the task's third clause has a false premise, found in
+          one `cat` of the only such file on this machine. It is the gate DEFINITIONS, so the row
+          says what the gates ARE and links to coach at `/plans/<name>` for the verdict coach
+          computes (D12). Live on `groundwork`: `coach gates 8 · denies 5 · asks 1`.
+          Today's cost per project is NOT here: that is P3-T5's whole task, and a number invented
+          here is one it would have had to contradict.
+          Five sabotages, each watched to fail — and **the first one broke nothing**, because the
+          worktree in the fixture was inside the project root and the root match already covered
+          it. The test named the mechanism and exercised none of it (G.46). Running it also found
+          the current project being erased on every reload, by a guard that ran before the registry
+          had arrived.
       - id: P3-T7
         title: Config-change snapshots and diff
         status: todo

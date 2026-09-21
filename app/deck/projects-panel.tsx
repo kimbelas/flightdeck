@@ -33,6 +33,8 @@ interface ProjectsPanelProps {
   readonly disabled: boolean;
   readonly onImport: (path: string) => void;
   readonly onForget: (path: string) => void;
+  /** Points the deck at one project, or at all of them with `undefined` — P3-T6. */
+  readonly onChoose: (key: string | undefined) => void;
   readonly presets: PresetActions;
 }
 
@@ -41,11 +43,13 @@ export function ProjectsPanel({
   disabled,
   onImport,
   onForget,
+  onChoose,
   presets,
 }: ProjectsPanelProps): JSX.Element {
   return (
     <section className="projects" aria-label="projects">
       <ImportBox disabled={disabled} onImport={onImport} />
+      <AllProjects model={model} onChoose={onChoose} />
       {model.problem !== undefined && (
         <p className="banner-bad project-problem" role="status">
           {model.problem}
@@ -61,12 +65,47 @@ export function ProjectsPanel({
               line={line}
               disabled={disabled}
               onForget={onForget}
+              onChoose={onChoose}
               presets={presets}
             />
           ))}
         </ul>
       )}
     </section>
+  );
+}
+
+/**
+ * The way back to every session — P3-T6.
+ *
+ * Always drawn, including when nothing is focused, because it is also where the count of sessions
+ * in NO imported folder lives. Focusing a project hides those, and a deck that hid sessions
+ * without saying how many would be the one thing this whole app exists to prevent.
+ */
+function AllProjects({
+  model,
+  onChoose,
+}: {
+  readonly model: ProjectsViewModel;
+  readonly onChoose: (key: string | undefined) => void;
+}): JSX.Element {
+  return (
+    <div className="project-scope">
+      <button
+        type="button"
+        className={model.showingAll ? 'ghost is-on' : 'ghost'}
+        aria-pressed={model.showingAll}
+        data-project-all
+        onClick={() => {
+          onChoose(undefined);
+        }}
+      >
+        All projects
+      </button>
+      {model.unassignedLabel !== undefined && (
+        <span className="muted project-unassigned">{model.unassignedLabel}</span>
+      )}
+    </div>
   );
 }
 
@@ -111,6 +150,7 @@ interface ProjectRowProps {
   readonly line: ProjectLine;
   readonly disabled: boolean;
   readonly onForget: (path: string) => void;
+  readonly onChoose: (key: string | undefined) => void;
   readonly presets: PresetActions;
 }
 
@@ -122,10 +162,10 @@ interface ProjectRowProps {
  * buy nothing and would teach the owner to click through dialogues. `title` carries the full path
  * for a folder whose name is the interesting part and whose path is long.
  */
-function ProjectRow({ line, disabled, onForget, presets }: ProjectRowProps): JSX.Element {
+function ProjectRow({ line, disabled, onForget, onChoose, presets }: ProjectRowProps): JSX.Element {
   return (
-    <li className="project">
-      <span className="project-name">{line.name}</span>
+    <li className={line.isCurrent ? 'project is-current' : 'project'}>
+      <ProjectFocus line={line} onChoose={onChoose} />
       <span className="project-path" title={line.path}>
         {line.path}
       </span>
@@ -139,6 +179,8 @@ function ProjectRow({ line, disabled, onForget, presets }: ProjectRowProps): JSX
         forget
       </button>
       <ProjectMeta line={line} />
+      <ProjectSessions line={line} />
+      <ProjectGatesLine line={line} />
       <PresetsPanel
         model={line.presets}
         projectPath={line.path}
@@ -150,6 +192,74 @@ function ProjectRow({ line, disabled, onForget, presets }: ProjectRowProps): JSX
       />
       <WorkflowMapPanel model={line.map} project={line.name} />
     </li>
+  );
+}
+
+/**
+ * The project’s name, as the button that points the deck at it — P3-T6.
+ *
+ * Pressing the current one again goes back to all projects, which is what a toggle does and what
+ * stops the button being a trap on a machine with one project imported.
+ */
+function ProjectFocus({
+  line,
+  onChoose,
+}: {
+  readonly line: ProjectLine;
+  readonly onChoose: (key: string | undefined) => void;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      className={line.isCurrent ? 'project-name is-on' : 'project-name'}
+      aria-pressed={line.isCurrent}
+      data-project-focus={line.key}
+      onClick={() => {
+        onChoose(line.isCurrent ? undefined : line.key);
+      }}
+    >
+      {line.name}
+    </button>
+  );
+}
+
+/**
+ * How much is happening in this folder — P3-T6, SPEC §5.6's "sessions there across both subs".
+ *
+ * Nothing at all when there are none, rather than a zero: an imported folder with no sessions is
+ * the ordinary state of most of them, and a row of zeroes reads as a dashboard that is broken
+ * rather than as one that is quiet.
+ */
+function ProjectSessions({ line }: { readonly line: ProjectLine }): JSX.Element | undefined {
+  const { sessions, live } = line.activity;
+  if (sessions === 0) return undefined;
+  return (
+    <span className="project-sessions" data-project-sessions={line.key}>
+      {sessions} session{sessions === 1 ? '' : 's'}
+      {live > 0 && ` · ${String(live)} live`}
+    </span>
+  );
+}
+
+/**
+ * What coach gates here, and where its verdict is — P3-T6, D12.
+ *
+ * **It does not say "passing" or "failing", because `gates.json` does not.** SPEC §5.1(a) asked
+ * for the file's verdict; the file defines the gates and holds no result
+ * (`contracts/project-gates.ts`). So this says what the gates ARE and links to coach, whose
+ * verdict it is. The link is drawn whether or not coach is running: a dead link says "coach is not
+ * up" far more clearly than a button that was never offered.
+ */
+function ProjectGatesLine({ line }: { readonly line: ProjectLine }): JSX.Element | undefined {
+  if (line.gates === undefined) return undefined;
+  const { denyPaths, askPaths, gates } = line.gates;
+  return (
+    <span className="project-gates" data-project-gates={line.key}>
+      coach gates {gates.length} · denies {denyPaths} · asks {askPaths}{' '}
+      <a href={line.coachUrl} target="_blank" rel="noreferrer">
+        verdict on coach
+      </a>
+    </span>
   );
 }
 

@@ -222,6 +222,62 @@ button.ghost {
   grid-row: 1 / -1;
 }
 
+/* ---- by-project view (P3-T6) ---- */
+
+/* The way back to every session, above the list. */
+.project-scope {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 8px 4px;
+  flex-wrap: wrap;
+}
+
+.project-unassigned {
+  font-size: 11px;
+}
+
+/* The project's name is a BUTTON now — the one that points the deck at it.
+   `grid-column: 1` is not decoration: `.project > button` above is written for the `forget` button
+   and puts every direct-child button in column 2 spanning every row. The name is a direct child
+   too, so without this rule it lands on top of `forget` on the right and the row loses its title.
+   Measured by looking at it, which is the only way that particular collision shows up. */
+.project > button.project-name {
+  grid-column: 1;
+  grid-row: auto;
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.project > button.project-name.is-on {
+  color: var(--accent);
+}
+
+.project.is-current {
+  border-left: 2px solid var(--accent);
+  padding-left: 6px;
+  margin-left: -8px;
+}
+
+/* How much is happening in the folder, and what coach gates in it. Both sit under the path. */
+.project-sessions,
+.project-gates {
+  grid-column: 1;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.project-gates a {
+  color: var(--accent);
+}
+
 /* Stack and git, under the path (P3-T2). Absent entirely when neither is known. */
 .project-meta {
   grid-column: 1;

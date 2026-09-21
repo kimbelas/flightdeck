@@ -4,9 +4,11 @@
 // change layout, connect. Three of them exist today and are below. The other three are listed here
 // so the next person does not have to work out whether they were forgotten:
 //
-//   - **switch project** — P3-T6. Importing one is here since P3-T1, and switching to one needs
-//     the by-project view to switch to.
-//   - **run Ask** — P4. Nothing in the deck can ask a question of a session.
+//   - **switch project** — SHIPPED in P3-T6, below. It waited for something to switch TO: a
+//     current project, which is what the by-project view is built on.
+//   - **run Ask** — SHIPPED in P4-T4, as a panel rather than an entry: an Ask needs a prompt, a
+//     subscription and a budget, and a palette entry that opened a form would be a keystroke
+//     spent on focusing something the page already shows.
 //   - **connect** — exists, but as `npm run connect`, and it writes under `~/.claude*` behind a dry
 //     run, a diff and a `--apply` opt-in (P1-T11, SEC-ING-3). A palette entry that performed that
 //     write on one keypress would defeat every control the task put around it. It stays a CLI.
@@ -112,19 +114,66 @@ export interface DeckActions {
   readonly onCloseInstall: () => void;
 }
 
+/** One switchable project, reduced to what an entry needs — P3-T6. */
+export interface ProjectTarget {
+  readonly key: string;
+  readonly name: string;
+  readonly sessions: number;
+}
+
 export interface CommandTargets extends DeckActions {
   readonly rows: readonly SessionRowViewModel[];
   /** Not on `DeckActions`: the grid owns the layout, and the store owns everything else there. */
   readonly onLayout: (layout: PaneLayout) => void;
+  /** The imported folders, in panel order — P3-T6. Empty until something is imported. */
+  readonly projects: readonly ProjectTarget[];
+  readonly onChooseProject: (key: string | undefined) => void;
 }
 
 /** The deck's commands: the always-there ones, the six layouts, then two per session that can be. */
 export function deckCommands(targets: CommandTargets): readonly DeckCommand[] {
   return [
     ...globalCommands(targets),
+    ...projectCommands(targets),
     ...layoutCommands(targets),
     ...targets.rows.flatMap((row) => rowCommands(row, targets)),
   ];
+}
+
+/**
+ * SPEC §5.4's "switch project", which this file has listed as missing since P2-T5 — P3-T6.
+ *
+ * One entry per imported folder plus one for all of them, rather than a "cycle projects" entry,
+ * for the reason the layout entries give: the palette is searched by typing, and `Ctrl+K xpe Enter`
+ * beats pressing cycle until the right name comes round.
+ *
+ * The hint carries the session count, because that is the thing being switched between. A folder
+ * with none still gets an entry — switching to a quiet project to start one in it is the point.
+ */
+function projectCommands(targets: CommandTargets): readonly DeckCommand[] {
+  const all: DeckCommand = {
+    id: 'project-all',
+    label: 'Show all projects',
+    hint: 'project · every session, unfiltered',
+    run: () => {
+      targets.onChooseProject(undefined);
+    },
+  };
+  const each = targets.projects.map((project) => ({
+    id: `project-${project.key}`,
+    label: `Switch to ${project.name}`,
+    hint: `project · ${describeCount(project.sessions)}`,
+    run: () => {
+      targets.onChooseProject(project.key);
+    },
+  }));
+  return [all, ...each];
+}
+
+/** `3 sessions`, `1 session`, `no sessions` — never `0 sessions`, which reads as a failed count. */
+function describeCount(sessions: number): string {
+  if (sessions === 0) return 'no sessions here yet';
+  return `${String(sessions)} session${sessions === 1 ? '' : 's'}`;
 }
 
 /**

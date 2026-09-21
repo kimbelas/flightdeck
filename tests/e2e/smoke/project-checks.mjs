@@ -375,7 +375,11 @@ async function presetGeometryChecks(page, report, section) {
   await waitFor(async () => (await section.locator('.preset-editor').count()) === 1);
 
   const presets = await section.boundingBox();
-  const rowForget = await page.locator('.project > button').boundingBox();
+  // Named by its label rather than by being "the direct-child button": since P3-T6 the project
+  // NAME is a direct-child button too, and `.project > button` resolves to two elements. That is
+  // the collision the CSS rule beside it is written for, so the check that guards the rule has to
+  // say which button it means.
+  const rowForget = await page.locator('.project > button[aria-label^="forget"]').boundingBox();
   report.check(
     'the presets stay in the row’s first column, clear of the forget button',
     presets.x + presets.width <= rowForget.x + 1,
@@ -416,7 +420,7 @@ async function forgetChecks(page, report, core) {
   // The DIRECT child. P4-T1 put a `forget` button inside the preset editor as well, and a
   // descendant selector here would match two elements and fail on strict mode rather than on the
   // thing being tested.
-  await page.locator('.project > button', { hasText: 'forget' }).click();
+  await page.locator('.project > button[aria-label^="forget"]').click();
 
   const withdrawn = await waitFor(() => core.projects.size === 0);
   report.check('forget reaches core and removes the row there', withdrawn);

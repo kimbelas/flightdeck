@@ -1066,6 +1066,23 @@ function workflowMap(project) {
       { id: 'XWEB-1854', path: `${project.path}\\..\\XWEB-1854`, branch: 'feat/rework-the-picker' },
       { id: 'main', path: project.path, branch: 'feat/smoke', isMain: true },
     ],
+    // P3-T6. coach-core's gate DEFINITIONS, shaped like the real file (contracts/project-gates.ts):
+    // two lint rules named only by their command, two stop checks and four verify steps, and no
+    // verdict anywhere in it — which is the whole point of the row the deck draws from this.
+    gates: {
+      denyPaths: 4,
+      askPaths: 1,
+      gates: [
+        { kind: 'lint', label: 'node scripts/blueprint-lint.js' },
+        { kind: 'lint', label: 'node scripts/fs-boundary.js' },
+        { kind: 'stop', label: 'unit tests' },
+        { kind: 'stop', label: 'typecheck' },
+        { kind: 'verify', label: 'typecheck' },
+        { kind: 'verify', label: 'lint' },
+        { kind: 'verify', label: 'unit tests' },
+        { kind: 'verify', label: 'e2e' },
+      ],
+    },
     configured: true,
   };
 }

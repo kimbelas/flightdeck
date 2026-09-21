@@ -92,6 +92,7 @@ const MAP: WorkflowMap = {
       isMain: false,
     },
   ],
+  gates: undefined,
   configured: true,
 };
 

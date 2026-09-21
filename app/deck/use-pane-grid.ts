@@ -5,11 +5,10 @@
 // story of its own: three pieces of state that only make sense together, and the one thing on the
 // deck that outlives a reload.
 //
-// **The layout is remembered per BROWSER, not per project.** SPEC §5.3 asks for per project, and
-// this deck has no current project to key it by — importing one is P3-T1 and switching to one is
-// P3-T6, which is also where the palette's "switch project" is waiting. A key invented here would
-// be a key P3-T6 had to migrate off, so the adjective is deferred with the view that gives it a
-// meaning and the choice survives a reload in the meantime.
+// **The layout is remembered PER PROJECT since P3-T6**, which is what SPEC §5.3 asked for and what
+// P5a-T5 deferred until there was a project to key it by. The key is `layoutKeyFor`'s, so the
+// unkeyed `flightdeck.pane-layout` P5a-T5 wrote is still the one "All projects" reads — nothing
+// had to migrate, because the old value became the answer to the state the deck starts in.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   defaultLayout,
@@ -21,9 +20,8 @@ import {
 import { parsePtyTarget, sameTarget, type PtyTarget } from '../../contracts/pty-protocol.ts';
 import type { SessionRow } from '../../contracts/session-row.ts';
 import type { OpenPane } from './deck-view.tsx';
+import { layoutKeyFor } from './use-current-project.ts';
 
-/** Where the chosen layout survives a reload. */
-const LAYOUT_KEY = 'flightdeck.pane-layout';
 /** And where the open panes do — P5a-T5b, the last clause of the P5a gate. */
 const PANES_KEY = 'flightdeck.open-panes';
 
@@ -54,41 +52,32 @@ export interface PaneGridState {
  * attach exclusivity is core's (SEC-WS-3) and must never be something the browser believes it is
  * enforcing.
  *
- * The layout is remembered per BROWSER, not per project (P5a-T5). SPEC §5.3 asks for per project
- * and this deck has no current project to key it by until P3-T6 builds the by-project view; a key
- * invented here would be one P3-T6 had to migrate off.
+ * @param project the current project's key, or `undefined` for all projects — P3-T6. The layout is
+ * stored under it, so switching project brings that project's grid back and changing the layout
+ * while one is current does not move the other's.
  */
-export function usePaneGrid(rows: readonly SessionRow[], coreUp: boolean): PaneGridState {
+export function usePaneGrid(
+  rows: readonly SessionRow[],
+  coreUp: boolean,
+  project: string | undefined,
+): PaneGridState {
   const [panes, setPanes] = useState<readonly OpenPane[]>([]);
   const [chosen, setChosen] = useState<PaneLayout | undefined>(undefined);
   const [focusedKey, setFocusedKey] = useState<string | undefined>(undefined);
 
-  // Read once, after mount rather than during render: `localStorage` does not exist while Next is
-  // rendering this on the server, and reading it in a `useState` initialiser would make the first
-  // client render disagree with the server's and throw a hydration error.
+  // Re-read whenever the project changes, not only on mount: switching project is switching which
+  // stored layout is in force, and a project whose layout was never chosen falls back to the count
+  // exactly as a fresh deck does. `localStorage` also does not exist while Next is rendering this
+  // on the server, which is why this is an effect at all rather than a `useState` initialiser.
   useEffect(() => {
-    const stored = readLayout();
-    if (stored !== undefined) setChosen(stored);
-  }, []);
+    setChosen(readLayout(project));
+  }, [project]);
 
   useRememberedPanes({ panes, rows, coreUp, setPanes });
 
-  const openPane = useCallback((pane: OpenPane) => {
-    setPanes((current) => {
-      if (current.some((open) => open.key === pane.key)) return current;
-      return [...current, pane].slice(-MAX_PANES);
-    });
-    setFocusedKey(pane.key);
-  }, []);
+  const { openPane, closePane } = useOpenAndClose(setPanes, setFocusedKey);
 
-  const closePane = useCallback((key: string) => {
-    setPanes((current) => current.filter((pane) => pane.key !== key));
-    // Not re-pointed at a neighbour: the next pane somebody touches says which one it is, and
-    // guessing would enlarge a pane nobody asked for the moment focus mode is on.
-    setFocusedKey((current) => (current === key ? undefined : current));
-  }, []);
-
-  const setLayout = useChosenLayout(setChosen);
+  const setLayout = useChosenLayout(setChosen, project);
 
   const renamePane = useRenamedPane(setPanes);
 
@@ -115,6 +104,39 @@ export function usePaneGrid(rows: readonly SessionRow[], coreUp: boolean): PaneG
 }
 
 /**
+ * Opening a pane and closing one, which are one pair because they both move the focus.
+ *
+ * Opening the same one twice is a no-op rather than a second PTY. Closing does NOT re-point the
+ * focus at a neighbour: the next pane somebody touches says which one it is, and guessing would
+ * enlarge a pane nobody asked for the moment focus mode is on.
+ */
+function useOpenAndClose(
+  setPanes: (update: (current: readonly OpenPane[]) => readonly OpenPane[]) => void,
+  setFocused: (update: string | ((current: string | undefined) => string | undefined)) => void,
+): { readonly openPane: (pane: OpenPane) => void; readonly closePane: (key: string) => void } {
+  const openPane = useCallback(
+    (pane: OpenPane) => {
+      setPanes((current) => {
+        if (current.some((open) => open.key === pane.key)) return current;
+        return [...current, pane].slice(-MAX_PANES);
+      });
+      setFocused(pane.key);
+    },
+    [setPanes, setFocused],
+  );
+
+  const closePane = useCallback(
+    (key: string) => {
+      setPanes((current) => current.filter((pane) => pane.key !== key));
+      setFocused((current) => (current === key ? undefined : current));
+    },
+    [setPanes, setFocused],
+  );
+
+  return { openPane, closePane };
+}
+
+/**
  * Renaming one pane — P5a-T6.
  *
  * A blank name restores the one it was opened with rather than leaving a card with no label: the
@@ -135,13 +157,16 @@ function useRenamedPane(
 }
 
 /** Choosing a layout is choosing it for next time too, so the two always happen together. */
-function useChosenLayout(setChosen: (layout: PaneLayout) => void): (layout: PaneLayout) => void {
+function useChosenLayout(
+  setChosen: (layout: PaneLayout) => void,
+  project: string | undefined,
+): (layout: PaneLayout) => void {
   return useCallback(
     (layout: PaneLayout) => {
       setChosen(layout);
-      writeLayout(layout);
+      writeLayout(layout, project);
     },
-    [setChosen],
+    [setChosen, project],
   );
 }
 
@@ -300,9 +325,9 @@ function reorder(
  * stale value is the same thing as no value — `isPaneLayout` is what makes a layout removed in a
  * later build fall back rather than render a class nothing styles.
  */
-function readLayout(): PaneLayout | undefined {
+function readLayout(project: string | undefined): PaneLayout | undefined {
   try {
-    const raw = window.localStorage.getItem(LAYOUT_KEY);
+    const raw = window.localStorage.getItem(layoutKeyFor(project));
     if (raw === null) return undefined;
     const parsed: unknown = JSON.parse(raw);
     return isPaneLayout(parsed) ? parsed : undefined;
@@ -311,9 +336,9 @@ function readLayout(): PaneLayout | undefined {
   }
 }
 
-function writeLayout(layout: PaneLayout): void {
+function writeLayout(layout: PaneLayout, project: string | undefined): void {
   try {
-    window.localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+    window.localStorage.setItem(layoutKeyFor(project), JSON.stringify(layout));
   } catch {
     // A layout that cannot be remembered is still a layout that works for this session.
   }
