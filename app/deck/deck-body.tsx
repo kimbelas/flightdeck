@@ -56,10 +56,14 @@ export function DeckBody({
       />
       <PaneGrid
         panes={grid.panes}
+        rows={rows}
         layout={grid.layout}
         focusedKey={grid.focusedKey}
         onLayout={grid.setLayout}
         onFocused={grid.setFocused}
+        onRename={grid.renamePane}
+        onStop={actions.onStop}
+        onRespawn={actions.onRespawnOne}
         onClose={grid.closePane}
       />
     </div>

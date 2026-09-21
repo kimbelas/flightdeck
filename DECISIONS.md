@@ -1483,3 +1483,38 @@ because the first of those reads the key off the disk — see G.44 for how that 
 per diff nobody pressed would bury the rows a reviewer looks for. The row's `target` is the
 direction rather than a path, because this write is machine-wide, and the paths go in `args` where
 somebody asking "which files" finds all of them.
+
+## D51 — a pane's controls are the ones that exist, and `rename` names the pane (decided 2026-09-21, P5a-T6)
+
+SPEC §5.3 lists seven per-pane controls. Three ship, and every absence was measured rather than
+deferred by taste.
+
+- **resume** is on the session ROW (P4-T2a). A stopped session has no pane to put a button on, so
+  the control is where the state is.
+- **interrupt** is Ctrl+C, which already reaches the PTY through xterm — `BROWSER_OWNED` claims only
+  Ctrl+W/T/N — so a button would be a second way to do a thing that works.
+- **mute** belongs to the toasts it would silence, which are P6-T3. A mute with nothing to mute is
+  a switch that does nothing.
+- **pop out to Windows Terminal** is P6-T2, which owns the AppX path resolution.
+
+**`rename` names the PANE, and the panel says so every time it is open.** There is no rename verb
+in Claude Code: `-n/--name` is start-only, and `respawn`, `stop`, `rm`, `attach` and `logs` take an
+id and nothing else — read off 2.1.278's help for every background verb. So the deliverable half is
+the deck's own label, which is a real thing to want with nine panes open, and the honest thing is to
+say which one it is. That is P5a-T7's Ctrl+W precedent: half a control, labelled as half. The name
+rides the `localStorage` entry the open panes already survive a reload in, so it costs nothing to
+keep and nothing to migrate.
+
+**The two session verbs needed no core change at all.** `POST /sessions/stop` (P4-T2b) and
+`POST /sessions/respawn` with a ref (P4-T5) already take exactly what a pane can name, and the
+flags come off the ROW — `canStop` and `canRespawn` — so a pane's buttons and its row's buttons
+cannot reach different conclusions about the same session. A pane with no row, which is a shell or
+a session that has ended, gets neither: a button there could only 400.
+
+**The stop button shipped a pane that lied, for about an hour.** `claude stop` ends the session, so
+the `claude attach` behind the pane exits 0 with nobody having closed the pane — byte for byte the
+eviction signal (F.2.6). The pane said *"Another terminal attached to this session"* about a session
+the person had just stopped from that very pane. Nothing on the wire distinguishes them, so P5a-T1's
+"did I ask?" flag went from a boolean to `PaneAsked` — `nobody`, `detach`, `stop` — and a pane now
+has a `stopped` status of its own. **No unit test could have caught it and none did; it was found by
+pressing the button on a real session** (G.45).

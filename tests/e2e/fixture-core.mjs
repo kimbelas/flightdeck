@@ -237,6 +237,8 @@ export class FixtureCore {
     this.connectWrites = [];
     /** Every `input` frame the PTY socket received, so a check can ask what the pane SENT. */
     this.typed = [];
+    /** Which target each open PTY socket is attached to, so `stop` can end the right one. */
+    this.attached = new Map();
     /**
      * The project registry, as a real core would hold it — P3-T1.
      *
@@ -822,6 +824,10 @@ export class FixtureCore {
     const short = typeof shortId === 'string' && SHORT_SESSION_ID.test(shortId);
     if (!known || !full || !short) return [400, { error: 'bad_session' }];
     this.stops.push({ subscription, sessionId, shortId });
+    // A real stop ends the session, so the `claude attach` behind any pane exits 0 — which is
+    // byte for byte the eviction signal (F.2.6). The double has to do that too, or the smoke
+    // cannot see the difference between "you stopped this" and "somebody took this" at all.
+    this.endAttached({ kind: 'session', sessionId, subscription });
     return [200, { sessionId }];
   }
 
@@ -854,13 +860,26 @@ export class FixtureCore {
     });
   }
 
+  /** Exits the PTY behind every pane attached to `target`, exactly as a stopped session does. */
+  endAttached(target) {
+    for (const [client, held] of this.attached) {
+      if (!sameTarget(held, target)) continue;
+      client.send(encode({ type: 'exit', code: 0 }));
+      client.close();
+      this.attached.delete(client);
+    }
+  }
+
   serve(client, target) {
     let authorised = false;
     const deadline = setTimeout(() => {
       if (!authorised) client.close(1008, 'no_auth');
     }, AUTH_DEADLINE_MS);
 
-    client.on('close', () => clearTimeout(deadline));
+    client.on('close', () => {
+      clearTimeout(deadline);
+      this.attached.delete(client);
+    });
     client.on('message', (raw) => {
       const frame = parseClientFrame(String(raw));
       if (frame === undefined) return;
@@ -885,6 +904,7 @@ export class FixtureCore {
       return false;
     }
     this.tickets.delete(frame.ticket);
+    this.attached.set(client, target);
     client.send(encode({ type: 'ready', pid: 4242, target }));
     client.send(encode({ type: 'output', data: BANNER }));
     return true;

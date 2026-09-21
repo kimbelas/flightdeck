@@ -91,6 +91,17 @@ export class SessionRowViewModel {
   }
 
   /**
+   * Whether this row can be RESPAWNED — P5a-T6.
+   *
+   * Any background session, running or not, which makes it wider than `canStop` on purpose:
+   * `respawn --all` skips one that has finished, and respawning that same session BY NAME works
+   * (RESEARCH.md F.10.4). An interactive session is not a `--bg` job and is not core's to restart.
+   */
+  public get canRespawn(): boolean {
+    return this.row.kind === 'background';
+  }
+
+  /**
    * Whether this row can be DELETED — P4-T2.
    *
    * Every background session, live or not, which is the one place this family of getters is not

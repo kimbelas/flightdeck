@@ -36,6 +36,14 @@ export interface PaneGridState {
   readonly closePane: (key: string) => void;
   readonly setLayout: (layout: PaneLayout) => void;
   readonly setFocused: (key: string) => void;
+  /**
+   * Renames one pane — P5a-T6. Blank restores whatever it was opened with.
+   *
+   * It rides the same `localStorage` entry the open panes already survive a reload in, so a name
+   * costs nothing to keep and nothing to migrate. It is the PANE's label and never the session's:
+   * Claude Code has no rename verb (`pane-head.tsx`), so there is nothing to send anywhere.
+   */
+  readonly renamePane: (key: string, title: string) => void;
   readonly movePaneBy: (delta: number) => void;
 }
 
@@ -82,6 +90,8 @@ export function usePaneGrid(rows: readonly SessionRow[], coreUp: boolean): PaneG
 
   const setLayout = useChosenLayout(setChosen);
 
+  const renamePane = useRenamedPane(setPanes);
+
   const movePaneBy = useCallback(
     (delta: number) => {
       setPanes((current) => reorder(current, focusedKey, delta));
@@ -99,8 +109,29 @@ export function usePaneGrid(rows: readonly SessionRow[], coreUp: boolean): PaneG
     closePane,
     setLayout,
     setFocused: setFocusedKey,
+    renamePane,
     movePaneBy,
   };
+}
+
+/**
+ * Renaming one pane — P5a-T6.
+ *
+ * A blank name restores the one it was opened with rather than leaving a card with no label: the
+ * title is what `1`-`9` and the smoke both name a pane by. The new title rides the same
+ * `localStorage` entry the open panes already survive a reload in, so it costs nothing to keep.
+ */
+function useRenamedPane(
+  setPanes: (update: (current: readonly OpenPane[]) => readonly OpenPane[]) => void,
+): (key: string, title: string) => void {
+  return useCallback(
+    (key: string, title: string) => {
+      setPanes((current) =>
+        current.map((pane) => (pane.key === key ? { ...pane, title: title || pane.title } : pane)),
+      );
+    },
+    [setPanes],
+  );
 }
 
 /** Choosing a layout is choosing it for next time too, so the two always happen together. */

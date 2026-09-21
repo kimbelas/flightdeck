@@ -18,8 +18,9 @@ import { useCallback, useEffect, useRef, useState, type JSX, type RefObject } fr
 import type { PtyTarget } from '../../contracts/pty-protocol.ts';
 import { ImagePaste } from '../panes/image-paste.ts';
 import { PaneSocket } from '../panes/pane-socket.ts';
-import { ENDED_STATUSES, type PaneStatus } from '../panes/pane-status.ts';
+import type { PaneStatus } from '../panes/pane-status.ts';
 import { TerminalPane } from '../panes/terminal-pane.ts';
+import { PaneHead, type PaneControls } from './pane-head.tsx';
 
 interface PaneViewProps {
   /** Position from the left, zero-based. What `1`-`9` resolves against — see `data-deck-pane`. */
@@ -27,7 +28,11 @@ interface PaneViewProps {
   readonly target: PtyTarget;
   readonly title: string;
   readonly focused: boolean;
+  /** What the session behind this pane can be asked to do — P5a-T6. A shell has no session. */
+  readonly controls: PaneControls | undefined;
   readonly onFocused: () => void;
+  /** Renames the PANE, in this browser. See `pane-head.tsx` for why that is the whole verb. */
+  readonly onRename: (title: string) => void;
   readonly onClose: () => void;
 }
 
@@ -54,7 +59,12 @@ let mounts = 0;
  * and on the way out, close the socket before disposing the terminal, so the last thing the socket
  * does cannot be a write into a disposed one.
  */
-function mountPane(host: HTMLElement, target: PtyTarget, report: Report, note: Note): () => void {
+function mountPane(
+  host: HTMLElement,
+  target: PtyTarget,
+  report: Report,
+  note: Note,
+): { readonly socket: PaneSocket; readonly dispose: () => void } {
   const pane = new TerminalPane();
   pane.open(host);
   const socket = new PaneSocket(pane, { onStatus: report });
@@ -79,12 +89,15 @@ function mountPane(host: HTMLElement, target: PtyTarget, report: Report, note: N
   };
   window.addEventListener('resize', onResize);
 
-  return () => {
-    window.removeEventListener('resize', onResize);
-    detachPaste();
-    // Closing a pane detaches; it never stops the session (RESEARCH.md F.2.6).
-    socket.close();
-    pane.dispose();
+  return {
+    socket,
+    dispose: () => {
+      window.removeEventListener('resize', onResize);
+      detachPaste();
+      // Closing a pane detaches; it never stops the session (RESEARCH.md F.2.6).
+      socket.close();
+      pane.dispose();
+    },
   };
 }
 
@@ -93,11 +106,16 @@ export function PaneView({
   target,
   title,
   focused,
+  controls,
   onFocused,
+  onRename,
   onClose,
 }: PaneViewProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const { status, detail, note, attempt, mount, reattach } = usePaneLifecycle(target, hostRef);
+  const { status, detail, note, attempt, mount, reattach, stopping } = usePaneLifecycle(
+    target,
+    hostRef,
+  );
 
   return (
     // `data-deck-pane` is what `1`-`9` resolves against (P2-T5), and it CARRIES the position rather
@@ -114,13 +132,15 @@ export function PaneView({
       onFocus={onFocused}
       aria-label={`terminal for ${title}`}
     >
-      <PaneHead title={title} status={status} onReattach={reattach} onClose={onClose} />
-      {detail !== undefined && <p className="pane-detail">{detail}</p>}
-      {note !== undefined && (
-        <p className="pane-note" data-pane-note>
-          {note}
-        </p>
-      )}
+      <PaneHead
+        title={title}
+        status={status}
+        controls={announceStop(controls, stopping)}
+        onRename={onRename}
+        onReattach={reattach}
+        onClose={onClose}
+      />
+      <PaneLines detail={detail} note={note} />
       <div ref={hostRef} className="pane-host" />
       <footer className="pane-foot">
         Closing this pane detaches it. The session keeps running.
@@ -129,30 +149,51 @@ export function PaneView({
   );
 }
 
-interface PaneHeadProps {
-  readonly title: string;
-  readonly status: PaneStatus;
-  readonly onReattach: () => void;
-  readonly onClose: () => void;
+/**
+ * The status line and the pane's own note, which are two lines and not one.
+ *
+ * `detail` belongs to the status — "evicted", and why — and `note` is something the pane did on
+ * its own, today an image paste (P5a-T8). A paste must not overwrite `evicted`.
+ */
+function PaneLines({
+  detail,
+  note,
+}: {
+  readonly detail: string | undefined;
+  readonly note: string | undefined;
+}): JSX.Element {
+  return (
+    <>
+      {detail !== undefined && <p className="pane-detail">{detail}</p>}
+      {note !== undefined && (
+        <p className="pane-note" data-pane-note>
+          {note}
+        </p>
+      )}
+    </>
+  );
 }
 
-function PaneHead({ title, status, onReattach, onClose }: PaneHeadProps): JSX.Element {
-  return (
-    <header className="pane-head">
-      <span className="pane-title">{title}</span>
-      <span className={`chip chip-${status}`}>{status}</span>
-      {/* Offered for every ending, not only eviction: a pane whose session was resumed elsewhere
-          and a pane whose socket dropped are both reattachable, and neither is worth a reload. */}
-      {ENDED_STATUSES.has(status) && (
-        <button type="button" className="ghost" onClick={onReattach}>
-          reattach
-        </button>
-      )}
-      <button type="button" className="ghost" onClick={onClose}>
-        close
-      </button>
-    </header>
-  );
+/**
+ * The same controls, with `stop` telling this pane's socket what is about to happen — P5a-T6.
+ *
+ * Here rather than in `PaneGrid`, which builds the controls: the grid knows about sessions and
+ * rows, and the socket belongs to this component's effect. What the wrapper buys is the difference
+ * between "another terminal attached to this session" and "you stopped this session", which is a
+ * sentence the pane can only get right by remembering which button was pressed (`pane-status.ts`).
+ */
+function announceStop(
+  controls: PaneControls | undefined,
+  stopping: () => void,
+): PaneControls | undefined {
+  if (controls === undefined) return undefined;
+  return {
+    ...controls,
+    onStop: () => {
+      stopping();
+      controls.onStop();
+    },
+  };
 }
 
 interface PaneLifecycle {
@@ -164,6 +205,8 @@ interface PaneLifecycle {
   /** Which terminal this is, page-wide. Changes only when one was actually built — see `mounts`. */
   readonly mount: number;
   readonly reattach: () => void;
+  /** Tells the socket the next exit is one this pane asked for. Sends nothing — see `stopping`. */
+  readonly stopping: () => void;
 }
 
 /**
@@ -183,6 +226,13 @@ function usePaneLifecycle(
   const [note, setNote] = useState<string | undefined>(undefined);
   const [attempt, setAttempt] = useState(0);
   const [mount, setMount] = useState(0);
+  // The live socket, so `stop` can reach it. A ref rather than state: it changes on remount and
+  // nothing renders from it, and putting it in state would remount the pane it belongs to.
+  const socketRef = useRef<PaneSocket | undefined>(undefined);
+
+  const stopping = useCallback(() => {
+    socketRef.current?.stopping();
+  }, []);
 
   const reattach = useCallback(() => {
     setStatus('connecting');
@@ -196,7 +246,7 @@ function usePaneLifecycle(
     if (host === null) return undefined;
     mounts += 1;
     setMount(mounts);
-    return mountPane(
+    const mounted = mountPane(
       host,
       target,
       (next, why) => {
@@ -205,8 +255,10 @@ function usePaneLifecycle(
       },
       setNote,
     );
+    socketRef.current = mounted.socket;
+    return mounted.dispose;
     // `attempt` is the remount trigger and is deliberately not read in the body.
   }, [target, attempt, hostRef]);
 
-  return { status, detail, note, attempt, mount, reattach };
+  return { status, detail, note, attempt, mount, reattach, stopping };
 }

@@ -18,6 +18,7 @@ import { ConnectPanel } from './connect-panel.tsx';
 import type { DeckActions } from './deck-commands.ts';
 import type { DeckState } from './deck-state.ts';
 import type { DeckStore } from './deck-store.ts';
+import type { SessionRowViewModel } from './session-row-view-model.ts';
 import { InstallPanel } from './install-panel.tsx';
 
 /**
@@ -55,7 +56,12 @@ export function installActions(
   openInstall: (subscription: SubscriptionId | undefined) => void,
 ): Pick<
   DeckActions,
-  'onOpenInstall' | 'onCheckInstall' | 'onUpdateClaude' | 'onRespawnAll' | 'onCloseInstall'
+  | 'onOpenInstall'
+  | 'onCheckInstall'
+  | 'onUpdateClaude'
+  | 'onRespawnAll'
+  | 'onRespawnOne'
+  | 'onCloseInstall'
 > {
   return {
     onOpenInstall: (subscription: SubscriptionId) => {
@@ -70,6 +76,11 @@ export function installActions(
     },
     onRespawnAll: (subscription: SubscriptionId) => {
       void store.install.respawnAll(subscription);
+    },
+    // P5a-T6. The same slice as the panel's `--all`, because it is the same verb with one name
+    // in it — and the reply is read the same way, from the ids the CLI printed (F.10.4).
+    onRespawnOne: (row: SessionRowViewModel) => {
+      void store.install.respawnOne(row.ref);
     },
     onCloseInstall: () => {
       openInstall(undefined);

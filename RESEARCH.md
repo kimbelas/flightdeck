@@ -3190,3 +3190,41 @@ and `doctor-cli.ts` built an identical one with `SUBSCRIPTION_IDS`, which is `['
 noticed while both only printed to a terminal one at a time; the deck rendering the same plan made
 the fixture and the live machine disagree about which subscription came first. All three
 constructions are now one function in `core/connect.ts`, over `SUBSCRIPTION_IDS`.
+
+### G.45 The button that made the pane lie (P5a-T6, 2026-09-21)
+
+Four sabotages, each removing the mechanism its checks depend on (G.32), each verified to have
+LANDED before the result was read (G.38, G.40).
+
+| sabotage | what failed |
+| --- | --- |
+| send the full uuid where `respawn` takes the short id | smoke: `naming ONE session rather than sending --all from a pane`, detail `"shortId":"a1b2c3d4-0000-…"` |
+| give a pane with no row the session verbs anyway | smoke: `and offers neither stop nor respawn — there is no session to name` |
+| store the pane's key where its title goes | smoke: `and the renamed one kept its name`, detail `["365:a1b2c3d4-…","shell"]` |
+| stop the pane remembering that IT pressed stop | smoke: both stop sentences, detail `Another terminal attached to this session.` |
+
+**The fourth sabotage restores a bug this task shipped and the live run caught.** `claude stop` ends
+the session, so the attach PTY exits 0 with nobody having closed the pane — which is exactly the
+signal P5a-T6a reads as an eviction. Measured on a real session: press `stop`, and the pane says
+*"Another terminal attached to this session. Reattach to take it back."* about a session the person
+had just stopped from that pane. The fix is on this side, because nothing on the wire differs:
+`PaneAsked` is `nobody | detach | stop` now, and the pane has a `stopped` status. Verified live
+afterwards — `You stopped this session. Resume it from its row, then reattach.`
+
+**No test in this repo could have found it.** The unit suite tests `readPaneExit`, and it was
+answering its question correctly for the two cases it had been given. The smoke could not see it
+either, because the fixture core's `stop` did not end the PTY it had handed out — a double that
+returned 200 and left the pane connected. It does now: `FixtureCore` tracks which target each open
+socket is attached to and exits that PTY with code 0, which is what let the sabotage above fail. **A
+double that does not do the consequential half of a verb cannot test the consequence.**
+
+**The other half of the task is a measurement about the CLI, not about the deck.** There is no
+rename in Claude Code 2.1.278: `-n/--name` is start-only, and `respawn <id>|--all`, `stop <id>`,
+`rm <id>`, `attach <id>` and `logs <id>` take an id and nothing else — checked against each one's
+help rather than assumed from the absence of a top-level `rename` command. So `rename` names the
+pane, and the box says so while it is open. G.33's shape exactly, one task later.
+
+**The live run is also where the two-orders-on-one-screen habit showed up again** (G.44's last
+paragraph): pressing `respawn` left the pane `evicted` with `stop` gone and `reattach` offered,
+because the session restarts under the same id and the reconciler had not swept yet. That is
+correct and it reads correctly, which is only knowable by watching it.

@@ -15,25 +15,35 @@
 import type { JSX } from 'react';
 import { layoutClass, PANE_LAYOUTS, type PaneLayout } from '../../contracts/pane-layout.ts';
 import type { OpenPane } from './deck-view.tsx';
+import type { PaneControls } from './pane-head.tsx';
 import { PaneView } from './pane-view.tsx';
+import type { SessionRowViewModel } from './session-row-view-model.ts';
 
 interface PaneGridProps {
   readonly panes: readonly OpenPane[];
+  /**
+   * Every session, so a pane can find the row it is attached to — P5a-T6.
+   *
+   * A pane's `key` IS its row's `key`, which is what makes this a lookup rather than a second
+   * source of truth: `canStop` and the `SessionRef` come off the row the session list is drawing,
+   * so the pane's buttons and the row's buttons cannot come to different conclusions about the
+   * same session. A pane with no row — a shell, or a session that has since ended — gets no
+   * session verbs, which is the honest answer rather than a button that would 400.
+   */
+  readonly rows: readonly SessionRowViewModel[];
   readonly layout: PaneLayout;
   readonly focusedKey: string | undefined;
   readonly onLayout: (layout: PaneLayout) => void;
   readonly onFocused: (key: string) => void;
+  readonly onRename: (key: string, title: string) => void;
+  readonly onStop: (row: SessionRowViewModel) => void;
+  readonly onRespawn: (row: SessionRowViewModel) => void;
   readonly onClose: (key: string) => void;
 }
 
-export function PaneGrid({
-  panes,
-  layout,
-  focusedKey,
-  onLayout,
-  onFocused,
-  onClose,
-}: PaneGridProps): JSX.Element {
+export function PaneGrid(props: PaneGridProps): JSX.Element {
+  const { panes, layout, focusedKey, onLayout, onFocused, onClose } = props;
+  const byKey = new Map(props.rows.map((row) => [row.key, row]));
   return (
     <div className="pane-area">
       <PaneBar layout={layout} count={panes.length} onLayout={onLayout} />
@@ -52,8 +62,12 @@ export function PaneGrid({
             target={pane.target}
             title={pane.title}
             focused={pane.key === focusedKey}
+            controls={paneControls(byKey.get(pane.key), props)}
             onFocused={() => {
               onFocused(pane.key);
+            }}
+            onRename={(title) => {
+              props.onRename(pane.key, title);
             }}
             onClose={() => {
               onClose(pane.key);
@@ -64,6 +78,31 @@ export function PaneGrid({
       </section>
     </div>
   );
+}
+
+/**
+ * What this pane's session can be asked to do, or `undefined` when there is no session.
+ *
+ * The two flags are the ROW's, not this file's: `canStop` is a running background session and
+ * `canRespawn` is any background one, because `respawn` by name works on a session that has
+ * finished while `--all` skips it (RESEARCH.md F.10.4). Deciding either here would be a second
+ * opinion about a session the list beside it is already describing.
+ */
+function paneControls(
+  row: SessionRowViewModel | undefined,
+  props: PaneGridProps,
+): PaneControls | undefined {
+  if (row === undefined) return undefined;
+  return {
+    canStop: row.canStop,
+    canRespawn: row.canRespawn,
+    onStop: () => {
+      props.onStop(row);
+    },
+    onRespawn: () => {
+      props.onRespawn(row);
+    },
+  };
 }
 
 /** The sentence that explains the whole deck, where somebody first wonders about it. */

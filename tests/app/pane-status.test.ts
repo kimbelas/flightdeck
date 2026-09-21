@@ -101,34 +101,57 @@ describe('PaneStatusReporter — which explanation for a dead pane wins', () => 
   });
 });
 
-describe('readPaneExit — an ending, an eviction, or nothing worth saying', () => {
+describe('readPaneExit — an ending, an eviction, a stop, or nothing worth saying', () => {
   it('reads a clean exit nobody asked for as an eviction', () => {
-    expect(readPaneExit(0, SESSION, false)).toEqual({
+    expect(readPaneExit(0, SESSION, 'nobody')).toEqual({
       status: 'evicted',
       detail: 'Another terminal attached to this session. Reattach to take it back.',
     });
   });
 
   it('says nothing when this side asked for the detach', () => {
-    expect(readPaneExit(0, SESSION, true)).toBeUndefined();
+    expect(readPaneExit(0, SESSION, 'detach')).toBeUndefined();
+  });
+
+  /**
+   * The bug this case exists for shipped and was found by RUNNING it (P5a-T6).
+   *
+   * `claude stop` ends the session, so the attach PTY exits 0 with nobody having closed the pane —
+   * byte for byte the eviction signal. The pane said "another terminal attached to this session"
+   * about a session that had just been stopped from that very pane, and no test could have seen
+   * it, because the only difference is which button was pressed on this side.
+   */
+  it('reads an exit this pane asked for by pressing stop as a stop, not an eviction', () => {
+    expect(readPaneExit(0, SESSION, 'stop')).toEqual({
+      status: 'stopped',
+      detail: 'You stopped this session. Resume it from its row, then reattach.',
+    });
+  });
+
+  it('says a stop is a stop whatever the exit code, because the pane knows why', () => {
+    expect(readPaneExit(137, SESSION, 'stop')?.status).toBe('stopped');
   });
 
   it('reads a shell that exited as an ending — that is what typing `exit` does', () => {
-    expect(readPaneExit(0, SHELL, false)).toEqual({
+    expect(readPaneExit(0, SHELL, 'nobody')).toEqual({
       status: 'closed',
       detail: 'session exited (0)',
     });
   });
 
   it('reads a non-zero exit as an ending even on a session', () => {
-    expect(readPaneExit(1, SESSION, false)).toEqual({
+    expect(readPaneExit(1, SESSION, 'nobody')).toEqual({
       status: 'closed',
       detail: 'session exited (1)',
     });
   });
 
   it('reads an exit with no target as an ending rather than guessing at eviction', () => {
-    expect(readPaneExit(0, undefined, false)?.status).toBe('closed');
+    expect(readPaneExit(0, undefined, 'nobody')?.status).toBe('closed');
+  });
+
+  it('offers reattach for a stop, because the row is where resuming lives (P4-T2a)', () => {
+    expect(ENDED_STATUSES.has('stopped')).toBe(true);
   });
 });
 
@@ -143,7 +166,7 @@ describe('the sentences a pane shows', () => {
   });
 
   it('offers reattach for every ending and for none of the working states', () => {
-    expect([...ENDED_STATUSES].toSorted()).toEqual(['closed', 'evicted', 'refused']);
+    expect([...ENDED_STATUSES].toSorted()).toEqual(['closed', 'evicted', 'refused', 'stopped']);
     expect(ENDED_STATUSES.has('live')).toBe(false);
     expect(ENDED_STATUSES.has('connecting')).toBe(false);
   });

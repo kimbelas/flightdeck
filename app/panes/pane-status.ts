@@ -9,7 +9,20 @@
 // decisions live here, where a test can reach them without moving the whole project's type floor.
 import type { PtyTarget } from '../../contracts/pty-protocol.ts';
 
-export type PaneStatus = 'connecting' | 'live' | 'closed' | 'refused' | 'evicted';
+export type PaneStatus = 'connecting' | 'live' | 'closed' | 'refused' | 'evicted' | 'stopped';
+
+/**
+ * Who asked for the exit that is about to arrive, and for what — P5a-T6.
+ *
+ * It was a boolean until this task, and the boolean shipped a pane that lied. `claude stop` ends
+ * the session, so the attach PTY exits 0 with nobody having closed the pane — which is precisely
+ * the eviction signal (F.2.6), and the pane said "another terminal attached to this session" about
+ * a session the person had just stopped THEMSELVES, from that pane. **Measured live, on the real
+ * deck, against a real session** — no test saw it, because nothing on the wire is different.
+ *
+ * Nothing on the wire tells the three apart, so the pane has to remember which button it pressed.
+ */
+export type PaneAsked = 'nobody' | 'detach' | 'stop';
 
 export interface PaneReport {
   readonly status: PaneStatus;
@@ -102,18 +115,24 @@ export class PaneStatusReporter {
  * A shell that exits has ended — that is what typing `exit` does. An ATTACHED SESSION that exits
  * cleanly with nobody having closed the pane has almost certainly been taken: `claude attach` never
  * refuses a second attach, it evicts the first, and the evicted side exits 0 (RESEARCH.md F.2.6).
- * Nothing on the wire tells the two apart, so the question is answered on this side — the pane that
- * was closed on purpose is the one that asked.
+ * Nothing on the wire tells the three apart, so the question is answered on this side — the pane
+ * that was closed on purpose is the one that asked, and so is the pane that pressed `stop`.
  *
- * @param asked whether this side initiated the detach, which is P5a-T1's owed "did I ask?" flag.
+ * @param asked P5a-T1's owed "did I ask?" flag, widened to three answers in P5a-T6 (`PaneAsked`).
  */
 export function readPaneExit(
   code: number,
   target: PtyTarget | undefined,
-  asked: boolean,
+  asked: PaneAsked,
 ): PaneReport | undefined {
   // Nothing to report: the pane is being torn down and its card is going with it.
-  if (asked) return undefined;
+  if (asked === 'detach') return undefined;
+  if (asked === 'stop') {
+    return {
+      status: 'stopped',
+      detail: 'You stopped this session. Resume it from its row, then reattach.',
+    };
+  }
   if (code === 0 && target?.kind === 'session') {
     return {
       status: 'evicted',
@@ -130,9 +149,16 @@ export function reasonText(reason: string): string {
   return reason;
 }
 
-/** The statuses a pane does not come back from on its own, and so the ones `reattach` is for. */
+/**
+ * The statuses a pane does not come back from on its own, and so the ones `reattach` is for.
+ *
+ * `stopped` is among them, and the button it offers is deliberately the same one: resuming is the
+ * ROW's job (P4-T2a) because a stopped session has no pane to put a button on, and once it is
+ * running again this pane is exactly one click from having it back. The detail says which order.
+ */
 export const ENDED_STATUSES: ReadonlySet<PaneStatus> = new Set<PaneStatus>([
   'closed',
   'refused',
   'evicted',
+  'stopped',
 ]);

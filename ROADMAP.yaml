@@ -2702,9 +2702,55 @@ phases:
           render would disagree with it.
       - id: P5a-T6
         title: Per-pane controls — stop, respawn, resume, rename, mute
-        status: todo
+        status: done
+        done_on: 2026-09-21
         depends_on: [P4-T2, P5a-T6a]
+        deliverables:
+          [
+            app/deck/pane-head.tsx,
+            app/deck/pane-view.tsx,
+            app/deck/pane-grid.tsx,
+            app/deck/deck-body.tsx,
+            app/deck/deck-install.tsx,
+            app/deck/deck-commands.ts,
+            app/deck/install-slice.ts,
+            app/deck/session-row-view-model.ts,
+            app/deck/use-pane-grid.ts,
+            app/panes/pane-status.ts,
+            app/panes/pane-socket.ts,
+            app/globals.css,
+            tests/app/pane-status.test.ts,
+            tests/e2e/smoke/pane-control-checks.mjs,
+            tests/e2e/fixture-core.mjs,
+            DECISIONS.md D51,
+            RESEARCH.md G.45,
+          ]
         notes: >-
+          DONE under D51, measured in G.45. **Three of the seven controls ship and each absence was
+          measured.** resume is the ROW's (P4-T2a) — a stopped session has no pane; interrupt is
+          Ctrl+C, which already reaches the PTY; mute belongs to the toasts it silences (P6-T3);
+          pop out is P6-T2, which owns the AppX path resolution.
+          **rename names the PANE**, and the box says so while it is open. There is no rename verb
+          in Claude Code 2.1.278 — `-n/--name` is start-only and every background verb takes an id
+          and nothing else, read off each one's help. So the deliverable half is the deck's own
+          label, which rides the localStorage entry the open panes already survive a reload in.
+          G.33's shape one task later: half a control, labelled as half.
+          **Neither session verb needed a core change.** `POST /sessions/stop` and
+          `POST /sessions/respawn` already take a ref, and the two flags come off the ROW, so a
+          pane's buttons and its row's buttons cannot disagree about the same session. A shell — or
+          a pane whose session has ended — gets neither, because a button there could only 400.
+          **The stop button shipped a pane that lied.** `claude stop` ends the session, so the
+          attach exits 0 with nobody having closed the pane, which is byte for byte the eviction
+          signal (F.2.6) — and the pane said "another terminal attached to this session" about a
+          session the person had just stopped from that pane. P5a-T1's "did I ask?" boolean is
+          `PaneAsked` now (`nobody | detach | stop`) and a pane has a `stopped` status.
+          **No test here could have found it**: the unit suite was answering the two questions it
+          had, and the fixture core's `stop` returned 200 without ending the PTY it had handed out.
+          It ends it now, which is what let the sabotage fail. Found by pressing the button on a
+          real session; fixed and verified the same way.
+          The original notes follow, and the first paragraph of them is still the rule this task
+          was written around.
+          ---
           The two defects this task used to carry are SHIPPED in P5a-T6a, and one of them was not
           what G.5 said it was — see RESEARCH.md G.29 before reading G.5 on the subject. "Held
           elsewhere" and the evicted state went with them, because a pane that cannot say why it

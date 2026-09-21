@@ -752,6 +752,12 @@ button.ghost {
   border-color: var(--warn);
 }
 
+/* Stopped is not an error either — it is the thing the person just asked for, from this pane
+   (P5a-T6). Dim like `closed`, because nothing went wrong and nothing is waiting. */
+.chip-stopped {
+  color: var(--dim);
+}
+
 /* ---- header quota gauges (P2-T3) ---- */
 
 /* margin-left:auto pushes the gauges and everything after them to the right of the count, so the
@@ -1119,6 +1125,29 @@ button.danger:hover:not(:disabled) {
 .pane-title {
   flex: 1;
   font-weight: 600;
+}
+
+/* P5a-T6. The rename box replaces the title in place, so the head does not change height. */
+.pane-rename {
+  flex: 1;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.pane-rename input {
+  flex: 0 1 18ch;
+  min-width: 8ch;
+}
+
+.pane-rename-note {
+  font-size: 11px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pane-detail {
