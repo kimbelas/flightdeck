@@ -36,6 +36,14 @@ export interface PaneControls {
   readonly canRespawn: boolean;
   readonly onStop: () => void;
   readonly onRespawn: () => void;
+  /**
+   * Hands the session to Windows Terminal — P6-T2, SPEC §5.7(4).
+   *
+   * Offered on every session pane, with no flag beside it: a pop-out does not need the
+   * session to be running, doing anything, or even attachable from here — it detaches this
+   * pane and lets Windows Terminal try, which is exactly what an escape hatch is for.
+   */
+  readonly onPopOut: () => void;
 }
 
 export interface PaneHeadProps {
@@ -125,6 +133,20 @@ function SessionVerbs({ controls }: { readonly controls: PaneControls | undefine
           respawn
         </button>
       )}
+      {/*
+        No flag beside it, unlike the two above (P6-T2). A pop-out does not need the session to be
+        running or doing anything: it detaches this pane and lets Windows Terminal try, which is
+        what an escape hatch is. `title` says the part a one-word button cannot.
+      */}
+      <button
+        type="button"
+        className="ghost"
+        data-pane-popout
+        title="Detach this pane and attach in a Windows Terminal tab"
+        onClick={controls.onPopOut}
+      >
+        pop out
+      </button>
     </>
   );
 }

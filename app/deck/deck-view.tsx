@@ -56,7 +56,7 @@ export function DeckView(): JSX.Element {
   // rather than store state: nothing outside this page cares, and the reading it triggers is in
   // the store where it belongs.
   const [install, setInstall] = useState<SubscriptionId | undefined>(undefined);
-  const actions = useDeckActions(store, usePaneActions(grid, state.projects, project.key), setInstall); // prettier-ignore
+  const actions = useDeckActions(store, usePaneActions(store, grid, state.projects, project.key), setInstall); // prettier-ignore
 
   // Every session, unfiltered: the palette can reach one the `/` box is currently hiding — and,
   // since P3-T6, one the current project is hiding too. Narrowing happens in `DeckBody`.
@@ -170,6 +170,7 @@ function useLiveStream(store: DeckStore): void {
  * folded, and `shell-1 · c:/users/.../app-next` is not a title.
  */
 function usePaneActions(
+  store: DeckStore,
   grid: PaneGridState,
   projects: readonly ProjectRecord[],
   current: string | undefined,
@@ -178,17 +179,30 @@ function usePaneActions(
     current === undefined
       ? HOME
       : (projects.find((project) => projectKey(project.path) === current)?.name ?? HOME);
-  const { panes, openPane } = grid;
+  const { panes, openPane, closePane } = grid;
   const onOpenShell = useCallback(() => {
     openPane(nextShellPane(panes, current, label));
   }, [panes, openPane, current, label]);
-  return { openPane, onOpenShell };
+
+  // P6-T2. The card is closed on CORE's answer, not on the press: `detached: true` is core
+  // saying it released the hold. Leaving it would show "evicted", which is the right word
+  // for somebody ELSE taking the attach (F.2.6) and the wrong one for a button you pressed.
+  const onPopOut = useCallback(
+    (row: SessionRowViewModel) => {
+      void store.popOut(row.ref, row.title, row.cwd).then((opened) => {
+        if (opened) closePane(row.key);
+      });
+    },
+    [store, closePane],
+  );
+  return { openPane, onOpenShell, onPopOut };
 }
 
-/** The two ways a pane is opened. One object, because `useDeckActions` takes four things. */
+/** What the deck does that needs the GRID. One object, because `max-params` is four. */
 interface PaneOpeners {
   readonly openPane: (pane: OpenPane) => void;
   readonly onOpenShell: () => void;
+  readonly onPopOut: (row: SessionRowViewModel) => void;
 }
 
 /**
@@ -207,7 +221,7 @@ function useDeckActions(
   panes: PaneOpeners,
   openInstall: (subscription: SubscriptionId | undefined) => void,
 ): DeckActions {
-  const { openPane, onOpenShell } = panes;
+  const { openPane, onOpenShell, onPopOut } = panes;
 
   const onOpenPane = useCallback(
     (row: SessionRowViewModel) => {
@@ -231,6 +245,7 @@ function useDeckActions(
 
   return {
     onOpenShell,
+    onPopOut,
     onOpenPane,
     onLaunch,
     onRefresh,

@@ -23,6 +23,7 @@ import { PreviewRoute, type PreviewSource } from './http/preview-route.ts';
 import { RequestRouter } from './http/request-router.ts';
 import { RemoveRoute } from './http/remove-route.ts';
 import { ResumeRoute } from './http/resume-route.ts';
+import { PopoutRoute } from './http/popout-route.ts';
 import { StopRoute } from './http/stop-route.ts';
 import type { Route } from './http/route.ts';
 import { SessionDetailRoute, type DetailSource } from './http/session-detail-route.ts';
@@ -42,6 +43,7 @@ import type { SessionRespawner } from './application/session-respawner.ts';
 import type { SessionLauncher } from './application/session-launcher.ts';
 import type { SessionResumer } from './application/session-resumer.ts';
 import type { SessionRemover } from './application/session-remover.ts';
+import type { SessionPopper } from './application/session-popper.ts';
 import type { SessionStopper } from './application/session-stopper.ts';
 import type { StatusReport } from './application/status-report.ts';
 import { SubscriptionPaths } from './application/subscription-paths.ts';
@@ -60,6 +62,8 @@ export interface RouterParts {
   readonly launcher: SessionLauncher;
   readonly resumer: SessionResumer;
   readonly stopper: SessionStopper;
+  /** Hands a session to Windows Terminal, detaching the pane first — P6-T2. */
+  readonly popper: SessionPopper;
   /** The one verb that destroys something — its own route, and its own confirm in the deck (P4-T2). */
   readonly remover: SessionRemover;
   /** One headless question at a time, streamed onto `/stream` (P4-T4, D47, D48). */
@@ -97,6 +101,7 @@ export function buildRouter(parts: RouterParts, extra: readonly Route[]): Reques
     new LaunchRoute(parts.launcher),
     new ResumeRoute(parts.resumer),
     new StopRoute(parts.stopper),
+    new PopoutRoute(parts.popper),
     // Its own literal path, so no typo turns a stop into a delete — see the route's header.
     new RemoveRoute(parts.remover),
     // 202 and a run id; the answer arrives as `ask` frames on the stream, not down this body.

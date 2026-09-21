@@ -27,12 +27,7 @@
 // exactly that: the route handler answers 503 (RESEARCH.md F.6.7). Since core restarting is an
 // ordinary event on this machine (F.3.3), a deck that stopped retrying would be a deck that needs
 // a page reload every time. One path for both cases: close, wait, reopen.
-import {
-  CORE_REMOVE_PATH,
-  CORE_RESUME_PATH,
-  CORE_SESSIONS_PATH,
-  CORE_STOP_PATH,
-} from '../../contracts/deck-routes.ts';
+import { CORE_SESSIONS_PATH } from '../../contracts/deck-routes.ts';
 import type { PresetDraft, PresetLaunch, PresetRef } from '../../contracts/launch-preset.ts';
 import type { SessionRef } from '../../contracts/session-ref.ts';
 import { parseDeckSnapshot, sessionKey, type DeckSnapshot } from '../../contracts/session-row.ts';
@@ -44,12 +39,10 @@ import {
   UNREADABLE,
   whatStarted,
   whyNotLaunched,
-  whyNotRemoved,
-  whyNotResumed,
-  whyNotStopped,
 } from './deck-replies.ts';
 import { AskSlice } from './ask-slice.ts';
 import { InstallSlice } from './install-slice.ts';
+import { LifecycleSlice } from './lifecycle-slice.ts';
 import { upsert, without } from './session-rows.ts';
 import type { AskRequest } from '../../contracts/ask-run.ts';
 import { DetailSlice } from './detail-slice.ts';
@@ -107,6 +100,8 @@ export class DeckStore {
   private readonly details: DetailSlice;
   /** The Ask panel — P4-T4. Two inputs: it POSTs, and the stream tells it the answer. */
   private readonly asks: AskSlice;
+  /** Resume, stop, pop out, delete — one shape four times (P6-T2). */
+  private readonly lifecycle: LifecycleSlice;
   private state: DeckState = EMPTY;
   private source: EventStreamSource | undefined;
   private cancelRetry: (() => void) | undefined;
@@ -134,6 +129,9 @@ export class DeckStore {
     });
     this.details = new DetailSlice(api, (details) => {
       this.set({ details });
+    });
+    this.lifecycle = new LifecycleSlice(api, (changes) => {
+      this.set(changes);
     });
   }
 
@@ -240,28 +238,13 @@ export class DeckStore {
   }
 
   /**
-   * Deletes a background session and its conversation — P4-T2.
+   * The four verbs that change what a session IS — see `lifecycle-slice.ts` for the rules.
    *
-   * Nothing is fetched afterwards, for `launch`'s reason: the reconciler's next sweep publishes
-   * `session.gone` and the row disappears then. A deleted row therefore lingers for a sweep, which
-   * is honest — it is gone once core has seen that it is gone, and a deck that removed the row
-   * itself would be guessing at the outcome of the one write that cannot be undone.
-   *
-   * The confirm step is the ROW's (`SessionRowCard`), not this method's: a store method that asked
-   * would be one nothing else could call.
-   *
-   * @returns whether core deleted it.
+   * None of them re-reads anything: the reconciler's next sweep publishes the change and it
+   * arrives on the stream, so a row goes on saying "running" for a sweep after it was stopped.
+   * That is honest — it is running until core has seen that it is not.
    */
-  public async remove(ref: SessionRef): Promise<boolean> {
-    this.set({ loading: true, error: undefined });
-    const reply = await this.api.post(CORE_REMOVE_PATH, ref);
-    if (reply?.status === 200) {
-      this.set({ loading: false });
-      return true;
-    }
-    this.set({ loading: false, error: whyNotRemoved(reply) });
-    return false;
-  }
+  public remove = (ref: SessionRef): Promise<boolean> => this.lifecycle.remove(ref);
 
   /**
    * Saves one preset for a project, then re-reads the list. See `PresetsSlice` for the rule.
@@ -281,48 +264,16 @@ export class DeckStore {
     this.asks.clear();
   };
 
-  /**
-   * Wakes a stopped background session so a pane can attach to it — P4-T2a.
-   *
-   * Nothing is fetched afterwards, for `launch`'s reason: the reconciler's next sweep publishes the
-   * woken session as a `session.upsert` and it arrives on the stream. So the row goes on saying
-   * "not running" for a sweep, which is honest — it is not running until core has seen that it is.
-   *
-   * @returns whether core woke it.
-   */
-  public async resume(subscription: SubscriptionId, sessionId: string): Promise<boolean> {
-    this.set({ loading: true, error: undefined });
-    const reply = await this.api.post(CORE_RESUME_PATH, { subscription, sessionId });
-    if (reply?.status === 200) {
-      this.set({ loading: false });
-      return true;
-    }
-    this.set({ loading: false, error: whyNotResumed(reply) });
-    return false;
-  }
+  /** Wakes a stopped background session so a pane can attach to it — P4-T2a. */
+  public resume = (subscription: SubscriptionId, sessionId: string): Promise<boolean> =>
+    this.lifecycle.resume(subscription, sessionId);
 
-  /**
-   * Stops a running background session, without deleting it — P4-T2b.
-   *
-   * Nothing is fetched afterwards, for `launch`'s reason: the reconciler's next sweep publishes the
-   * change and it arrives on the stream. So the row goes on saying "running" for a sweep, which is
-   * honest — it is running until core has seen that it is not.
-   *
-   * The whole ref goes over, both ids: `stop` takes the SHORT one (RESEARCH.md F.2.8b) and the deck
-   * does not derive it (contracts/session-ref.ts).
-   *
-   * @returns whether core stopped it.
-   */
-  public async stop(ref: SessionRef): Promise<boolean> {
-    this.set({ loading: true, error: undefined });
-    const reply = await this.api.post(CORE_STOP_PATH, ref);
-    if (reply?.status === 200) {
-      this.set({ loading: false });
-      return true;
-    }
-    this.set({ loading: false, error: whyNotStopped(reply) });
-    return false;
-  }
+  /** Stops a running background session, without deleting it — P4-T2b. */
+  public stop = (ref: SessionRef): Promise<boolean> => this.lifecycle.stop(ref);
+
+  /** Hands a session to Windows Terminal, detaching its pane first — P6-T2. */
+  public popOut = (ref: SessionRef, title: string, cwd: string | undefined): Promise<boolean> =>
+    this.lifecycle.popOut(ref, title, cwd);
 
   /**
    * Re-reads the project registry and everything annotating it — P3-T1, P3-T2, P3-T3, P4-T1.

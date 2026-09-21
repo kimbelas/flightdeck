@@ -3454,3 +3454,80 @@ titled `shell-1 · pdf-editor` whose prompt was
 profile's own prompt function. `$PSVersionTable.PSVersion.Major` answered `5` and
 `(Get-Location).Path` answered the project folder. A second press opened `shell-2 · pdf-editor`
 beside it in a 2-up grid, which is the thing that was impossible the day before.
+
+### G.50 The command line SPEC asked for starts a session instead of attaching (P6-T2, 2026-09-21)
+
+**The finding, and it cost tokens to make.** SPEC §5.3's pop-out is `<profile fn> attach <id>`. Run
+against the real CLI:
+
+```
+claude attach zzzzzzzz
+  → No job matching 'zzzzzzzz'. Run 'claude agents' to list running sessions.   exit 1
+
+claude --dangerously-skip-permissions attach zzzzzzzz
+  → (an interactive Claude session answers the prompt "attach zzzzzzzz")        exit 0
+```
+
+The second is what `claude-365 attach <id>` expands to, because the profile function is
+`& $ClaudeBin --dangerously-skip-permissions @args`. **A global flag before the subcommand makes
+Claude Code stop reading it as one**, so the id becomes a prompt, a session starts, tokens are
+spent and the exit code is 0. Every part of that is the failure mode a button cannot recover from:
+wrong action, real cost, looks successful. D57 is the decision; the adapter refuses to name a
+profile function at all and a test asserts that it never does.
+
+The probe was run believing it was a CLI error path, and it started a real session (200 KB of
+transcript, one turn). That is the cost of finding it, and it is recorded here rather than left as
+a surprise in a cost report.
+
+**`wt.exe` on PATH is still not a program.** Confirmed on this machine:
+`(Get-AppxPackage Microsoft.WindowsTerminal).InstallLocation` is
+`C:\Program Files\WindowsApps\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe`, which
+holds a real `wt.exe`; `(Get-Command wt.exe).Source` answers nothing. Resolved once and cached —
+`wt -w 0 nt` returns in **1 089 ms** with exit 0 while the tab lives on, so a request can wait for
+it.
+
+**The environment DOES reach a new tab in an existing window.** This was the open question the
+whole design turned on, since `-w 0` hands the command to the already-running Windows Terminal
+rather than starting one — and a child of a different process does not inherit core's environment.
+Probed by setting `FD_PROBE` and having the tab write it to a file:
+
+```
+FD_PROBE=reached-the-tab
+```
+
+So the config directory and the session id travel as VALUES and the `-Command` text stays fixed,
+which is the whole of SEC-PROC-1 here. Had it come back empty, the script would have had to be
+composed from strings.
+
+**Measured end to end against the real core.** `POST /sessions/popout` with a well-formed ref
+answered **200 in 1 966 ms** with `{"detached":false}` (nothing held it), and core logged
+`popped_out`. Read back from the OS afterwards:
+
+```
+MainWindowTitle : fd-popout-probe
+cmd : powershell -NoLogo -NoExit -Command "& $env:FD_CLAUDE attach $env:FD_SESSION"
+```
+
+The tab opened in the window that was already there, under the title asked for, running the fixed
+script with nothing interpolated into it — SEC-PROC-1 visible from outside the process.
+
+**Six sabotages, each watched to land and then to fail.**
+
+| sabotage | what failed |
+| --- | --- |
+| open the terminal before releasing the pane | unit: `releases the pane BEFORE it asks for a terminal` |
+| go through a profile function | unit: `does NOT go through a profile function` + `interpolates nothing into the script` |
+| trust `wt.exe` on PATH | unit: `runs the wt.exe INSIDE the package, not the alias` |
+| drop `-d` instead of refusing a folder with a separator | unit: `REFUSES a folder carrying a command separator` |
+| send the last path segment as the folder | smoke: `the folder is the whole path, not the last segment a row shows` |
+| leave the card open after a pop-out | smoke: `the pane detaches, because core let go of the session` |
+
+**The last one started as a wrong check.** It was written expecting the card to vanish, and it
+failed — because the deck's designed answer to "the attach ended and you did not ask" is to show
+**evicted** (F.2.6, P5a-T1). That is right when somebody else took the session and wrong when you
+pressed the button yourself, so the deck now closes the card on core's own `detached: true`. The
+check found a missing feature by being wrong about an existing one.
+
+**Three self-inflicted minutes, all the same bug.** A Windows path in a bash heredoc loses its
+backslashes, so `{"cwd":"C:\Users\…"}` reached core as invalid JSON and came back `bad_session`.
+The scratchpad `.py` pattern exists for exactly this and was not used. Third time.

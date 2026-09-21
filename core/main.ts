@@ -41,7 +41,7 @@ import { RequestRouter } from './http/request-router.ts';
 import type { StreamRoute } from './http/route.ts';
 import { warmUp } from './http/warm-up.ts';
 import { buildFeeds, type Feeds } from './feeds.ts';
-import { sessionVerbs, buildAsker } from './verbs.ts';
+import { sessionVerbs, buildAsker, buildPopper } from './verbs.ts';
 import { buildRouter, type RouterParts } from './routes.ts';
 import { projectSlice, type ProjectSlice } from './projects.ts';
 import { buildDetailReader, buildPreviewReader } from './reads.ts';
@@ -265,6 +265,15 @@ function buildHttp(parts: HttpParts): HttpSide {
   // ingest budget per session id, and one limiter means one place the windows live.
   const limiter = new RateLimiter(clock);
   const sessionParts = { install, runner: parts.runner, audit: parts.audit, logger };
+  // Before the server, as of P6-T2: `POST /sessions/popout` detaches the pane that holds a
+  // session before Windows Terminal attaches to it, because `claude attach` is last-one-wins
+  // and the second attach evicts the first in silence (F.2.6). So the route needs the same
+  // registry the socket server does, and there is exactly one of it.
+  const panes = new PaneRegistry(
+    new NodePtyHost(),
+    new WindowsPtyCommands(install, parts.projects.registry),
+    logger,
+  );
   const server = new CoreServer({
     guard,
     router: buildRouter(
@@ -278,6 +287,7 @@ function buildHttp(parts: HttpParts): HttpSide {
         preview: buildPreviewReader({ ...feeds, install, runner: parts.runner, clock, logger }),
         deck: new DeckQuery(parts.sessions, clock),
         ...sessionVerbs(sessionParts),
+        popper: buildPopper({ ...sessionParts, panes }),
         asker: buildAsker({ ...parts, publisher: feeds.ask }),
         tickets,
         // P5a-T8. The directory is made on first paste, not at boot: a machine where nobody has
@@ -294,11 +304,6 @@ function buildHttp(parts: HttpParts): HttpSide {
     limiter,
     logger,
   });
-  const panes = new PaneRegistry(
-    new NodePtyHost(),
-    new WindowsPtyCommands(install, parts.projects.registry),
-    logger,
-  );
   const sockets = new PtySocketServer({ guard, panes, tickets, logger });
   sockets.attachTo(server.raw);
   return { server, sockets, panes, tickets };
