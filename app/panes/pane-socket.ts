@@ -23,6 +23,7 @@ import {
   PendingInput,
   readPaneExit,
   reasonText,
+  type PaneAsked,
   type PaneStatus,
 } from './pane-status.ts';
 import type { TerminalPane } from './terminal-pane.ts';
@@ -42,8 +43,13 @@ export class PaneSocket {
   private readonly pending = new PendingInput();
   private socket: WebSocket | undefined;
   private authorised = false;
-  /** Set by `close()`. Both "do not open the socket I am waiting for" and P5a-T1's "did I ask?". */
-  private abandoned = false;
+  /**
+   * What this side asked for, if anything — P5a-T1's "did I ask?", widened in P5a-T6.
+   *
+   * `detach` is set by `close()` and also means "do not open the socket I am waiting for".
+   * `stop` is set by `stopping()` and changes only what an exit MEANS, never what is sent.
+   */
+  private asked: PaneAsked = 'nobody';
   /** Kept only so an `exit` can be read against what this pane was attached to. */
   private target: PtyTarget | undefined;
 
@@ -72,7 +78,7 @@ export class PaneSocket {
 
     const ticket = await requestPaneTicket(target);
     // A pane closed while the mint was in flight: the ticket goes unspent and expires on its own.
-    if (this.abandoned) return;
+    if (this.asked === 'detach') return;
     if (ticket === undefined) {
       this.status.finish('refused', 'core would not issue a ticket for this pane');
       return;
@@ -119,9 +125,21 @@ export class PaneSocket {
     this.send({ type: 'resize', cols, rows });
   }
 
+  /**
+   * Tells the pane that the ending about to arrive is one it asked for — P5a-T6.
+   *
+   * It sends nothing. `stop` is a core verb over HTTP (`POST /sessions/stop`), and the socket's
+   * only part in it is knowing, when the PTY exits 0 a moment later, that nobody took the session
+   * — this pane ended it. Without this the pane says "another terminal attached to this session"
+   * about a session the person just stopped from that very pane.
+   */
+  public stopping(): void {
+    this.asked = 'stop';
+  }
+
   /** Detaches. Closing a pane never stops the session (RESEARCH.md F.2.6). */
   public close(): void {
-    this.abandoned = true;
+    this.asked = 'detach';
     this.pending.clear();
     this.socket?.close();
     this.socket = undefined;
@@ -137,7 +155,7 @@ export class PaneSocket {
       this.send({ type: 'input', data });
       return;
     }
-    if (this.abandoned || this.status.ended) return;
+    if (this.asked === 'detach' || this.status.ended) return;
     if (!this.pending.hold(data)) {
       this.status.update('connecting', 'typed too much before the pane was ready — not all sent');
     }
@@ -165,7 +183,7 @@ export class PaneSocket {
         void this.pane.write(frame.data);
         break;
       case 'exit': {
-        const report = readPaneExit(frame.code, this.target, this.abandoned);
+        const report = readPaneExit(frame.code, this.target, this.asked);
         if (report !== undefined) this.status.finish(report.status, report.detail);
         break;
       }

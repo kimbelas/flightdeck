@@ -107,6 +107,8 @@ export interface DeckActions {
   readonly onCheckInstall: (subscription: SubscriptionId) => void;
   readonly onUpdateClaude: (subscription: SubscriptionId) => void;
   readonly onRespawnAll: (subscription: SubscriptionId) => void;
+  /** One session, from its pane — P5a-T6. The panel's `--all` is above; this names one. */
+  readonly onRespawnOne: (row: SessionRowViewModel) => void;
   readonly onCloseInstall: () => void;
 }
 

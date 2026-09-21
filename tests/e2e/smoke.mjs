@@ -31,6 +31,7 @@ import { connectChecks } from './smoke/connect-checks.mjs';
 import { devChecks } from './smoke/dev-checks.mjs';
 import { keyboardChecks, keyboardHelperChecks } from './smoke/keyboard-checks.mjs';
 import { paneChecks } from './smoke/pane-checks.mjs';
+import { paneControlChecks } from './smoke/pane-control-checks.mjs';
 import { projectChecks } from './smoke/project-checks.mjs';
 import { securityChecks } from './smoke/security-checks.mjs';
 import { LOOPBACK_ADDRESS, UI_PORT } from '../../contracts/origins.ts';
@@ -79,6 +80,9 @@ try {
   await keyboardChecks(page, report);
   await keyboardHelperChecks(page, report, core);
   await paneChecks(page, report, core, { dev: DEV });
+  // After paneChecks, which ends with every pane closed: this group opens its own two and reloads
+  // the page, and a reload in the middle of the key checks would throw their focus away.
+  await paneControlChecks(page, report, core);
   if (DEV) devChecks(report, seen);
   else await securityChecks(page, report, core, seen);
   await page.screenshot({ path: SHOT });

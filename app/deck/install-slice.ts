@@ -21,6 +21,7 @@ import {
   type InstallHealth,
   type UpdateResult,
 } from '../../contracts/install-health.ts';
+import type { SessionRef } from '../../contracts/session-ref.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
 
 /** What one `respawn` answered — the ids, never a count this side assumed. */
@@ -86,6 +87,22 @@ export class InstallSlice {
     if (result !== undefined) this.publish({ update: result });
     // Re-read, so `Last update attempt` and the version on screen agree with what just happened.
     await this.check(subscription);
+  }
+
+  /**
+   * Restarts ONE background session, by the ref its row carries — P5a-T6.
+   *
+   * The whole ref goes over, both ids: `respawn` takes the SHORT one and refuses the uuid
+   * (RESEARCH.md F.10.3), and the deck does not derive it (contracts/session-ref.ts). Nothing is
+   * fetched afterwards — the reconciler's next sweep publishes what happened, and the PANE finds
+   * out first, by being evicted when its PTY goes.
+   */
+  public async respawnOne(ref: SessionRef): Promise<void> {
+    this.publish({ respawn: undefined });
+    const reply = await this.api.post(CORE_RESPAWN_PATH, ref);
+    if (reply?.status !== 200) return;
+    const report = respawnOf(ref.subscription, reply.body);
+    if (report !== undefined) this.publish({ respawn: report });
   }
 
   /** Restarts what the CLI chooses to restart on one subscription. */
