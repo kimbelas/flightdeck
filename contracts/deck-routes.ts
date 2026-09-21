@@ -121,6 +121,16 @@ export const CORE_SESSION_PATH = `${CORE_PREFIX}session`;
 export const CORE_PREVIEW_PATH = `${CORE_PREFIX}preview`;
 
 /**
+ * Ask — one headless question, accepted here and answered on the stream (P4-T4, D48).
+ *
+ * The one POST in this file whose reply is not the outcome. It answers 202 and a run id in
+ * milliseconds; the records arrive as `ask` frames beside `snapshot` and `quota`, because the deck
+ * has had exactly one live feed since P1-T9 and a panel is not a reason for a second. A run
+ * therefore survives the tab being reloaded, which a response body could not.
+ */
+export const CORE_RUN_PATH = `${CORE_PREFIX}run`;
+
+/**
  * The project registry — `GET` to list it, `POST` to import a folder (P3-T1, DECISIONS.md D26).
  *
  * A request rather than a stream frame, like the session detail and for a related reason: the

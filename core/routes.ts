@@ -14,6 +14,7 @@
 import { HealthRoute } from './http/health-route.ts';
 import { HooksRoute } from './http/hooks-route.ts';
 import { KeybindingPlanRoute, KeybindingWriteRoute } from './http/keybindings-route.ts';
+import { AskRoute } from './http/ask-route.ts';
 import { LaunchRoute } from './http/launch-route.ts';
 import { PasteRoute } from './http/paste-route.ts';
 import { PreviewRoute, type PreviewSource } from './http/preview-route.ts';
@@ -31,6 +32,7 @@ import type { RateLimiter } from './http/rate-limiter.ts';
 import type { DeckQuery } from './application/deck-query.ts';
 import type { KeybindingHelper } from './application/keybinding-helper.ts';
 import type { PasteInbox } from './application/paste-inbox.ts';
+import type { AskRunner } from './application/ask-runner.ts';
 import type { SessionLauncher } from './application/session-launcher.ts';
 import type { SessionResumer } from './application/session-resumer.ts';
 import type { SessionRemover } from './application/session-remover.ts';
@@ -54,6 +56,8 @@ export interface RouterParts {
   readonly stopper: SessionStopper;
   /** The one verb that destroys something — its own route, and its own confirm in the deck (P4-T2). */
   readonly remover: SessionRemover;
+  /** One headless question at a time, streamed onto `/stream` (P4-T4, D47, D48). */
+  readonly asker: AskRunner;
   readonly tickets: TicketOffice;
   readonly paste: PasteInbox;
   readonly keybindings: KeybindingHelper;
@@ -83,6 +87,8 @@ export function buildRouter(parts: RouterParts, extra: readonly Route[]): Reques
     new StopRoute(parts.stopper),
     // Its own literal path, so no typo turns a stop into a delete — see the route's header.
     new RemoveRoute(parts.remover),
+    // 202 and a run id; the answer arrives as `ask` frames on the stream, not down this body.
+    new AskRoute(parts.asker),
     new TicketRoute(parts.tickets),
     new PasteRoute(parts.paste),
     // Two routes on one path: the GET cannot write and the POST re-plans from disk (P5a-T7).

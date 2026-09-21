@@ -11,6 +11,7 @@
 import type { DraftEvent } from '../../../contracts/fd-event.ts';
 import type { QuotaSummary } from '../../../contracts/quota-summary.ts';
 import type { DeckSnapshot, SessionRow } from '../../../contracts/session-row.ts';
+import { AskBroadcast } from '../../../core/application/ask-broadcast.ts';
 import { EventHub } from '../../../core/application/event-hub.ts';
 import type { EventStream } from '../../../core/http/route.ts';
 import { SessionStreamRoute, type LiveQuota } from '../../../core/http/session-stream-route.ts';
@@ -124,6 +125,7 @@ export function rig(snapshot: DeckSnapshot = snapshotOf()): Rig {
     sessions: { snapshot: () => snapshot },
     quota,
     feed: hub,
+    ask: new AskBroadcast(),
     scheduler,
     logger,
   });

@@ -885,6 +885,66 @@ button.ghost {
   color: var(--warn);
 }
 
+/* ---- Ask: one headless question and its answer (P4-T4) ---- */
+
+.ask {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ask-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ask-row {
+  display: flex;
+  gap: 6px;
+}
+
+.ask-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.ask-prompt {
+  resize: vertical;
+}
+
+.ask-refusal {
+  margin: 0;
+  font-size: 11px;
+  color: var(--warn);
+}
+
+.ask-meta {
+  margin: 0;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.ask-notice {
+  margin: 0;
+  font-size: 11px;
+  color: var(--warn);
+}
+
+/* The answer is model text in a `pre`, never markdown (SEC-UI-2). It wraps rather than scrolling
+   sideways, and it is bounded so a long answer cannot push the session list off the screen. */
+.ask-answer {
+  margin: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 /* ---- the pane area: chooser, then the grid (P5a-T5) ---- */
 
 .pane-area {

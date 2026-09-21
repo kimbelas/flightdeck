@@ -22,6 +22,7 @@
 // frame is `unknown` until the parser below rebuilds it (CODING-STANDARDS §11 rule 1), and a frame
 // that does not match is dropped rather than coerced — a deck that received a half-shaped row
 // should ignore it, not render a session with blank fields.
+import { parseAskFrame, type AskFrame } from './ask-record.ts';
 import { parseQuotaSummary, type QuotaSummary } from './quota-summary.ts';
 import {
   parseDeckSnapshot,
@@ -43,12 +44,22 @@ export interface SessionGone {
   readonly subscription: SubscriptionId;
 }
 
-/** What a subscriber receives. A discriminated union on `name`, exhaustively switched (R12). */
+/**
+ * What a subscriber receives. A discriminated union on `name`, exhaustively switched (R12).
+ *
+ * **`ask` is the one frame that is NOT replayed on connect** (P4-T4, D48). Everything else here is
+ * whole-state or a delta against a snapshot, and a subscriber that joins late is caught up by the
+ * replay. An Ask record is an event in a conversation: replaying the last one would put a stray
+ * sentence in a panel nobody opened, and replaying all of them would need core to keep every run's
+ * transcript to no purpose. A deck that connects mid-run picks the answer up from the next record,
+ * which is the honest thing a live feed can offer.
+ */
 export type StreamFrame =
   | { readonly name: 'snapshot'; readonly data: DeckSnapshot }
   | { readonly name: 'session.upsert'; readonly data: SessionRow }
   | { readonly name: 'session.gone'; readonly data: SessionGone }
-  | { readonly name: 'quota'; readonly data: QuotaSummary };
+  | { readonly name: 'quota'; readonly data: QuotaSummary }
+  | { readonly name: 'ask'; readonly data: AskFrame };
 
 export type StreamFrameName = StreamFrame['name'];
 
@@ -57,6 +68,7 @@ export const STREAM_FRAME_NAMES: readonly StreamFrameName[] = [
   'session.upsert',
   'session.gone',
   'quota',
+  'ask',
 ];
 
 /**
@@ -74,26 +86,59 @@ export function parseStreamFrame(name: string, data: string): StreamFrame | unde
   } catch {
     return undefined;
   }
+  return frameOf(name, value);
+}
+
+/**
+ * Which parser answers for which name.
+ *
+ * Split out of `parseStreamFrame` when `ask` became the fifth frame: one switch carrying a parse
+ * and a drop per branch runs out of complexity budget at exactly five, and the limit is right — a
+ * function nobody can hold in their head is where a missing `undefined` check hides. Each branch is
+ * now one call, and the drop lives in the five one-line functions below, where it cannot be
+ * forgotten without deleting something visible. No cast: each helper names its own frame, so the
+ * union is checked at five small sites instead of asserted at one big one.
+ */
+function frameOf(name: string, value: unknown): StreamFrame | undefined {
   switch (name) {
-    case 'snapshot': {
-      const snapshot = parseDeckSnapshot(value);
-      return snapshot === undefined ? undefined : { name: 'snapshot', data: snapshot };
-    }
-    case 'session.upsert': {
-      const row = parseSessionRow(value);
-      return row === undefined ? undefined : { name: 'session.upsert', data: row };
-    }
-    case 'session.gone': {
-      const gone = parseSessionGone(value);
-      return gone === undefined ? undefined : { name: 'session.gone', data: gone };
-    }
-    case 'quota': {
-      const summary = parseQuotaSummary(value);
-      return summary === undefined ? undefined : { name: 'quota', data: summary };
-    }
+    case 'snapshot':
+      return snapshotFrame(value);
+    case 'session.upsert':
+      return upsertFrame(value);
+    case 'session.gone':
+      return goneFrame(value);
+    case 'quota':
+      return quotaFrame(value);
+    case 'ask':
+      return askFrame(value);
     default:
       return undefined;
   }
+}
+
+function snapshotFrame(value: unknown): StreamFrame | undefined {
+  const data = parseDeckSnapshot(value);
+  return data === undefined ? undefined : { name: 'snapshot', data };
+}
+
+function upsertFrame(value: unknown): StreamFrame | undefined {
+  const data = parseSessionRow(value);
+  return data === undefined ? undefined : { name: 'session.upsert', data };
+}
+
+function goneFrame(value: unknown): StreamFrame | undefined {
+  const data = parseSessionGone(value);
+  return data === undefined ? undefined : { name: 'session.gone', data };
+}
+
+function quotaFrame(value: unknown): StreamFrame | undefined {
+  const data = parseQuotaSummary(value);
+  return data === undefined ? undefined : { name: 'quota', data };
+}
+
+function askFrame(value: unknown): StreamFrame | undefined {
+  const data = parseAskFrame(value);
+  return data === undefined ? undefined : { name: 'ask', data };
 }
 
 function parseSessionGone(value: unknown): SessionGone | undefined {

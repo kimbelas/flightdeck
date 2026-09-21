@@ -138,6 +138,7 @@ describe('parseStreamFrame — everything else', () => {
       'session.upsert',
       'session.gone',
       'quota',
+      'ask',
     ]);
   });
 });

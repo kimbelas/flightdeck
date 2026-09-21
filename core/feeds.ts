@@ -6,6 +6,7 @@
 // the one with a story of its own, so it is the seam that costs a reader the least. `shutdown.ts`
 // was split off the same file for the same kind of reason.
 import { SUBSCRIPTION_IDS } from '../contracts/session.ts';
+import { AskBroadcast } from './application/ask-broadcast.ts';
 import { EventHub } from './application/event-hub.ts';
 import { HookQueue } from './application/hook-queue.ts';
 import { QuotaReport } from './application/quota-report.ts';
@@ -38,6 +39,8 @@ export interface Feeds {
   readonly vitals: VitalsRegistry;
   /** Held only so `GET /status` can print how many events reached the store (P1-T12). */
   readonly storing: StoringEventSink;
+  /** Where `AskRunner` publishes and the stream subscribes — P4-T4, D48. */
+  readonly ask: AskBroadcast;
 }
 
 export interface FeedParts {
@@ -89,8 +92,10 @@ export function buildFeeds(parts: FeedParts): Feeds {
     clock,
     logger,
   });
+  const ask = new AskBroadcast();
   return {
     reconciler,
+    ask,
     // The stream replays two things on connect and they come from different places: the session
     // table from the reconciler's map, the quota gauges from the vitals registry (P2-T3). Neither
     // costs a sweep.
@@ -98,6 +103,7 @@ export function buildFeeds(parts: FeedParts): Feeds {
       sessions: reconciler,
       quota: new QuotaReport({ vitals, clock }),
       feed: hub,
+      ask,
       scheduler,
       logger,
     }),

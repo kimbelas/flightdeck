@@ -310,10 +310,18 @@ change); a cross-project table (which repos lack a `CLAUDE.md`, have no hooks, a
   `$CFG/settings.json` (the `http` hooks block + the statusLine POST), backs the file up, merges.
   Running sessions pick it up on their next start; the UI says so. Nothing is edited by hand.
 - **Refresh now** — reconcile both subscriptions, re-read quota, re-scan projects. No model call.
-- **Ask** — a headless run whose answer lands in the deck: `<profile fn> -p "<prompt>"
-  --output-format stream-json --include-partial-messages [--json-schema] --max-budget-usd <cap>`,
-  streamed into a result panel. Controls: subscription (quota-aware), model, effort, cwd (any
-  project), permission mode, budget cap. For *"summarise what changed in this repo today"*.
+- **Ask** — a headless run whose answer lands in the deck; built in P4-T4, D47/D48. **Not through a
+  profile function**, which is the one place this spec was wrong: all four pass
+  `--dangerously-skip-permissions`, and `--permission-mode` beside it is silently ignored
+  (RESEARCH.md F.9.3), so the permission-mode control listed here would have been a dropdown that
+  did nothing and SEC-PROC-4 would have been unenforceable. It runs `claude.exe -p --output-format
+  stream-json --include-partial-messages --verbose --permission-mode <mode> --max-budget-usd <cap>
+  --max-turns <n> <prompt>` with `CLAUDE_CONFIG_DIR` set — joining `stop`, `rm` and `resume`, which
+  have always spawned the binary directly. `POST /run` answers 202 and a run id; the records arrive
+  as `ask` frames on the existing stream (D48), so a run survives a tab reload. Controls:
+  subscription (quota-aware, by P4-T3's rule), permission mode, budget cap; one run at a time. The
+  panel prints the mode the run **reported**, not the one that was asked for. For *"summarise what
+  changed in this repo today"*.
 - **Dispatch** — `--bg` for real work; appears as a row at once; attachable when you want to steer.
 
 **The subscription picker is quota-aware** — built in P4-T3, D46. Both 5h/7d gauges come from the
