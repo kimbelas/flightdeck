@@ -7,25 +7,39 @@
 import { join } from 'node:path';
 import type { PtyTarget } from '../../../contracts/pty-protocol.ts';
 import { SessionId } from '../../domain/session-id.ts';
-import type { PtyCommands, TerminalSize } from '../../ports/pty-commands.ts';
+import type { ProjectRoots, PtyCommands, TerminalSize } from '../../ports/pty-commands.ts';
 import type { PtySpec } from '../../ports/pty-host.ts';
 import type { ClaudeInstall } from '../claude-cli/claude-install.ts';
 
 export class WindowsPtyCommands implements PtyCommands {
   private readonly install: ClaudeInstall;
+  private readonly roots: ProjectRoots;
   private readonly shell: string;
 
-  constructor(install: ClaudeInstall) {
+  constructor(install: ClaudeInstall, roots: ProjectRoots) {
     this.install = install;
-    this.shell = join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32', 'cmd.exe');
+    this.roots = roots;
+    this.shell = join(
+      process.env['SystemRoot'] ?? 'C:\\Windows',
+      'System32',
+      'WindowsPowerShell',
+      'v1.0',
+      'powershell.exe',
+    );
   }
 
   public forTarget(target: PtyTarget, size: TerminalSize): PtySpec | undefined {
     if (target.kind === 'shell') {
+      const cwd = this.shellDirectory(target.project);
+      if (cwd === undefined) return undefined;
       return {
         command: this.shell,
-        args: [],
-        cwd: this.install.userHome,
+        // `-NoLogo` and nothing else. **`-NoProfile` is the flag that must never be added**
+        // (D45's rule, in the other direction): the profile is where `claude-365`,
+        // `claude-isg` and the two ticket functions live, and a pane without them is a
+        // terminal the owner would have to leave to use.
+        args: ['-NoLogo'],
+        cwd,
         cols: size.cols,
         rows: size.rows,
         env: process.env,
@@ -47,6 +61,20 @@ export class WindowsPtyCommands implements PtyCommands {
       // The one line that decides which of the two accounts this pane is attached to.
       env: this.install.envFor(target.subscription),
     };
+  }
+
+  /**
+   * Where a shell pane starts — P6-T1, SPEC §5.7(3)'s "or the goal fails at the first `git status`".
+   *
+   * `undefined` project is home, which is what the shell has always done. A named one is LOOKED UP
+   * among the imported folders and the stored path is what is used; nothing is composed from the
+   * key. A key nobody imported answers `undefined`, which refuses the pane — **it does not fall
+   * back to home**, because a terminal that opens somewhere other than where the button said is
+   * worse than one that does not open.
+   */
+  private shellDirectory(project: string | undefined): string | undefined {
+    if (project === undefined) return this.install.userHome;
+    return this.roots.rootFor(project);
   }
 }
 

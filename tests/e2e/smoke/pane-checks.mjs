@@ -240,7 +240,7 @@ async function reattachChecks(page, report) {
   // definition - what is asserted is that they are the same TARGETS, in the same order.
   report.check(
     'in the order they were left in',
-    JSON.stringify(await paneTitles(page)) === JSON.stringify(['shell', 'fixture-alpha']),
+    JSON.stringify(await paneTitles(page)) === JSON.stringify(['shell-1 · home', 'fixture-alpha']),
     JSON.stringify(await paneTitles(page)),
   );
 
@@ -259,7 +259,11 @@ async function reattachChecks(page, report) {
 async function deadPaneChecks(page, report) {
   await page.evaluate(() => {
     const stored = [
-      { key: 'shell', title: 'shell', target: { kind: 'shell' } },
+      {
+        key: 'pane-shell-1',
+        title: 'shell-1 · home',
+        target: { kind: 'shell', id: 'shell-1' },
+      },
       {
         key: '365:f6a7b8c9-0000-4000-8000-000000000006',
         title: 'fixture-foxtrot',
@@ -279,7 +283,7 @@ async function deadPaneChecks(page, report) {
   const titles = await paneTitles(page);
   report.check(
     'a stored pane for a session that has ended is dropped, not reopened dead',
-    back && JSON.stringify(titles) === JSON.stringify(['shell']),
+    back && JSON.stringify(titles) === JSON.stringify(['shell-1 · home']),
     JSON.stringify(titles),
   );
   report.check(

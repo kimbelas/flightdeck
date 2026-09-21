@@ -40,9 +40,11 @@ describe('TicketRoute', () => {
   it('mints for a shell', () => {
     const { ticketRoute, tickets } = route();
 
-    const { ticket } = post(ticketRoute, { target: { kind: 'shell' } }).body as { ticket: string };
+    const { ticket } = post(ticketRoute, {
+      target: { kind: 'shell', id: 'shell-1', project: undefined },
+    }).body as { ticket: string };
 
-    expect(tickets.redeem(ticket, { kind: 'shell' })).toBe(true);
+    expect(tickets.redeem(ticket, { kind: 'shell', id: 'shell-1', project: undefined })).toBe(true);
   });
 
   it('issues a different ticket every time', () => {

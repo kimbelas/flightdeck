@@ -27,7 +27,7 @@ const SAME_ID_OTHER_SUB: PtyTarget = {
   sessionId: '11111111-2222-3333-4444-555555555555',
   subscription: 'isg',
 };
-const SHELL: PtyTarget = { kind: 'shell' };
+const SHELL: PtyTarget = { kind: 'shell', id: 'shell-1', project: undefined };
 
 class StubCommands implements PtyCommands {
   public runnable = true;

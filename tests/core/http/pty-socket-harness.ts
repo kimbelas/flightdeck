@@ -32,13 +32,13 @@ export const AUTH_DEADLINE_MS = 250;
 /** The session member alone, so a test can spread it and change one field. */
 type SessionTarget = Extract<PtyTarget, { kind: 'session' }>;
 
-export const SHELL: PtyTarget = { kind: 'shell' };
+export const SHELL: PtyTarget = { kind: 'shell', id: 'shell-1', project: undefined };
 export const SESSION: SessionTarget = {
   kind: 'session',
   sessionId: '11111111-2222-3333-4444-555555555555',
   subscription: '365',
 };
-export const SHELL_QUERY = '/pty?shell=1';
+export const SHELL_QUERY = '/pty?shell=shell-1';
 export const SESSION_QUERY = '/pty?session=11111111-2222-3333-4444-555555555555&subscription=365';
 
 class AnyCommands implements PtyCommands {

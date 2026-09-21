@@ -38,12 +38,12 @@ import { FsPastedImageStore } from './adapters/node/fs-pasted-image-store.ts';
 import { RateLimiter } from './http/rate-limiter.ts';
 import { PtySocketServer } from './http/pty-socket-server.ts';
 import { RequestRouter } from './http/request-router.ts';
-import type { Route, StreamRoute } from './http/route.ts';
+import type { StreamRoute } from './http/route.ts';
 import { warmUp } from './http/warm-up.ts';
 import { buildFeeds, type Feeds } from './feeds.ts';
 import { sessionVerbs, buildAsker } from './verbs.ts';
 import { buildRouter, type RouterParts } from './routes.ts';
-import { projectRoutes } from './projects.ts';
+import { projectSlice, type ProjectSlice } from './projects.ts';
 import { buildDetailReader, buildPreviewReader } from './reads.ts';
 import { stopCore, type Running } from './shutdown.ts';
 import { SystemClock } from './ports/clock.ts';
@@ -134,7 +134,10 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
   const audit = new AuditLog(store, clock, logger);
   // Built before the server binds, because an imported root is a security input: a route that
   // could be reached while the registry was still empty would refuse a project the owner has.
-  const projects = projectRoutes({ install, store, audit, runner, clock, logger });
+  // ONE registry, behind the eight routes and behind a shell pane that starts in an imported
+  // folder (P6-T1) — which is why the slice hands both back. A second would be a second copy of
+  // the roots, and "which folders may be read" is not a question two objects may answer.
+  const projects = projectSlice({ install, store, audit, runner, clock, logger });
   const version = readVersion();
   const http = buildHttp({
     guard: buildGuard(token, ingestKey),
@@ -232,8 +235,13 @@ interface HttpParts {
   readonly guard: LoopbackGuard;
   readonly feeds: Feeds;
   readonly audit: AuditLog;
-  /** Routes a slice of its own already built — `projectRoutes` today (P3-T1). See `buildRouter`. */
-  readonly projects: readonly Route[];
+  /**
+   * A slice of its own already built — `projectSlice` (P3-T1, P6-T1). See `buildRouter`.
+   *
+   * Routes AND the registry behind them: a shell pane starts in an imported folder, so the pane
+   * machinery below needs the same object the eight routes were built over.
+   */
+  readonly projects: ProjectSlice;
   readonly version: string;
   readonly report: StatusReport;
   readonly sessions: ClaudeCliSessionSource;
@@ -280,13 +288,17 @@ function buildHttp(parts: HttpParts): HttpSide {
         install,
         logger,
       },
-      parts.projects,
+      parts.projects.routes,
     ),
     streams: new RequestRouter<StreamRoute>([feeds.stream]),
     limiter,
     logger,
   });
-  const panes = new PaneRegistry(new NodePtyHost(), new WindowsPtyCommands(install), logger);
+  const panes = new PaneRegistry(
+    new NodePtyHost(),
+    new WindowsPtyCommands(install, parts.projects.registry),
+    logger,
+  );
   const sockets = new PtySocketServer({ guard, panes, tickets, logger });
   sockets.attachTo(server.raw);
   return { server, sockets, panes, tickets };

@@ -44,7 +44,7 @@ describe('the upgrade (SEC-WS-1)', () => {
   });
 
   it('refuses a path that is not /pty', async () => {
-    const socket = harness.open('/not-pty?shell=1');
+    const socket = harness.open('/not-pty?shell=shell-1');
 
     await closeCode(socket);
 

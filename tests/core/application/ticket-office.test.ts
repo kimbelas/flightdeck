@@ -10,7 +10,7 @@ import { FakeClock } from '../../fakes/fake-clock.ts';
 const TTL_MS = 10_000;
 type SessionTarget = Extract<PtyTarget, { kind: 'session' }>;
 
-const SHELL: PtyTarget = { kind: 'shell' };
+const SHELL: PtyTarget = { kind: 'shell', id: 'shell-1', project: undefined };
 const SESSION: SessionTarget = {
   kind: 'session',
   sessionId: '11111111-2222-3333-4444-555555555555',

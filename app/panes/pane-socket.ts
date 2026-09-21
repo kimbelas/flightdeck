@@ -195,7 +195,11 @@ export class PaneSocket {
 }
 
 function queryFor(target: PtyTarget): string {
-  if (target.kind === 'shell') return 'shell=1';
+  if (target.kind === 'shell') {
+    const project =
+      target.project === undefined ? '' : `&project=${encodeURIComponent(target.project)}`;
+    return `shell=${encodeURIComponent(target.id)}${project}`;
+  }
   return `session=${encodeURIComponent(target.sessionId)}&subscription=${target.subscription}`;
 }
 
