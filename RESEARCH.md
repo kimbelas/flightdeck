@@ -3626,3 +3626,43 @@ Both are the same sentence: *the thing a unit test imports decides which project
 graph is compiled in.* The existing `tests/app/` files — `session-row-view-model`, `shell-pane`,
 `proxy-matcher` — are all leaves, which is why this had never bitten before.
 
+### G.54 What `--fork-session` actually does, and F.2.7 is partly stale (P6-T6, 2026-09-21)
+
+F.2.7 named this task by id — *"P4-T2 and P6-T6 must resume with the full lowercase session uuid and
+no other argument"* — and it was measured on binary **2.1.268**. This machine now runs **2.1.278**,
+and the `--bg` help text no longer describes the rule F.2.7 found:
+
+> With `--resume <session-id>`, continues that session in the background under the same ID, **or
+> starts a copy and says so when the session is already running**
+
+That is a different trigger from "any extra flag forks it". And `--fork-session` is now documented
+in its own right: *"When resuming, create a new session ID instead of reusing the original."*
+
+**Measured, at zero token cost.** A forked session comes back `idle - send a prompt to start`, so
+it spends nothing until prompted. Two forks of one stopped session, from inside a scratch
+`git worktree`, then `claude rm`:
+
+| Command (run with cwd = the worktree) | New id | Name | cwd of the fork |
+|---|---|---|---|
+| `--bg --resume <uuid> --fork-session` | yes | **inherited** from the original | **the worktree** |
+| `--bg --resume <uuid> --fork-session -n <name>` | yes | **the name given** | **the worktree** |
+
+Three facts, and the handoff needs all three:
+
+1. **The fork runs in the PROCESS cwd, not the original session's folder.** This was the one that
+   could have sunk the feature: had it restored the recorded directory, a handoff would have
+   silently opened in the wrong tree, which is P6-T1's "the one failure a terminal must not have".
+2. **`-n` is accepted next to `--fork-session` and names the fork.** Without it both sessions are
+   called the same thing, and two rows reading `fd-t2-live` in one deck is a handoff nobody can
+   follow. `-n` being start-only (P5a-T6) is about RENAMING an existing session; this is a new one.
+3. **The new id is only in stdout**, as a launch's is — so `SessionHandoff` parses it the way
+   `SessionLauncher` does, and cannot report the id it was given.
+
+**What of F.2.7 still stands.** A bare `--bg --resume <full-uuid>` still keeps the id, so
+`SessionResumer` is unchanged and correct. The short-id fork was not re-measured on 2.1.278, and
+the shape check stays either way: it costs nothing and the failure it prevents is silent.
+
+The forked session reads `state: blocked` while it waits for its first prompt, which means the deck
+flags it **needs-you** and P6-T3 toasts it. That is right rather than incidental — a handoff that
+has landed and is waiting for instructions is exactly something that needs you.
+

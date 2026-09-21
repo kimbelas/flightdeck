@@ -10,7 +10,8 @@
 // pass whatever the code did.
 import { waitFor } from './report.mjs';
 
-const LEDGER = String.raw`C:\Users\owner\Documents\ledger`;
+/** Exported: it is where four of the fixture's sessions live, so P6-T6's group needs it. */
+export const LEDGER = String.raw`C:\Users\owner\Documents\ledger`;
 /** Of the seven fixture rows: alpha, bravo, delta and foxtrot. Three of those four are live. */
 const LEDGER_SESSIONS = 4;
 const OTHER_SESSIONS = 3;

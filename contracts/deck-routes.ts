@@ -112,6 +112,15 @@ export const CORE_MUTES_PATH = `${CORE_PREFIX}toasts/mutes`;
 export const CORE_GROUP_LAUNCH_PATH = `${CORE_PREFIX}sessions/group`;
 
 /**
+ * Forking a session into a new working tree — P6-T6, SPEC §6(8).
+ *
+ * Its own literal path beside the other session verbs, spelled here for `CORE_STOP_PATH`'s reason.
+ * It is one word from `CORE_RESUME_PATH` in English and the opposite of it in effect — a resume
+ * wakes a session under its own id, a handoff makes a second one.
+ */
+export const CORE_HANDOFF_PATH = `${CORE_PREFIX}sessions/handoff`;
+
+/**
  * DELETING one, conversation and all — P4-T2.
  *
  * Its own literal path rather than a field on the stop body, and that is a control rather than

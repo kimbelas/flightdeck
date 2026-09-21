@@ -5,6 +5,7 @@ import type { JSX } from 'react';
 import type { PresetLaunch } from '../../contracts/launch-preset.ts';
 import type { QuotaSummary } from '../../contracts/quota-summary.ts';
 import { SEARCH_INPUT_ID } from './deck-keyboard.ts';
+import type { HandoffOffer } from './handoff-view-model.ts';
 import { LaunchForm } from './launch-form.tsx';
 import type { SessionDetailViewModel } from './session-detail-view-model.ts';
 import type { SessionPreviewViewModel } from './session-preview-view-model.ts';
@@ -31,6 +32,17 @@ interface SessionListProps {
    * where every expanded row starts. That distinction is why this is a map and not a list.
    */
   readonly previews: Readonly<Record<string, SessionPreviewViewModel | undefined>>;
+  /**
+   * Where each row could be handed to, by the same key — P6-T6.
+   *
+   * Every row has one, unlike `previews`: an offer is a derivation over the worktrees the deck
+   * already holds, not a read somebody pays for, and its `nothingBecause` is the answer for a row
+   * with nowhere to go. A row missing from here is a row the caller forgot, which is why the
+   * lookup below has no fallback to invent one.
+   */
+  readonly offers: Readonly<Record<string, HandoffOffer>>;
+  /** The last refused handoff, as a sentence and the row it was about. `undefined` for silence. */
+  readonly handoffRefusal: { readonly key: string; readonly text: string } | undefined;
   readonly onSearch: (value: string) => void;
   readonly onToggle: (row: SessionRowViewModel) => void;
   readonly onLaunch: (request: PresetLaunch) => void;
@@ -39,7 +51,21 @@ interface SessionListProps {
   readonly onStop: (row: SessionRowViewModel) => void;
   readonly onRemove: (row: SessionRowViewModel) => void;
   readonly onPreview: (row: SessionRowViewModel) => void;
+  readonly onHandOff: (row: SessionRowViewModel, path: string, name: string) => Promise<boolean>;
 }
+
+/**
+ * The offer for a row nobody computed one for.
+ *
+ * It cannot happen through `DeckBody`, which builds one per row from the same list, and it is the
+ * right answer if it ever did: an offer is what this row can be handed to, and "we did not work it
+ * out" is nowhere, not everywhere.
+ */
+const NOWHERE: HandoffOffer = {
+  targets: [],
+  nothingBecause: 'Nothing is known about this session’s worktrees.',
+  suggestedName: '',
+};
 
 export function SessionList(props: SessionListProps): JSX.Element {
   return (
@@ -76,6 +102,9 @@ function SessionRows(props: SessionListProps): JSX.Element {
           detail={details[row.key]}
           preview={previews[row.key]}
           previewAsked={row.key in previews}
+          handoff={props.offers[row.key] ?? NOWHERE}
+          handoffRefusal={refusalFor(props.handoffRefusal, row.key)}
+          onHandOff={(path, name) => props.onHandOff(row, path, name)}
           onToggle={() => {
             onToggle(row);
           }}
@@ -98,6 +127,16 @@ function SessionRows(props: SessionListProps): JSX.Element {
       ))}
     </>
   );
+}
+
+/**
+ * The refusal sentence for one row, and `undefined` for every other row.
+ *
+ * Several rows can be open at once (P2-T4), and a code with no row on it would put "that folder is
+ * gone" under a session nobody pressed — a sentence that is false about that row (`HandoffSlice`).
+ */
+function refusalFor(refusal: SessionListProps['handoffRefusal'], key: string): string | undefined {
+  return refusal?.key === key ? refusal.text : undefined;
 }
 
 interface SessionSearchProps {

@@ -1668,3 +1668,58 @@ button.chip-version {
 .install-field dd {
   margin: 0;
 }
+
+/* ---- Handing a session to another worktree (P6-T6) -------------------------
+   Between the preview and the delete, inside the expanded row. It is NOT styled
+   like `.row-delete`: nothing here destroys anything, and a second control in
+   the same red would teach the hand that both are the same press. */
+.row-handoff {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
+.row-handoff-none {
+  margin: 8px 0 0;
+  font-size: 11px;
+}
+
+/* The two answers a press needs, side by side — the label IS the wrapper, so the
+   control needs no id to be named (`RowHandoff`). */
+/* One field per line, because the left column is 340px and the alternative is the
+   two buttons wrapping apart from each other — which is what running it showed. */
+.row-handoff-field {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  gap: 6px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.row-handoff-field select,
+.row-handoff-field input {
+  flex: 1;
+  min-width: 0;
+  max-width: 230px;
+  padding: 2px 4px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 11px;
+}
+
+/* The refusal takes the whole width, under the controls it is about: the two
+   answers that were typed are the ones to correct, so the form stays up. */
+.row-handoff-bad {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--bad);
+  font-size: 11px;
+}

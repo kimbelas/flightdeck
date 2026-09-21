@@ -41,6 +41,7 @@ import { popoutChecks } from './smoke/popout-checks.mjs';
 import { muteChecks } from './smoke/mute-checks.mjs';
 import { groupChecks } from './smoke/group-checks.mjs';
 import { duplicateCwdChecks } from './smoke/duplicate-cwd-checks.mjs';
+import { handoffChecks } from './smoke/handoff-checks.mjs';
 import { securityChecks } from './smoke/security-checks.mjs';
 import { LOOPBACK_ADDRESS, UI_PORT } from '../../contracts/origins.ts';
 
@@ -106,6 +107,10 @@ try {
   // Before the group and pane work, because it pushes a snapshot and puts the fixture's own back:
   // a group that left a pane open would have it re-keyed under it (P6-T5).
   await duplicateCwdChecks(page, report, core);
+  // After the project groups, because the trees it offers come from an imported folder's map —
+  // `projectViewChecks` leaves ledger imported, and four of the fixture's sessions are in it
+  // (P6-T6). Before `groupChecks`, which reloads the page and re-imports a second folder.
+  await handoffChecks(page, report, core);
   // After the project groups, because a group is made of presets and a preset needs an imported
   // folder to be filed under (P6-T4). It reloads the page, so it goes before the pane groups.
   await groupChecks(page, report, core);

@@ -13,6 +13,7 @@ import { ProjectsPanel } from './projects-panel.tsx';
 import { ProjectsViewModel } from './projects-view-model.ts';
 import { SessionDetailViewModel } from './session-detail-view-model.ts';
 import { AskPanel } from './ask-panel.tsx';
+import { handoffOffer, handoffRefusalLine, type HandoffOffer } from './handoff-view-model.ts';
 import { SessionList } from './session-list.tsx';
 import { SessionPreviewViewModel } from './session-preview-view-model.ts';
 import type { SessionRowViewModel } from './session-row-view-model.ts';
@@ -33,14 +34,7 @@ export interface DeckBodyProps {
   readonly onToggle: (row: SessionRowViewModel) => void;
 }
 
-/**
- * The two columns, and the one piece of state that belongs to them rather than to the deck.
- *
- * `/`'s filter lives here because it is a fact about the list — the header still counts every
- * session and the palette still reaches every session, and neither has to know a box is filled in.
- * The keyboard does not know either: `/` focuses this box by id (deck-keyboard.ts), which is why
- * nothing above had to thread the query down or a setter back up.
- */
+/** The two columns. What each of them draws is a child's business — see `DeckSessions`. */
 export function DeckBody(props: DeckBodyProps): JSX.Element {
   const { rows, state, now, grid, scope, project, expanded, actions, onToggle } = props;
   // P3-T6. The current project narrows the LIST and nothing else: the header still counts every
@@ -93,10 +87,9 @@ interface DeckLeftProps {
   readonly onToggle: (row: SessionRowViewModel) => void;
 }
 
-/** The projects panel and the session list, and the `/` filter that belongs to the list. */
+/** The projects panel, the Ask box and the session list. */
 function DeckLeft(props: DeckLeftProps): JSX.Element {
-  const { rows, state, now, expanded, actions, onToggle } = props;
-  const [search, setSearch] = useState('');
+  const { state, now, actions } = props;
   return (
     <div className="deck-left">
       <DeckProjects state={state} actions={actions} scope={props.scope} project={props.project} />
@@ -111,26 +104,80 @@ function DeckLeft(props: DeckLeftProps): JSX.Element {
         onAsk={actions.onAsk}
         onClear={actions.onClearAsk}
       />
-      <SessionList
-        rows={rows.filter((row) => row.matches(search))}
-        now={now}
-        loading={state.loading}
-        coreUp={state.coreUp}
-        quota={state.quota}
-        search={search}
-        expanded={expanded}
-        details={detailViewModels(state.details)}
-        previews={previewViewModels(state.previews)}
-        onSearch={setSearch}
-        onToggle={onToggle}
-        onLaunch={actions.onLaunch}
-        onOpen={actions.onOpenPane}
-        onResume={actions.onResume}
-        onStop={actions.onStop}
-        onRemove={actions.onRemove}
-        onPreview={actions.onPreview}
-      />
+      <DeckSessions {...props} />
     </div>
+  );
+}
+
+/**
+ * The list, and the one piece of state that belongs to it rather than to the deck.
+ *
+ * `/`'s filter lives here because it is a fact about the list — the header still counts every
+ * session and the palette still reaches every session, and neither has to know a box is filled in.
+ * The keyboard does not know either: `/` focuses this box by id (deck-keyboard.ts), which is why
+ * nothing above had to thread the query down or a setter back up.
+ */
+function DeckSessions(props: DeckLeftProps): JSX.Element {
+  const { rows, state, now, expanded, actions, onToggle } = props;
+  const [search, setSearch] = useState('');
+  return (
+    <SessionList
+      rows={rows.filter((row) => row.matches(search))}
+      now={now}
+      loading={state.loading}
+      coreUp={state.coreUp}
+      quota={state.quota}
+      search={search}
+      expanded={expanded}
+      details={detailViewModels(state.details)}
+      previews={previewViewModels(state.previews)}
+      offers={handoffOffers(rows, props.scope, state.maps)}
+      handoffRefusal={handoffRefusalFor(state.handoffRefusal)}
+      onSearch={setSearch}
+      onToggle={onToggle}
+      onLaunch={actions.onLaunch}
+      onOpen={actions.onOpenPane}
+      onResume={actions.onResume}
+      onStop={actions.onStop}
+      onRemove={actions.onRemove}
+      onPreview={actions.onPreview}
+      onHandOff={actions.onHandOff}
+    />
+  );
+}
+
+/** The last refused handoff as a sentence, still carrying the row it was about — P6-T6. */
+function handoffRefusalFor(
+  refusal: DeckState['handoffRefusal'],
+): { readonly key: string; readonly text: string } | undefined {
+  if (refusal === undefined) return undefined;
+  return { key: refusal.key, text: handoffRefusalLine(refusal.code) };
+}
+
+/**
+ * Where each row on screen could be handed to — P6-T6.
+ *
+ * Built here rather than in the store for `detailViewModels`' reason: the store holds wire values
+ * and this is presentation (CODING-STANDARDS §3). It is also the only place with both halves —
+ * `ProjectScope` says which project a session is in, and the maps carry that project's worktrees.
+ *
+ * **The three states of `maps[key]` are kept apart**, which is why this is not one `??`. A row in
+ * no imported project gets `undefined`, and a row in one whose map has not arrived gets an empty
+ * list; `handoffOffer` says a different sentence for each, and collapsing them would tell somebody
+ * to import a folder they imported an hour ago.
+ */
+function handoffOffers(
+  rows: readonly SessionRowViewModel[],
+  scope: ProjectScope,
+  maps: DeckState['maps'],
+): Readonly<Record<string, HandoffOffer>> {
+  return Object.fromEntries(
+    rows.map((row) => {
+      const cwd = row.cwd ?? '';
+      const key = cwd === '' ? undefined : scope.keyFor(cwd);
+      const worktrees = key === undefined ? undefined : (maps[key]?.worktrees ?? []);
+      return [row.key, handoffOffer(worktrees, cwd, row.title)];
+    }),
   );
 }
 

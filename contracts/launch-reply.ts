@@ -78,6 +78,33 @@ export function parseLaunchFailure(value: unknown): LaunchFailure | undefined {
  */
 export type ResumeFailure = 'no_claude' | 'bad_session' | 'resume_failed';
 
+/**
+ * Why core would not hand a session off to a new working tree — P6-T6.
+ *
+ * Its own union rather than a widened `ResumeFailure`, for the reason `launch-reply.ts` gives about
+ * the other four: the verbs sound alike and are not. A resume WAKES a session under its own id; a
+ * handoff FORKS it into a second one. "Could not resume" after a failed handoff would send somebody
+ * looking for a session that is exactly where they left it.
+ *
+ * `bad_cwd` and `bad_name` are the two a resume cannot have, because a resume takes neither.
+ */
+export type HandoffFailure =
+  'no_claude' | 'bad_session' | 'bad_cwd' | 'bad_name' | 'handoff_failed' | 'no_session_id';
+
+export const HANDOFF_FAILURES: readonly HandoffFailure[] = [
+  'no_claude',
+  'bad_session',
+  'bad_cwd',
+  'bad_name',
+  'handoff_failed',
+  'no_session_id',
+];
+
+/** One off the wire, or `undefined`. The deck has a sentence per code and none for anything else. */
+export function parseHandoffFailure(value: unknown): HandoffFailure | undefined {
+  return HANDOFF_FAILURES.find((known) => known === value);
+}
+
 export const RESUME_FAILURES: readonly ResumeFailure[] = [
   'no_claude',
   'bad_session',

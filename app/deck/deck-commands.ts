@@ -131,6 +131,20 @@ export interface DeckActions {
    */
   readonly onPreview: (row: SessionRowViewModel) => void;
   /**
+   * Forking one session into another worktree — P6-T6, SPEC §6(8), and NOT a palette entry.
+   *
+   * `onPreview`'s reason rather than `onRemove`'s. It is not dangerous — it is the one verb here
+   * that adds a session without being able to lose one — but it needs two answers typed into it
+   * (which tree, what name), and a palette entry that opened a form would be a different control
+   * wearing the same word. It is reached by expanding the row and by nothing else.
+   *
+   * **The only member of this interface that answers.** Every other verb is fire-and-forget,
+   * because the next sweep reports it; this one returns whether core made the fork, which is what
+   * the form on the row uses to decide whether to close. Why a refusal happened is NOT in this
+   * boolean — that is state, and it lives in `DeckState.handoffRefusal` keyed by row.
+   */
+  readonly onHandOff: (row: SessionRowViewModel, path: string, name: string) => Promise<boolean>;
+  /**
    * Asking one headless question, and clearing its answer — P4-T4.
    *
    * Not a palette entry either, and for a different reason from `onRemove`'s: a question needs a
