@@ -11,6 +11,7 @@
 // The rows arrive on their own since P1-T9: the store subscribes to core's stream, so nothing here
 // fetches, polls or re-renders on a timer to stay current.
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type JSX } from 'react';
+import { duplicateCwdKeys } from '../../contracts/duplicate-cwd.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
 import type { PresetLaunch } from '../../contracts/launch-preset.ts';
 import { BrowserDeckApi } from './browser-deck-api.ts';
@@ -61,7 +62,11 @@ export function DeckView(): JSX.Element {
 
   // Every session, unfiltered: the palette can reach one the `/` box is currently hiding — and,
   // since P3-T6, one the current project is hiding too. Narrowing happens in `DeckBody`.
-  const rows = state.rows.map((row) => new SessionRowViewModel(row));
+  // P6-T5. Computed once over the whole list and handed to every row: "is another account live in
+  // this folder" is a property of the SET, and forty rows answering it separately would be forty
+  // passes over the same list.
+  const shared = duplicateCwdKeys(state.rows);
+  const rows = state.rows.map((row) => new SessionRowViewModel(row, shared));
   // `onLayout` comes from the grid rather than from `useDeckActions`: the palette's six layout
   // entries and the chooser's six buttons must be the same call, or one of them gets the next fix.
   const targets = { rows, ...actions, onLayout: grid.setLayout, onChooseProject: project.choose };

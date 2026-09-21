@@ -6,14 +6,23 @@
 import type { SessionRef } from '../../contracts/session-ref.ts';
 import type { SessionRow } from '../../contracts/session-row.ts';
 import type { PtyTarget } from '../../contracts/pty-protocol.ts';
+import { sharedCwdWarning, sharesCwd } from '../../contracts/duplicate-cwd.ts';
 
 export type RowTone = 'needs-you' | 'working' | 'idle' | 'ended';
 
 export class SessionRowViewModel {
   private readonly row: SessionRow;
+  private readonly duplicates: ReadonlySet<string>;
 
-  constructor(row: SessionRow) {
+  /**
+   * @param duplicates the folders with a live session on BOTH subscriptions (P6-T5), which is the
+   * one thing about a row that is not a fact about the row. It is passed in rather than computed
+   * because it is a property of the SET, and defaulted to empty so that a caller with one row in
+   * its hand — every test in this file — does not have to say "and nothing is shared".
+   */
+  constructor(row: SessionRow, duplicates: ReadonlySet<string> = new Set()) {
     this.row = row;
+    this.duplicates = duplicates;
   }
 
   public get key(): string {
@@ -135,6 +144,21 @@ export class SessionRowViewModel {
   public get removeWarning(): string {
     const ending = this.row.live ? 'It is running — this ends it, and the' : 'The';
     return `${ending} conversation is deleted. There is no resume.`;
+  }
+
+  /**
+   * Whether another account has a live session in this same folder — P6-T5, SPEC §5.6.
+   *
+   * Nothing else on the machine can see this: `claude agents` reads one config directory, so each
+   * account's listing shows its own session in the folder and neither mentions the other.
+   */
+  public get sharesWorkingTree(): boolean {
+    return sharesCwd(this.row, this.duplicates);
+  }
+
+  /** What to say about it, or `undefined` when there is nothing to say. */
+  public get sharedTreeWarning(): string | undefined {
+    return this.sharesWorkingTree ? sharedCwdWarning(this.row) : undefined;
   }
 
   /**

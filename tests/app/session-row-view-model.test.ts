@@ -168,3 +168,38 @@ describe('SessionRowViewModel — the / filter (P2-T5)', () => {
     expect(view().matches('isg flightdeck')).toBe(false);
   });
 });
+
+/**
+ * The one thing on this view model that is not a fact about its own row — P6-T5, SPEC §5.6.
+ *
+ * It is passed in because it is a property of the SET: another account being live in this folder
+ * cannot be read off this row, and `claude agents` cannot see it either, because it reads one
+ * config directory at a time.
+ */
+describe('SessionRowViewModel — a folder two accounts are both in', () => {
+  it('says nothing when it was given no shared folders', () => {
+    const row = new SessionRowViewModel({ ...BASE, cwd: 'C:\repo' });
+
+    expect(row.sharesWorkingTree).toBe(false);
+    expect(row.sharedTreeWarning).toBeUndefined();
+  });
+
+  it('warns when this row is in one of them', () => {
+    const row = new SessionRowViewModel(
+      { ...BASE, cwd: 'C:\repo', live: true },
+      new Set(['c:\repo']),
+    );
+
+    expect(row.sharesWorkingTree).toBe(true);
+    expect(row.sharedTreeWarning).toContain('two sessions editing one working tree');
+  });
+
+  it('does not warn about a row that has ended, however shared the folder is', () => {
+    const row = new SessionRowViewModel(
+      { ...BASE, cwd: 'C:\repo', live: false, runState: 'done' },
+      new Set(['c:\repo']),
+    );
+
+    expect(row.sharesWorkingTree).toBe(false);
+  });
+});
