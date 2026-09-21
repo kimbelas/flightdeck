@@ -76,6 +76,23 @@ export class ProjectRegistry {
   }
 
   /**
+   * Where the imported folder with this key is — P6-T1, `ProjectRoots`.
+   *
+   * The STORED path, never one composed from the key: the key is lowercased and has its
+   * separators folded, so building a path from it would hand a process a directory name the
+   * filesystem never gave us. A key nobody imported is `undefined` (SEC-FS-1, D26).
+   *
+   * Synchronous, unlike `resolve` and `resolveDirectory`, and that is the point of it: the
+   * roots are in memory and each was canonicalised at import, so a shell pane needs no
+   * `realpath` to find one. It admits only project ROOTS — a worktree is a fine place to
+   * start a session and is not itself imported (G.26-G.28), and widening this to reach one
+   * would need the async door.
+   */
+  public rootFor(projectKeyValue: string): string | undefined {
+    return this.held.find((project) => projectKey(project.path) === projectKeyValue)?.path;
+  }
+
+  /**
    * Imports one folder, by path — the owner's deliberate act, and the only way a root appears.
    *
    * Idempotent: importing a folder already held returns the record that is already there, with the

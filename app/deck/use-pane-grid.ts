@@ -19,7 +19,7 @@ import {
 } from '../../contracts/pane-layout.ts';
 import { parsePtyTarget, sameTarget, type PtyTarget } from '../../contracts/pty-protocol.ts';
 import type { SessionRow } from '../../contracts/session-row.ts';
-import type { OpenPane } from './deck-view.tsx';
+import type { OpenPane } from './open-pane.ts';
 import { layoutKeyFor } from './use-current-project.ts';
 
 /** And where the open panes do — P5a-T5b, the last clause of the P5a gate. */
@@ -284,7 +284,13 @@ function asOpenPane(value: unknown): OpenPane | undefined {
 function asTarget(value: unknown): PtyTarget | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
   const fields: Readonly<Record<string, unknown>> = Object.fromEntries(Object.entries(value));
-  if (fields['kind'] === 'shell') return parsePtyTarget('?shell=1');
+  if (fields['kind'] === 'shell') {
+    const id = fields['id'];
+    const project = fields['project'];
+    if (typeof id !== 'string') return undefined;
+    const inside = typeof project === 'string' ? `&project=${encodeURIComponent(project)}` : '';
+    return parsePtyTarget(`?shell=${encodeURIComponent(id)}${inside}`);
+  }
   const sessionId = fields['sessionId'];
   const subscription = fields['subscription'];
   if (typeof sessionId !== 'string' || typeof subscription !== 'string') return undefined;

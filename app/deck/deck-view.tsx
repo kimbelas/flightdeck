@@ -13,7 +13,6 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type JSX } from 'react';
 import type { AskRequest } from '../../contracts/ask-run.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
-import type { PtyTarget } from '../../contracts/pty-protocol.ts';
 import type { PresetLaunch } from '../../contracts/launch-preset.ts';
 import { BrowserDeckApi } from './browser-deck-api.ts';
 import { BrowserStreamTransport } from './browser-stream-transport.ts';
@@ -27,17 +26,16 @@ import { SessionRowViewModel } from './session-row-view-model.ts';
 import { ShortcutSheet } from './shortcut-sheet.tsx';
 import { ProjectScope } from './project-scope.ts';
 import { useCurrentProject } from './use-current-project.ts';
-import { usePaneGrid } from './use-pane-grid.ts';
+import { usePaneGrid, type PaneGridState } from './use-pane-grid.ts';
+import type { OpenPane } from './open-pane.ts';
+import { nextShellPane } from './shell-pane.ts';
+import { projectKey, type ProjectRecord } from '../../contracts/project.ts';
 import { useDeckKeys, type DeckKeys } from './use-deck-keys.ts';
 
-export interface OpenPane {
-  readonly key: string;
-  readonly title: string;
-  readonly target: PtyTarget;
-}
-
 const AGE_TICK_MS = 10_000;
-const SHELL_PANE: OpenPane = { key: 'shell', title: 'shell', target: { kind: 'shell' } };
+
+/** What a shell with no project is called, on the button and in the pane's title. */
+const HOME = 'home';
 
 export function DeckView(): JSX.Element {
   const store = useDeckStore();
@@ -58,7 +56,7 @@ export function DeckView(): JSX.Element {
   // rather than store state: nothing outside this page cares, and the reading it triggers is in
   // the store where it belongs.
   const [install, setInstall] = useState<SubscriptionId | undefined>(undefined);
-  const actions = useDeckActions(store, grid.openPane, setInstall);
+  const actions = useDeckActions(store, usePaneActions(grid, state.projects, project.key), setInstall); // prettier-ignore
 
   // Every session, unfiltered: the palette can reach one the `/` box is currently hiding — and,
   // since P3-T6, one the current project is hiding too. Narrowing happens in `DeckBody`.
@@ -160,6 +158,40 @@ function useLiveStream(store: DeckStore): void {
 }
 
 /**
+ * Opening a shell in the CURRENT project — P6-T1, SPEC §5.7(3).
+ *
+ * A hook rather than a line in `useDeckActions`, because it needs the GRID: the id has to be
+ * one no open pane is using, and `useDeckActions` knows about the store and not about what is
+ * on screen. It is also the join P3-T6 made possible — a shell opened while looking at a
+ * repository is a shell IN that repository, which is the whole of "or the goal fails at the
+ * first `git status`".
+ *
+ * The folder's NAME goes in the title, not its key: the key is lowercased with its separators
+ * folded, and `shell-1 · c:/users/.../app-next` is not a title.
+ */
+function usePaneActions(
+  grid: PaneGridState,
+  projects: readonly ProjectRecord[],
+  current: string | undefined,
+): PaneOpeners {
+  const label =
+    current === undefined
+      ? HOME
+      : (projects.find((project) => projectKey(project.path) === current)?.name ?? HOME);
+  const { panes, openPane } = grid;
+  const onOpenShell = useCallback(() => {
+    openPane(nextShellPane(panes, current, label));
+  }, [panes, openPane, current, label]);
+  return { openPane, onOpenShell };
+}
+
+/** The two ways a pane is opened. One object, because `useDeckActions` takes four things. */
+interface PaneOpeners {
+  readonly openPane: (pane: OpenPane) => void;
+  readonly onOpenShell: () => void;
+}
+
+/**
  * What the buttons do, as stable references — and since P2-T5, what the palette's entries do too.
  *
  * Together rather than inline for two reasons. Stable identities keep `SessionList` from
@@ -172,12 +204,10 @@ function useLiveStream(store: DeckStore): void {
  */
 function useDeckActions(
   store: DeckStore,
-  openPane: (pane: OpenPane) => void,
+  panes: PaneOpeners,
   openInstall: (subscription: SubscriptionId | undefined) => void,
 ): DeckActions {
-  const onOpenShell = useCallback(() => {
-    openPane(SHELL_PANE);
-  }, [openPane]);
+  const { openPane, onOpenShell } = panes;
 
   const onOpenPane = useCallback(
     (row: SessionRowViewModel) => {

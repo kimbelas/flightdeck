@@ -3127,7 +3127,63 @@ phases:
     tasks:
       - id: P6-T1
         title: Plain PowerShell panes
-        status: todo
+        status: done
+        done_on: 2026-09-21
+        deliverables:
+          [
+            contracts/pty-protocol.ts,
+            core/ports/pty-commands.ts,
+            core/adapters/windows/windows-pty-commands.ts,
+            core/application/project-registry.ts,
+            core/projects.ts,
+            core/main.ts,
+            app/deck/open-pane.ts,
+            app/deck/shell-pane.ts,
+            app/deck/deck-view.tsx,
+            app/deck/pane-view.tsx,
+            app/deck/pane-grid.tsx,
+            app/deck/use-pane-grid.ts,
+            app/panes/pane-socket.ts,
+            tests/app/shell-pane.test.ts,
+            tests/contracts/pty-protocol.test.ts,
+            tests/core/adapters/windows-pty-commands.test.ts,
+            tests/e2e/smoke/shell-checks.mjs,
+            tests/e2e/smoke/pane-checks.mjs,
+            DECISIONS.md D56,
+            RESEARCH.md G.49,
+          ]
+        notes: >-
+          SPEC §5.7(3), "or the goal fails at the first `git status`". What P5a-T1 shipped was a
+          `cmd.exe` in `$HOME`, one at a time; three things changed and D56 argues each.
+          **PowerShell with the profile, and `-NoProfile` is the flag that must never be added** —
+          D45's rule in the other direction. `claude-365`, `claude-isg` and the two ticket functions
+          live in `$PROFILE`, so a pane without them is a terminal the owner would have to leave to
+          use, which is the opposite of what P6 is for. The argv is `powershell.exe -NoLogo`.
+          **A shell now has an identity.** `sameTarget` said every shell equalled every other, the
+          grid keyed them all as `shell`, and a second one replaced the first — so `git` in one pane
+          and `npm run dev` in another was not possible. A shell carries an `id` (a deck slug,
+          screened by shape because it reaches a URL, a JSON body, a Map key and a log line) and a
+          `project`.
+          **The project is a `projectKey` that is MATCHED, never used as a path.** Looked up among
+          the imported folders; the STORED path is what the process starts in. A key nobody
+          imported REFUSES the pane rather than falling back to home, because a terminal that opens
+          somewhere other than where the button said is the one failure a terminal must not have
+          (SEC-FS-1, D26). The lookup is synchronous — `ProjectRoots`, a Map lookup wearing an
+          interface — because `forTarget` is not async and must not become so.
+          `sameTarget` got STRICTER as a consequence: a ticket for the shell at home must not
+          redeem into one inside a repository (SEC-WS-1). `?shell=1` and `?shell=0` are both gone as
+          special spellings; a URL with no readable id is refused outright.
+          **A sentence on every pane card was false, and running it is how that was found.** The
+          footer said "Closing this pane detaches it. The session keeps running." — true of a
+          session and measured (F.2.6), a lie about a shell, whose process `PaneRegistry` kills.
+          SPEC puts `npm run dev` in one of these. It says what closing it actually does now.
+          `OpenPane` moved out of `deck-view.tsx` into a leaf module: a type declared in a `.tsx` is
+          `any` to the unit project, so the first test to touch one tripped five `no-unsafe-*` rules
+          instead of the type doing its job (G.49). The lint rule was the only thing that noticed.
+          Seven sabotages, each watched to land and then to fail. Verified live: focusing
+          `pdf-editor` and pressing `+ shell` gave `PS C:\Users\belas\Documents\development\pdf-editor>`,
+          PowerShell 5, with a second shell beside it in a 2-up grid.
+          `npm run check` 196 files / 2 385 tests; `npm run smoke` 355 checks.
       - id: P6-T2
         title: Pop out to Windows Terminal (AppX path resolution from open-tab.mjs), detach first
         status: todo

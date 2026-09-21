@@ -142,11 +142,25 @@ export function PaneView({
       />
       <PaneLines detail={detail} note={note} />
       <div ref={hostRef} className="pane-host" />
-      <footer className="pane-foot">
-        Closing this pane detaches it. The session keeps running.
-      </footer>
+      <footer className="pane-foot">{closingNote(target)}</footer>
     </section>
   );
+}
+
+/**
+ * What closing this pane actually does — which is two different things (P6-T1).
+ *
+ * The footer said "Closing this pane detaches it. The session keeps running." for every pane, and
+ * for a session that is true and measured: F.2.6 confirmed every session keeps its pid across a
+ * killed attach, which is what the P5a gate rests on. **For a shell it is false.** `PaneRegistry`
+ * kills the process, so closing a shell pane ends the PowerShell in it and everything it was
+ * running — and SPEC §5.7(3) has `npm run dev` living in one of these. A footer that promised a
+ * `npm run dev` would survive the close is the most expensive sentence on the card.
+ */
+function closingNote(target: PtyTarget): string {
+  return target.kind === 'shell'
+    ? 'Closing this pane ends the shell. Anything running in it stops.'
+    : 'Closing this pane detaches it. The session keeps running.';
 }
 
 /**

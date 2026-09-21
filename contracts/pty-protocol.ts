@@ -15,6 +15,7 @@
 // is minted, and again in the upgrade URL when it is redeemed — so `parseTargetPayload` and
 // `sameTarget` exist alongside `parsePtyTarget`, and the socket binds only where the two agree.
 
+import { MAX_PROJECT_PATH_CHARS } from './project.ts';
 import { SUBSCRIPTION_IDS, type SubscriptionId } from './session.ts';
 
 /**
@@ -25,12 +26,61 @@ import { SUBSCRIPTION_IDS, type SubscriptionId } from './session.ts';
  * folder by asking for one — the allowlist is the type (SECURITY.md §11 rule 2).
  */
 export type PtyTarget =
-  | { readonly kind: 'shell' }
+  | {
+      readonly kind: 'shell';
+      /**
+       * Which shell — P6-T1.
+       *
+       * A shell carried no identity until now, which is why only one could ever be open:
+       * every shell target equalled every other, so the grid had one key for all of them
+       * and a ticket minted for one opened any. SPEC §5.7(3) wants a pane per repository
+       * (`git` in one, `npm run dev` in another), so a shell is now a thing you can name.
+       *
+       * A deck-generated slug, screened by shape because it reaches a URL, a JSON payload
+       * and a log field. It is NOT a pane id: core assigns those, and this one survives a
+       * reload in `localStorage`.
+       */
+      readonly id: string;
+      /**
+       * The imported project to start in, as a `projectKey`, or `undefined` for home.
+       *
+       * **A key that is MATCHED, never used as a path** — `/projects/observed`'s rule, for
+       * the same reason (D26, SEC-FS-1). Core looks it up among the imported folders and
+       * uses the stored path it finds; a key nobody imported refuses the pane rather than
+       * falling back to home, because a shell that opened somewhere other than where the
+       * button said is the one failure a terminal must not have.
+       */
+      readonly project: string | undefined;
+    }
   | {
       readonly kind: 'session';
       readonly sessionId: string;
       readonly subscription: SubscriptionId;
     };
+
+/**
+ * What a shell's `id` may be — a slug, and nothing that needs escaping anywhere.
+ *
+ * It travels through a query string, a JSON body, a `Map` key and a log line, so the
+ * narrow shape is what makes all four safe at once rather than four escapings that have to
+ * agree. `shell-1` is what the deck generates.
+ */
+const SHELL_ID = /^[a-z0-9][a-z0-9-]{0,31}$/u;
+
+/** Whether a value can be a shell's id. Exported so the deck and core cannot drift. */
+export function isShellPaneId(value: unknown): value is string {
+  return typeof value === 'string' && SHELL_ID.test(value);
+}
+
+/**
+ * Whether a value can be a project key on a shell target.
+ *
+ * Shape only, and deliberately loose: the security is the exact-match lookup in the
+ * registry, not this. What this stops is an unbounded string reaching a log line.
+ */
+function isProjectKey(value: unknown): value is string {
+  return typeof value === 'string' && value !== '' && value.length <= MAX_PROJECT_PATH_CHARS;
+}
 
 export type ClientFrame =
   | { readonly type: 'auth'; readonly ticket: string }
@@ -90,7 +140,7 @@ export function parsePtyTarget(url: string | undefined): PtyTarget | undefined {
   if (url === undefined) return undefined;
   const query = new URLSearchParams(url.split('?')[1] ?? '');
   const sessionId = query.get('session');
-  if (sessionId === null) return query.get('shell') === '1' ? { kind: 'shell' } : undefined;
+  if (sessionId === null) return shellIn(query);
 
   const subscription = query.get('subscription');
   if (!isFullSessionId(sessionId) || !isSubscriptionId(subscription)) return undefined;
@@ -108,7 +158,7 @@ export function parsePtyTarget(url: string | undefined): PtyTarget | undefined {
 export function parseTargetPayload(value: unknown): PtyTarget | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
   const fields = value as Record<string, unknown>;
-  if (fields['kind'] === 'shell') return { kind: 'shell' };
+  if (fields['kind'] === 'shell') return shellPayload(fields);
   if (fields['kind'] !== 'session') return undefined;
 
   const sessionId = fields['sessionId'];
@@ -121,13 +171,45 @@ export function parseTargetPayload(value: unknown): PtyTarget | undefined {
 /**
  * Whether two targets name the same PTY — what binds a ticket to one pane (SEC-WS-1).
  *
- * Every shell equals every other shell: shells carry no identity, they are never held (PaneRegistry
- * `holderKey`), and a ticket minted for one is a ticket for a new one. Sessions compare on both
- * fields, because the same id under the other subscription is a different session entirely.
+ * **Shells used to all be equal, and as of P6-T1 they are not.** A ticket minted for a shell at
+ * home must not redeem into one inside a repository: the two run in different directories, and the
+ * whole point of the second is that `git` and `npm` do something there. So both fields are
+ * compared, exactly as a session's two are — the same id under the other subscription is a
+ * different session, and the same shell id in another folder is a different shell.
  */
 export function sameTarget(a: PtyTarget, b: PtyTarget): boolean {
-  if (a.kind === 'shell' || b.kind === 'shell') return a.kind === b.kind;
+  if (a.kind === 'shell' && b.kind === 'shell') return a.id === b.id && a.project === b.project;
+  if (a.kind === 'shell' || b.kind === 'shell') return false;
   return a.sessionId === b.sessionId && a.subscription === b.subscription;
+}
+
+/**
+ * The shell half of `parseTargetPayload`, split out for its complexity budget.
+ *
+ * Screened exactly as the URL's is: a ticket is minted against this value and redeemed
+ * against the other, so a payload that parsed more loosely here would widen what a ticket
+ * admits (SEC-WS-1).
+ */
+function shellPayload(fields: Record<string, unknown>): PtyTarget | undefined {
+  const { id, project } = fields;
+  if (!isShellPaneId(id)) return undefined;
+  if (project !== undefined && project !== null && !isProjectKey(project)) return undefined;
+  return { kind: 'shell', id, project: isProjectKey(project) ? project : undefined };
+}
+
+/**
+ * The shell target in an upgrade URL, or `undefined`.
+ *
+ * `?shell=<id>`, where the id used to be the literal `1`. That spelling is gone rather than kept as
+ * a fallback: a URL this build cannot name a shell from must not quietly become the home shell,
+ * which is `parsePtyTarget`'s own fail-closed rule applied to its history.
+ */
+function shellIn(query: URLSearchParams): PtyTarget | undefined {
+  const id = query.get('shell');
+  if (!isShellPaneId(id)) return undefined;
+  const project = query.get('project');
+  if (project !== null && !isProjectKey(project)) return undefined;
+  return { kind: 'shell', id, project: project ?? undefined };
 }
 
 // `.some` rather than `.includes`: includes() would need an `as` cast to compare a string against

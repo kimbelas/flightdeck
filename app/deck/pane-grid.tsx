@@ -14,7 +14,7 @@
 // is grid placement, not a different tree, and the only thing a layout changes is a class name.
 import type { JSX } from 'react';
 import { layoutClass, PANE_LAYOUTS, type PaneLayout } from '../../contracts/pane-layout.ts';
-import type { OpenPane } from './deck-view.tsx';
+import type { OpenPane } from './open-pane.ts';
 import type { PaneControls } from './pane-head.tsx';
 import { PaneView } from './pane-view.tsx';
 import type { SessionRowViewModel } from './session-row-view-model.ts';

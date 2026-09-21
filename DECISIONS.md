@@ -1674,3 +1674,45 @@ newest snapshots, writing nothing — and that is the whole reason two are read 
 And one thing it deliberately DOES see: a permission rule carries which list it is on, so
 `Read(.env)` moving from `deny` to `ask` is a change. A digest of bare rule strings would see that
 as no change at all, and it is the most consequential single edit this feature can report.
+
+## D56 — a shell pane is named, lives in a project, and runs PowerShell with the profile (decided 2026-09-21, P6-T1)
+
+SPEC §5.7(3) asks for "a plain PowerShell pane in the same grid for `git`, `npm`, `pnpm` — or the
+goal fails at the first `git status`". What shipped in P5a-T1 was a `cmd.exe` in `$HOME`, one at a
+time. Three things had to change, and each is a decision rather than a fix.
+
+**PowerShell, with the profile, and `-NoProfile` is the flag that must never be added.** D45 argued
+that for the LAUNCHER, where the profile functions are the whole routing (D4). It applies at least
+as hard here: the owner's `claude-365`, `claude-isg` and two ticket functions live in
+`$PROFILE`, so a pane without them is a terminal they would have to leave to use — the exact
+opposite of what P6 is for. The argv is `powershell.exe -NoLogo` and nothing else.
+
+**A shell carries an identity, which it did not.** `sameTarget` said "every shell equals every
+other shell", the grid keyed them all as `shell`, and a second one therefore replaced the first.
+SPEC wants `git` in one pane and `npm run dev` in another, so a shell now has an `id` — a
+deck-generated slug, screened by shape because it reaches a URL, a JSON body, a `Map` key and a log
+line. It is not a pane id: core assigns those, and this one survives a reload in `localStorage`.
+
+**And it names a folder, as a `projectKey` that is MATCHED rather than used.** The key is looked up
+among the imported projects and the STORED path is what the process starts in — nothing is composed
+from the key, which is lowercased with its separators folded and would not name a real directory
+anyway. `/projects/observed` took the same shape for the same reason (D26, SEC-FS-1). A key nobody
+imported **refuses the pane** rather than falling back to home: a terminal that opens somewhere
+other than where the button said is the one failure a terminal must not have.
+
+The lookup is synchronous, which is why it is `ProjectRoots` and not `ProjectRegistry.resolve`. The
+roots are in memory and each path was canonicalised at import, so there is nothing to await —
+`forTarget` is not async and must not become so. It admits project ROOTS only; a worktree is a fine
+place to start a session and is not itself imported (G.26–G.28), and reaching one would need the
+async door.
+
+**Consequence: `sameTarget` got stricter.** A ticket minted for the shell at home must not redeem
+into one inside a repository, so both fields are compared — exactly as a session's two are
+(SEC-WS-1). The old `?shell=1` spelling is gone rather than kept as a fallback, and so is
+`?shell=0` meaning "not a shell"; a URL this build cannot name a shell from is refused, which is
+`parsePtyTarget`'s own fail-closed rule applied to its history.
+
+**And a sentence on the card became false, which running it is how you find out.** The pane footer
+said "Closing this pane detaches it. The session keeps running." on every pane. For a session that
+is true and measured (F.2.6). For a shell it is a lie — `PaneRegistry` kills the process — and SPEC
+has `npm run dev` living in one of these. It now says what closing it actually does.

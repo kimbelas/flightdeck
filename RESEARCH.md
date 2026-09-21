@@ -3411,3 +3411,46 @@ On the deck that is an amber `changed 12s ago` in the map's closed summary, and 
 struck through, because colour alone is not a way to say which is which. The probe was forgotten and
 deleted; its two snapshot rows remain in the store, which is D55's rule working (a snapshot is what
 happened, and the folder being withdrawn does not make it untrue).
+
+### G.49 The sentence that was true for one pane and false for the other (P6-T1, 2026-09-21)
+
+Seven sabotages, each verified to have LANDED before the result was read (G.38), each failing the
+check that names its mechanism.
+
+| sabotage | what failed |
+| --- | --- |
+| back to `cmd.exe` | unit: `runs PowerShell, and needs no Claude install` |
+| add `-NoProfile` | unit: `does NOT pass -NoProfile, because the profile is where the launch functions are` |
+| an unimported folder falls back to home | unit: `REFUSES a folder nobody imported, rather than falling back to home` |
+| the shell ignores the current project | smoke: `the ticket carries the project KEY` |
+| every shell is the same target again | unit: `separates two shells in different folders` + `in the SAME folder` |
+| the pane key drops the shell id | smoke: 6 checks, led by `a SECOND shell opens beside the first` |
+| the shell gets the session's closing sentence | smoke: `the card says what closing it ACTUALLY does` |
+
+**The footer was the find, and only running it showed it.** `pane-view.tsx` ended every card with
+"Closing this pane detaches it. The session keeps running." That is true of a session and measured —
+F.2.6 confirmed every session keeps its pid across a killed attach, which is what the P5a gate rests
+on. It is false of a shell: `PaneRegistry.close` kills the process. Before this task there was one
+shell and it was an afterthought; SPEC §5.7(3) puts `npm run dev` in one, and a footer promising it
+survives the close is the most expensive sentence on the card. It reads
+"Closing this pane ends the shell. Anything running in it stops." now.
+
+**A type in a `.tsx` is `any` to the unit project.** `OpenPane` lived in `deck-view.tsx`. The moment
+a unit test touched one, the type resolved to nothing and five `no-unsafe-*` rules fired instead of
+the type doing its job. Moving it into `use-pane-grid.ts` traded the problem for another — that
+module reads `window` and the unit tsconfig has no DOM lib — so it is a leaf module now,
+`open-pane.ts`, with one interface and one import. **The lint rule was the only thing that noticed**:
+the test passed either way.
+
+**`?shell=1` still parses, and that is worth saying out loud.** `1` is a legal slug, so the old URL
+now names a shell called `1` rather than failing. What DID change is `?shell=0`, which used to mean
+"not a shell" and now names a shell called `0` — there is no off switch to get wrong any more,
+because a URL with no readable id is refused outright. The tests that asserted the old spellings say
+this instead.
+
+**Measured live, on the real machine.** Focusing `pdf-editor` and pressing `+ shell` opened a pane
+titled `shell-1 · pdf-editor` whose prompt was
+`PS C:\Users\belas\Documents\development\pdf-editor>` — PowerShell 5, in the project, with the
+profile's own prompt function. `$PSVersionTable.PSVersion.Major` answered `5` and
+`(Get-Location).Path` answered the project folder. A second press opened `shell-2 · pdf-editor`
+beside it in a 2-up grid, which is the thing that was impossible the day before.

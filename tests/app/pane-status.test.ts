@@ -22,7 +22,7 @@ const SESSION: PtyTarget = {
   sessionId: 'cfe7facb-a785-42e4-b1b3-600138ad1c70',
   subscription: '365',
 };
-const SHELL: PtyTarget = { kind: 'shell' };
+const SHELL: PtyTarget = { kind: 'shell', id: 'shell-1', project: undefined };
 
 describe('PendingInput — what was typed before the pane could send it', () => {
   it('gives it back in the order it was typed', () => {

@@ -89,9 +89,26 @@ export function buildProjectRegistry(parts: ProjectParts): ProjectRegistry {
  * "which folders may be read" is not a question two objects may answer differently. That is also
  * why `ProjectStatusReader` is assembled here — it needs `resolve`, and the only correct answer to
  * "which resolve" is "the one the import route wrote to".
+ *
+ * **It is HANDED the registry as of P6-T1**, rather than making one. A shell pane starts in an
+ * imported folder (`ProjectRoots`), and the pane machinery is built beside the socket server in
+ * `main.ts` — so the composition root owns the one registry and gives it to both. The same
+ * argument as the paragraph above, one layer out: two objects answering "which folders" is
+ * exactly what this file has always refused.
  */
-export function projectRoutes(parts: ProjectParts): readonly Route[] {
+export function projectSlice(parts: ProjectParts): ProjectSlice {
   const registry = buildProjectRegistry(parts);
+  return { routes: projectRoutes(parts, registry), registry };
+}
+
+/** The routes, and the registry they share — which the pane machinery needs too (P6-T1). */
+export interface ProjectSlice {
+  readonly routes: readonly Route[];
+  readonly registry: ProjectRegistry;
+}
+
+/** The eight routes over one registry. `projectSlice` is what the composition root calls. */
+export function projectRoutes(parts: ProjectParts, registry: ProjectRegistry): readonly Route[] {
   const files = new FsProjectFiles();
   // One locator for both readers, P3-T4. It is stateless, so this is not about cost — it is that
   // "where is this folder's git directory" is the same question `ProjectGitReader` and
