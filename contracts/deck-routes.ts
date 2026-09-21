@@ -102,6 +102,16 @@ export const CORE_POPOUT_PATH = `${CORE_PREFIX}sessions/popout`;
 export const CORE_MUTES_PATH = `${CORE_PREFIX}toasts/mutes`;
 
 /**
+ * Starting a whole preset group on one press — P6-T4, D17.
+ *
+ * Its own literal path beside the other session verbs, and spelled here for `CORE_STOP_PATH`'s
+ * reason. It is also the most expensive one in this file: a press starts N background sessions,
+ * so a deck and a core that disagreed about the path would fail loudly rather than quietly, which
+ * is the right way round for this particular button.
+ */
+export const CORE_GROUP_LAUNCH_PATH = `${CORE_PREFIX}sessions/group`;
+
+/**
  * DELETING one, conversation and all — P4-T2.
  *
  * Its own literal path rather than a field on the stop body, and that is a control rather than

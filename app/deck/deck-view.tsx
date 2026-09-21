@@ -11,7 +11,6 @@
 // The rows arrive on their own since P1-T9: the store subscribes to core's stream, so nothing here
 // fetches, polls or re-renders on a timer to stay current.
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type JSX } from 'react';
-import type { AskRequest } from '../../contracts/ask-run.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
 import type { PresetLaunch } from '../../contracts/launch-preset.ts';
 import { BrowserDeckApi } from './browser-deck-api.ts';
@@ -19,7 +18,9 @@ import { BrowserStreamTransport } from './browser-stream-transport.ts';
 import { CommandPalette } from './command-palette.tsx';
 import { DeckBody } from './deck-body.tsx';
 import { installActions } from './deck-install.tsx';
+import { askActions, lifecycleActions, projectActions } from './deck-actions.ts';
 import { DeckTop, projectTargets } from './deck-top.tsx';
+import { groupTargets } from './group-targets.ts';
 import { DeckStore } from './deck-store.ts';
 import { deckCommands, type DeckActions } from './deck-commands.ts';
 import { SessionRowViewModel } from './session-row-view-model.ts';
@@ -64,9 +65,10 @@ export function DeckView(): JSX.Element {
   // `onLayout` comes from the grid rather than from `useDeckActions`: the palette's six layout
   // entries and the chooser's six buttons must be the same call, or one of them gets the next fix.
   const targets = { rows, ...actions, onLayout: grid.setLayout, onChooseProject: project.choose };
-  const keys = useDeckKeys(deckCommands({ ...targets, projects: projectTargets(state, scope) }), {
-    onMovePane: grid.movePaneBy,
-  });
+  // `groupTargets` is derived from the presets already on screen — a group is every preset wearing
+  // its name (P6-T4), so there is nothing to fetch and nothing that can go stale on its own.
+  const palette = { ...targets, projects: projectTargets(state, scope), groups: groupTargets(state.presets) }; // prettier-ignore
+  const keys = useDeckKeys(deckCommands(palette), { onMovePane: grid.movePaneBy });
 
   return (
     <main className="deck">
@@ -253,91 +255,6 @@ function useDeckActions(
     ...projectActions(store),
     ...askActions(store),
     ...installActions(store, openInstall),
-  };
-}
-
-/**
- * Ask — P4-T4.
- *
- * Its own pair rather than a member of `lifecycleActions`, because an Ask is not a session: nothing
- * appears in the list, nothing can be attached to, and the run is over when the answer is.
- *
- * Fire-and-forget: core answers 202 in milliseconds and the records arrive on the stream (D48), so
- * there is nothing here to await.
- */
-function askActions(store: DeckStore): Pick<DeckActions, 'onAsk' | 'onClearAsk'> {
-  return {
-    onAsk: (draft: AskRequest) => {
-      void store.ask(draft);
-    },
-    onClearAsk: () => {
-      store.clearAsk();
-    },
-  };
-}
-
-/** Start, stop, wake — the three that change what a session IS rather than what is on screen. */
-function lifecycleActions(
-  store: DeckStore,
-): Pick<DeckActions, 'onResume' | 'onStop' | 'onRemove' | 'onPreview' | 'onMute'> {
-  return {
-    onResume: (row: SessionRowViewModel) => {
-      void store.resume(row.ref.subscription, row.ref.sessionId);
-    },
-    onStop: (row: SessionRowViewModel) => {
-      void store.stop(row.ref);
-    },
-    // P4-T2. There is no confirmation here and there must not be: this is called only by the
-    // row's armed second button, and a second prompt on top of that is how people learn to click
-    // through prompts (`RowDelete`).
-    onRemove: (row: SessionRowViewModel) => {
-      void store.remove(row.ref);
-    },
-    // P5a-T4. Here rather than in the expand effect on purpose: a preview spawns `claude logs`
-    // and waits 2.7 s for 330 KB (RESEARCH.md F.2.5, "never poll it"), so it happens when
-    // somebody presses the button and at no other time.
-    onPreview: (row: SessionRowViewModel) => {
-      void store.preview(row.ref);
-    },
-    // P6-T3. `muted` is the position being asked for rather than a toggle, so the button and the
-    // set it reads from cannot disagree about which way the press went.
-    onMute: (row: SessionRowViewModel, muted: boolean) => {
-      void store.setMuted(row.ref.subscription, row.ref.sessionId, muted);
-    },
-  };
-}
-
-/**
- * The registry's two and the presets' three, which no other part of the deck touches (P3-T1, P4-T1).
- *
- * Together in one function because they are one panel's worth of verbs and `deck-view.tsx` has a
- * line limit it has already been split for twice. Launching is NOT here: as of P4-T2 a preset and
- * the form send the same request, so there is one `onLaunch` above rather than two.
- */
-function projectActions(
-  store: DeckStore,
-): Pick<
-  DeckActions,
-  'onImportProject' | 'onForgetProject' | 'onObserveProject' | 'onSavePreset' | 'onForgetPreset'
-> {
-  return {
-    onImportProject: (path: string) => {
-      void store.importProject(path);
-    },
-    onForgetProject: (path: string) => {
-      void store.forgetProject(path);
-    },
-    // P3-T5, and the same bargain `onPreview` above makes: this walks every transcript of the
-    // folder in both subscriptions, so it happens on a press and at no other time.
-    onObserveProject: (path: string) => {
-      void store.observe(path);
-    },
-    onSavePreset: (draft) => {
-      void store.savePreset(draft);
-    },
-    onForgetPreset: (ref) => {
-      void store.forgetPreset(ref);
-    },
   };
 }
 

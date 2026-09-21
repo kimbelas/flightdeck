@@ -3347,7 +3347,79 @@ phases:
           `npm run check` 205 files / 2 533 tests; `npm run smoke` 374 checks.
       - id: P6-T4
         title: Preset groups ("morning") launch in one click
-        status: todo
+        status: done
+        done_on: 2026-09-21
+        security: [SEC-FS-1]
+        deliverables:
+          [
+            contracts/preset-group.ts,
+            contracts/deck-routes.ts,
+            core/application/group-launcher.ts,
+            core/http/group-route.ts,
+            core/projects.ts,
+            core/routes.ts,
+            core/main.ts,
+            app/deck/group-slice.ts,
+            app/deck/group-targets.ts,
+            app/deck/group-banner-line.ts,
+            app/deck/deck-actions.ts,
+            app/deck/deck-banners.tsx,
+            app/deck/deck-commands.ts,
+            app/deck/deck-state.ts,
+            app/deck/deck-store.ts,
+            app/deck/deck-top.tsx,
+            app/deck/deck-view.tsx,
+            tests/contracts/preset-group.test.ts,
+            tests/core/application/group-launcher.test.ts,
+            tests/core/http/group-route.test.ts,
+            tests/app/deck-store-groups.test.ts,
+            tests/app/group-targets.test.ts,
+            tests/e2e/fixture-core.mjs,
+            tests/e2e/smoke/group-checks.mjs,
+            RESEARCH.md G.53,
+          ]
+        notes: >-
+          DECISIONS.md D17, in one sentence: *"A named preset group ("morning: app-core
+          orchestrator + ticket + reports") launches in one click from the palette."* And the
+          sentence before it is the constraint — **no auto-launch on boot, because it would spend
+          quota unattended.** Most of this task is that second sentence.
+          **A group is DERIVED, not stored.** `LaunchPreset.group` has been a field and
+          `presets.preset_group` a column since P4-T1; a group is every preset wearing that name.
+          Nothing creates one, nothing deletes one, and the last preset losing the name is the
+          group ceasing to exist. It SPANS projects, because "morning" means the owner's morning
+          rather than one repository's, and it is matched case-insensitively — two buttons a
+          capital apart is a bug the owner would file against themselves.
+          **This is the most expensive button in Flightdeck**, so three decisions are all about
+          that. It refuses the WHOLE press rather than launching part of it: a group over
+          `MAX_GROUP_LAUNCH` (6) starts nothing, not its first six, because a press that half-fired
+          leaves the owner working out which half with quota already gone. A second press while one
+          is in flight is `busy`, not a second intention — a palette entry is one Enter away from a
+          second Enter (D48's call, for D48's reason). And the body carries a NAME and nothing else:
+          a folder in the body would be a way to start a session outside every imported project,
+          which is SEC-FS-1 reached through a door nobody was watching.
+          **Concurrent, and that is the BOUNDED choice rather than the fast one.** Sequentially, N
+          presets is N × `LAUNCH_TIMEOUT_MS` worst case — four minutes of a held request for a group
+          of four. Concurrently the worst case is ONE timeout however large the group is.
+          `respawn --all` is the precedent that the daemon tolerates concurrent starts (P4-T5).
+          **A press reports a REPORT, not a boolean**, because it has no single outcome: two
+          started and one did not is the normal shape of a bad morning, and which one is the only
+          useful thing to say. The banner names it. `200` covers a press where every session
+          failed — "core would not take this" and "core took it and nothing started" are different
+          sentences.
+          Seven sabotages on the launcher, each watched to land and then to fail.
+          **And one unit test turned 48 lint errors on in a file it never mentions** (G.53). A test
+          of `groupTargets` dragged `deck-commands.ts` → `deck-keyboard.ts` into `tsconfig.json`'s
+          DOM-less program, and every `document` in that untouched file became `no-unsafe-*`. It is
+          G.49 from the other side: the thing a unit test imports decides which project its whole
+          import graph is compiled in. A module a unit test imports must be a LEAF — `contracts/`
+          and nothing else under `app/`.
+          Verified live against the real core: `POST /sessions/group` answered `unknown_group` and
+          `bad_request` as 400s, and two real grouped presets made the palette offer
+          `Launch fd-probe-group · group · starts 2 presets` with no page error. **Pressing it was
+          deliberately NOT done** — that is the one live step that spends the owner's quota, and the
+          fan-out is covered by the launcher's tests over the same `SessionLauncher` P4-T1 verified
+          live. The probe presets were forgotten again afterwards.
+          `npm run check` 210 files / 2 618 tests; `npm run smoke` 384 checks.
       - id: P6-T5
         title: Duplicate-cwd warning across subscriptions
         status: todo

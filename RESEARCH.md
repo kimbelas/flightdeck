@@ -3592,3 +3592,37 @@ being fooled and was fooled anyway.** The guard is now `tests/core/adapters/node
 it spawns `node` and imports every adapter that pulls in a third-party module, asserting exit 0.
 A subprocess per module, about a second in total, against a class of failure that costs a boot.
 
+### G.53 One unit test, 48 lint errors in a file it never mentions (P6-T4, 2026-09-21)
+
+Adding `tests/app/group-targets.test.ts` — seven cases over a pure function — turned
+`app/deck/deck-keyboard.ts` red with 48 `no-unsafe-*` errors. Nothing had touched that file for
+weeks, `tsc --noEmit -p tsconfig.app.json` was clean, and every error was about `document` and
+`window`: *"Unsafe member access `.activeElement` on a type that cannot be resolved"*.
+
+**The cause is the two TypeScript projects.** `tsconfig.json` compiles `core/`, `contracts/`,
+`scripts/` and `tests/` with `lib: ES2023` and no DOM — deliberately, so core cannot reach for a
+browser global. `tsconfig.app.json` compiles `app/` WITH the DOM. `typescript-eslint` is given
+both. A file's project is decided by which program contains it, and **a program contains everything
+its files import**, not only what its `include` globs match. So:
+
+```
+tests/app/group-targets.test.ts   (in tsconfig.json)
+  → app/deck/group-targets.ts
+    → app/deck/deck-commands.ts
+      → app/deck/deck-keyboard.ts  ← now in the DOM-less program
+```
+
+One import pulled the whole chain into the project without `lib.dom`, and the errors surfaced two
+files away from anything that changed.
+
+**The fix is that a module a unit test imports must be a LEAF** — it may reach `contracts/`, which
+is in both projects on purpose, and nothing else under `app/`. `GroupTarget` moved out of
+`deck-commands.ts` into `group-targets.ts`, and `deck-commands.ts` re-exports it. Zero behaviour
+change; the graph stops at `contracts/`.
+
+**It is G.49 again from the other side.** That one was a type in a `.tsx` reading as `any` to the
+unit project; this one is a type in a `.ts` dragging the DOM project's files into the node one.
+Both are the same sentence: *the thing a unit test imports decides which project its whole import
+graph is compiled in.* The existing `tests/app/` files — `session-row-view-model`, `shell-pane`,
+`proxy-matcher` — are all leaves, which is why this had never bitten before.
+

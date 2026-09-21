@@ -98,31 +98,51 @@ export function buildProjectRegistry(parts: ProjectParts): ProjectRegistry {
  */
 export function projectSlice(parts: ProjectParts): ProjectSlice {
   const registry = buildProjectRegistry(parts);
-  return { routes: projectRoutes(parts, registry), registry };
+  const presets = buildPresetBook(parts, registry);
+  return { routes: projectRoutes(parts, registry, presets), registry, presets };
 }
 
-/** The routes, and the registry they share — which the pane machinery needs too (P6-T1). */
+/** The routes, and the two things they share that the rest of core needs too. */
 export interface ProjectSlice {
   readonly routes: readonly Route[];
+  /** Behind a shell pane that starts in an imported folder — P6-T1. */
   readonly registry: ProjectRegistry;
+  /**
+   * Behind a preset GROUP, which is a set of presets and therefore this book's to resolve (P6-T4).
+   *
+   * Handed back for the registry's reason rather than reconstructed: "what presets are there" is
+   * not a question two objects may answer differently, and a second book over the same store would
+   * be a second merge of the built-ins with the saved ones.
+   */
+  readonly presets: PresetBook;
 }
 
-/** The eight routes over one registry. `projectSlice` is what the composition root calls. */
-export function projectRoutes(parts: ProjectParts, registry: ProjectRegistry): readonly Route[] {
-  const files = new FsProjectFiles();
-  // One locator for both readers, P3-T4. It is stateless, so this is not about cost — it is that
-  // "where is this folder's git directory" is the same question `ProjectGitReader` and
-  // `WorktreeReader` ask, and the two walk it in opposite directions from the same answer.
-  const locator = new GitDirectoryLocator(registry, files, parts.logger);
-  // One book for all three preset routes, on the same registry, for the reason there is one
-  // registry: a preset names a folder to start a session in, and "which folders may be started in"
-  // is not a question two objects may answer differently (P4-T1).
-  const presets = new PresetBook({
+/**
+ * One book for the three preset routes and the group launcher, on the same registry.
+ *
+ * For the reason there is one registry: a preset names a folder to start a session in, and "which
+ * folders may be started in" is not a question two objects may answer differently (P4-T1).
+ */
+function buildPresetBook(parts: ProjectParts, registry: ProjectRegistry): PresetBook {
+  return new PresetBook({
     registry,
     store: parts.store,
     audit: parts.audit,
     logger: parts.logger,
   });
+}
+
+/** The eight routes over one registry. `projectSlice` is what the composition root calls. */
+export function projectRoutes(
+  parts: ProjectParts,
+  registry: ProjectRegistry,
+  presets: PresetBook,
+): readonly Route[] {
+  const files = new FsProjectFiles();
+  // One locator for both readers, P3-T4. It is stateless, so this is not about cost — it is that
+  // "where is this folder's git directory" is the same question `ProjectGitReader` and
+  // `WorktreeReader` ask, and the two walk it in opposite directions from the same answer.
+  const locator = new GitDirectoryLocator(registry, files, parts.logger);
   return [
     new ProjectsRoute(registry),
     new ImportProjectRoute(registry),

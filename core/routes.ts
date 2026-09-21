@@ -17,6 +17,7 @@ import { KeybindingPlanRoute, KeybindingWriteRoute } from './http/keybindings-ro
 import { AskRoute } from './http/ask-route.ts';
 import { ConnectPlanRoute, ConnectWriteRoute } from './http/connect-routes.ts';
 import { DoctorRoute, RespawnRoute, UpdateRoute } from './http/install-routes.ts';
+import { GroupLaunchRoute, type GroupStarter } from './http/group-route.ts';
 import { LaunchRoute } from './http/launch-route.ts';
 import { MutesReadRoute, MutesWriteRoute } from './http/mutes-route.ts';
 import { PasteRoute } from './http/paste-route.ts';
@@ -65,6 +66,14 @@ export interface RouterParts {
   readonly stopper: SessionStopper;
   /** Hands a session to Windows Terminal, detaching the pane first — P6-T2. */
   readonly popper: SessionPopper;
+  /**
+   * Starts a whole preset group on one press — P6-T4, D17.
+   *
+   * Its own field rather than something derived from `launcher` here, because deciding what a
+   * group IS needs the preset book, and the composition root is where the one book lives
+   * (`projects.ts`).
+   */
+  readonly groups: GroupStarter;
   /** The one verb that destroys something — its own route, and its own confirm in the deck (P4-T2). */
   readonly remover: SessionRemover;
   /** One headless question at a time, streamed onto `/stream` (P4-T4, D47, D48). */
@@ -103,6 +112,9 @@ export function buildRouter(parts: RouterParts, extra: readonly Route[]): Reques
     new ResumeRoute(parts.resumer),
     new StopRoute(parts.stopper),
     new PopoutRoute(parts.popper),
+    // The most expensive verb in the table, and its own row for that reason — P6-T4. One press
+    // starts N sessions and spends N first turns of the 5-hour window.
+    new GroupLaunchRoute(parts.groups),
     // Its own literal path, so no typo turns a stop into a delete — see the route's header.
     new RemoveRoute(parts.remover),
     // 202 and a run id; the answer arrives as `ask` frames on the stream, not down this body.

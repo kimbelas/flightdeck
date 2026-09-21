@@ -13,6 +13,7 @@ import { IngestKeyIssuer } from './application/ingest-key-issuer.ts';
 import { PaneRegistry } from './application/pane-registry.ts';
 import { type Reconciler } from './application/reconciler.ts';
 import { AuditLog } from './application/audit-log.ts';
+import { GroupLauncher } from './application/group-launcher.ts';
 import { StatusReport } from './application/status-report.ts';
 import { type ToastAnnouncer } from './application/toast-announcer.ts';
 import { type TranscriptReader } from './application/transcript-reader.ts';
@@ -276,7 +277,6 @@ function buildHttp(parts: HttpParts): HttpSide {
   // SEC-HTTP-6, shared: the server spends the control budget per token, the hooks route spends the
   // ingest budget per session id, and one limiter means one place the windows live.
   const limiter = new RateLimiter(clock);
-  const sessionParts = { install, runner: parts.runner, audit: parts.audit, logger };
   // Before the server, as of P6-T2: `POST /sessions/popout` detaches the pane that holds a
   // session before Windows Terminal attaches to it, because `claude attach` is last-one-wins
   // and the second attach evicts the first in silence (F.2.6). So the route needs the same
@@ -298,8 +298,7 @@ function buildHttp(parts: HttpParts): HttpSide {
         // by its own route and its own click rather than riding the detail (`preview-route.ts`).
         preview: buildPreviewReader({ ...feeds, install, runner: parts.runner, clock, logger }),
         deck: new DeckQuery(parts.sessions, clock),
-        ...sessionVerbs(sessionParts),
-        popper: buildPopper({ ...sessionParts, panes }),
+        ...sessionSlice(parts, panes),
         asker: buildAsker({ ...parts, publisher: feeds.ask }),
         tickets,
         // P5a-T8. The directory is made on first paste, not at boot: a machine where nobody has
@@ -319,6 +318,36 @@ function buildHttp(parts: HttpParts): HttpSide {
   const sockets = new PtySocketServer({ guard, panes, tickets, logger });
   sockets.attachTo(server.raw);
   return { server, sockets, panes, tickets };
+}
+
+/**
+ * Everything that acts on a session: the six verbs, the pop-out, and the group press.
+ *
+ * Together because the last two both need something the first makes. `buildPopper` needs the pane
+ * registry, so the pane the pop-out detaches is the pane the socket server holds. And
+ * `GroupLauncher` needs the SAME `SessionLauncher` the router gets (P6-T4) — a second one would be
+ * a second audit trail for one press — plus the one preset book `projectSlice` holds, because
+ * deciding what a group is is a question about presets.
+ */
+function sessionSlice(
+  parts: HttpParts,
+  panes: PaneRegistry,
+): Pick<
+  RouterParts,
+  'launcher' | 'resumer' | 'stopper' | 'remover' | 'respawner' | 'doctor' | 'popper' | 'groups'
+> {
+  const { install, logger } = parts;
+  const sessionParts = { install, runner: parts.runner, audit: parts.audit, logger };
+  const verbs = sessionVerbs(sessionParts);
+  return {
+    ...verbs,
+    popper: buildPopper({ ...sessionParts, panes }),
+    groups: new GroupLauncher({
+      presets: parts.projects.presets,
+      launcher: verbs.launcher,
+      logger,
+    }),
+  };
 }
 
 /**

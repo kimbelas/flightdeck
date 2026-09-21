@@ -11,6 +11,7 @@
 // change. That is deliberate rather than lazy: this is a split for the line count, not a new
 // boundary, and moving twelve import sites to prove it would be churn with no reader behind it.
 import type { AskRefusal } from '../../contracts/ask-run.ts';
+import type { GroupLaunchReport, GroupRefusal } from '../../contracts/preset-group.ts';
 import type { InstallHealth, UpdateResult } from '../../contracts/install-health.ts';
 import type { RespawnReport } from './install-slice.ts';
 import type { AskRun } from './ask-slice.ts';
@@ -78,6 +79,16 @@ export interface DeckState {
    * — the set arrives once on connect and again after every press.
    */
   readonly muted: readonly string[];
+  /**
+   * The last preset-group press — P6-T4, D17.
+   *
+   * A REPORT rather than a boolean, because a group press has no single outcome: three started and
+   * one did not is the normal shape of a bad morning, and "which one" is the only useful thing to
+   * say about it.
+   */
+  readonly groupReport: GroupLaunchReport | undefined;
+  /** Why the last press was refused outright. `undefined` once one is accepted. */
+  readonly groupRefusal: GroupRefusal | undefined;
   /**
    * The imported projects, newest first — P3-T1.
    *
@@ -175,6 +186,8 @@ export const EMPTY: DeckState = {
   details: {},
   previews: {},
   muted: [],
+  groupReport: undefined,
+  groupRefusal: undefined,
   projects: [],
   importRefusal: undefined,
   statuses: {},
