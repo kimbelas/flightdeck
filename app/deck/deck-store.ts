@@ -35,13 +35,7 @@ import {
 } from '../../contracts/deck-routes.ts';
 import type { PresetDraft, PresetLaunch, PresetRef } from '../../contracts/launch-preset.ts';
 import type { SessionRef } from '../../contracts/session-ref.ts';
-import {
-  byAttentionThenAge,
-  parseDeckSnapshot,
-  sessionKey,
-  type DeckSnapshot,
-  type SessionRow,
-} from '../../contracts/session-row.ts';
+import { parseDeckSnapshot, sessionKey, type DeckSnapshot } from '../../contracts/session-row.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
 import type { DeckApi } from './deck-api.ts';
 import {
@@ -54,6 +48,9 @@ import {
   whyNotResumed,
   whyNotStopped,
 } from './deck-replies.ts';
+import { AskSlice } from './ask-slice.ts';
+import { upsert, without } from './session-rows.ts';
+import type { AskRequest } from '../../contracts/ask-run.ts';
 import { DetailSlice } from './detail-slice.ts';
 import { PresetsSlice } from './presets-slice.ts';
 import { PreviewSlice } from './preview-slice.ts';
@@ -93,6 +90,8 @@ export class DeckStore {
   private readonly projects: ProjectsSlice;
   /** The preview's twin, split out for the same reason — see `detail-slice.ts` (P4-T2). */
   private readonly details: DetailSlice;
+  /** The Ask panel — P4-T4. Two inputs: it POSTs, and the stream tells it the answer. */
+  private readonly asks: AskSlice;
   private state: DeckState = EMPTY;
   private source: EventStreamSource | undefined;
   private cancelRetry: (() => void) | undefined;
@@ -110,6 +109,9 @@ export class DeckStore {
       this.set(changes);
     });
     this.projects = new ProjectsSlice(api, (changes) => {
+      this.set(changes);
+    });
+    this.asks = new AskSlice(api, (changes) => {
       this.set(changes);
     });
     this.details = new DetailSlice(api, (details) => {
@@ -253,6 +255,14 @@ export class DeckStore {
   /** Removes one saved preset. The built-in it was shadowing comes back. */
   public forgetPreset = (ref: PresetRef): Promise<void> => this.presets.forget(ref);
 
+  /** Asks one headless question. Accepted in milliseconds; the answer arrives on the stream. */
+  public ask = (draft: AskRequest): Promise<boolean> => this.asks.ask(draft);
+
+  /** Clears the Ask panel. The run is core's and keeps going — closing a panel cancels nothing. */
+  public clearAsk = (): void => {
+    this.asks.clear();
+  };
+
   /**
    * Wakes a stopped background session so a pane can attach to it — P4-T2a.
    *
@@ -383,6 +393,11 @@ export class DeckStore {
       case 'quota':
         this.set({ quota: frame.data, coreUp: true });
         return;
+      // Not replayed on connect, unlike the two above: an Ask record is an event in a conversation
+      // rather than a picture of the machine (stream-event.ts).
+      case 'ask':
+        this.asks.receive(frame.data);
+        return;
     }
   }
 
@@ -418,13 +433,4 @@ export class DeckStore {
     this.state = { ...this.state, ...changes };
     for (const listener of this.subscribers) listener();
   }
-}
-
-/** Replaces the row if it is already known, appends it if not, and re-sorts either way. */
-function upsert(rows: readonly SessionRow[], row: SessionRow): readonly SessionRow[] {
-  return [...without(rows, sessionKey(row)), row].sort(byAttentionThenAge);
-}
-
-function without(rows: readonly SessionRow[], key: string): readonly SessionRow[] {
-  return rows.filter((row) => sessionKey(row) !== key);
 }

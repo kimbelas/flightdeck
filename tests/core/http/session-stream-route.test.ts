@@ -5,6 +5,7 @@
 // because it is the producer's raw material, and the hook payloads P1-T5 will publish carry model
 // text (SEC-UI-2). A stream that forwarded whatever it was handed would be the leak.
 import { describe, expect, it } from 'vitest';
+import { AskBroadcast } from '../../../core/application/ask-broadcast.ts';
 import { EventHub } from '../../../core/application/event-hub.ts';
 import { SessionStreamRoute } from '../../../core/http/session-stream-route.ts';
 import { FakeLogger } from '../../fakes/fake-logger.ts';
@@ -58,6 +59,7 @@ describe('SessionStreamRoute — the replay', () => {
       },
       quota: new FakeQuota(quotaOf()),
       feed: hub,
+      ask: new AskBroadcast(),
       scheduler: new FakeScheduler(),
       logger: new FakeLogger(),
     });

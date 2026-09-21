@@ -34,6 +34,10 @@ const VOCABULARY_KEYS = new Set([
   'hook_event_name',
   'source',
   'permission_mode',
+  // The stream-json spelling of the same closed enum: `default`, `plan`, `acceptEdits`,
+  // `bypassPermissions` (P4-T4). The last of those is 17 characters, so the length rule scrubbed
+  // the one field the Ask fixture exists to assert on — whether the run was sandboxed at all.
+  'permissionMode',
   'model',
   'type',
   'subtype',

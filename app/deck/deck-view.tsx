@@ -11,6 +11,7 @@
 // The rows arrive on their own since P1-T9: the store subscribes to core's stream, so nothing here
 // fetches, polls or re-renders on a timer to stay current.
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type JSX } from 'react';
+import type { AskRequest } from '../../contracts/ask-run.ts';
 import type { PtyTarget } from '../../contracts/pty-protocol.ts';
 import type { PresetLaunch } from '../../contracts/launch-preset.ts';
 import { BrowserDeckApi } from './browser-deck-api.ts';
@@ -187,6 +188,27 @@ function useDeckActions(store: DeckStore, openPane: (pane: OpenPane) => void): D
     onRefresh,
     ...lifecycleActions(store),
     ...projectActions(store),
+    ...askActions(store),
+  };
+}
+
+/**
+ * Ask — P4-T4.
+ *
+ * Its own pair rather than a member of `lifecycleActions`, because an Ask is not a session: nothing
+ * appears in the list, nothing can be attached to, and the run is over when the answer is.
+ *
+ * Fire-and-forget: core answers 202 in milliseconds and the records arrive on the stream (D48), so
+ * there is nothing here to await.
+ */
+function askActions(store: DeckStore): Pick<DeckActions, 'onAsk' | 'onClearAsk'> {
+  return {
+    onAsk: (draft: AskRequest) => {
+      void store.ask(draft);
+    },
+    onClearAsk: () => {
+      store.clearAsk();
+    },
   };
 }
 

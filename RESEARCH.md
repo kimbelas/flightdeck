@@ -1331,6 +1331,102 @@ short one and fail loudly on a uuid. A "tidy-up" that gave the three one id help
 of them, one of them quietly. `rm` on a missing id is an ordinary exit 1, which is what makes a
 second press of a delete button harmless.
 
+### F.9 Ask — headless `stream-json` and the permission-mode trap — P4-T4 (2026-09-21, Claude Code 2.1.278)
+
+#### F.9.1 The shape of a headless run
+
+```
+claude-365 -p --output-format stream-json --include-partial-messages --verbose \
+           --max-budget-usd 0.25 --max-turns 1 "Reply with exactly the word: ok"
+```
+
+Exit 0 in **4.3 s**, 14 lines, **$0.013547** — almost all of it cache reads (26 874 cache-read
+tokens against 2 input and 4 output). `--verbose` is required with `--output-format stream-json` in
+headless mode; without it the CLI refuses the pair.
+
+**The record vocabulary is wider than D.8 documents.** D.8, from the published docs, lists five:
+`system/init`, `assistant`, `user`, `stream_event`, `result`. One trivial run emitted **nine**
+distinct types:
+
+| record | what it is | drawn? |
+| --- | --- | --- |
+| `system/hook_started`, `system/hook_response` | Flightdeck's own hooks firing | dropped |
+| `system/init` | model, cwd, tools, MCP roster, `permissionMode` | narrowed to 3 fields |
+| `system/status` | `"requesting"` — a spinner | dropped |
+| `stream_event` ×6 | `message_start`, `content_block_start`, `content_block_delta`, `content_block_stop`, `message_delta`, `message_stop` | only `content_block_delta` |
+| `assistant` | the complete text block | kept as a fallback |
+| `rate_limit_event` | **both quota windows** | kept |
+| `system/notification` | `stop-hook-error` — core was down for the capture | kept |
+| `result/success` | cost, usage, `stop_reason` | kept |
+
+A parser written to the documentation would have met five unrecognised shapes on its first run.
+
+#### F.9.2 `rate_limit_event` carries quota, in different units from the statusLine
+
+```json
+{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{
+  "five_hour":{"utilization":0.08,"resetsAt":1789977600},
+  "seven_day":{"utilization":0.28,"resetsAt":1790150400}}}}
+```
+
+`utilization` is a **fraction**; the statusLine payload calls the same quantity `used_percentage`
+and sends a **percentage** (`8`). One binary, two payloads, two units for one number — so the
+conversion happens once, at the parse (`contracts/ask-record.ts`), and everything downstream holds
+percent. `resetsAt` is in seconds in both, as `statusline-report.ts` already knew.
+
+The consequence is bigger than the parse: **an Ask run reports headroom**, so P4-T3's routing has a
+second source besides the statusLine heartbeat.
+
+#### F.9.3 `--permission-mode` is SILENTLY IGNORED through a profile function
+
+This is the measurement the task turned on. Every one of the four profile functions passes
+`--dangerously-skip-permissions` unconditionally (`& $ClaudeBin --dangerously-skip-permissions
+@args`). Run through one, with the mode set three different ways:
+
+```
+claude-365 … --permission-mode plan         ->  permissionMode=bypassPermissions   exit 0
+claude-365 … --permission-mode default      ->  permissionMode=bypassPermissions   exit 0
+claude-365 … --permission-mode acceptEdits  ->  permissionMode=bypassPermissions   exit 0
+```
+
+It does **not** error. P4-T1's note predicted the two "cannot be combined"; measured, the later flag
+is accepted and discarded. So a permission-mode control on an Ask that went through a profile
+function would be a dropdown that does nothing, and SEC-PROC-4 — *"Ask never runs with
+`--dangerously-skip-permissions` unless the preset says so explicitly"* — would be unenforceable by
+construction. That is D47.
+
+#### F.9.4 Spawning the binary directly restores the control
+
+Same machine, same prompt, `CLAUDE_CONFIG_DIR` set and no profile function:
+
+```
+claude.exe … --permission-mode plan     ->  permissionMode=plan      model=claude-opus-5[1m]
+claude.exe … --permission-mode default  ->  permissionMode=default   model=claude-opus-5[1m]
+```
+
+Ask therefore joins `stop`, `rm` and `resume` — the three verbs that already spawn the binary
+directly — rather than the launcher, which is the only thing that needs the profile (D4).
+
+#### F.9.5 The whole route, live, through the real core
+
+`POST /run` on the running core, with `/stream` opened first:
+
+```
+POST /run -> 202 {"runId":"ask-1789964241412"}      (milliseconds, D48)
+  started  model=claude-opus-5[1m] permissionMode=plan
+  text     "ok"
+  quota    {"fiveHourPercentage":13,"sevenDayPercentage":29,…}
+  done     ok=true cost=0.135634 stop=end_turn
+  done     ok=true cost=undefined stop=ended
+FRAME KINDS: started, delta, text, quota, done, done
+```
+
+Three things this confirms that no test could. **`permissionMode=plan`** — the control works
+through the whole stack, which is F.9.3's fix proved rather than argued. **Two `done` frames** —
+the CLI's own, then core's closing one, which is why the panel keeps the FIRST (the second carries
+no cost, and a panel taking the last would show a finished run costing nothing). And the 202 came
+back before any record did, which is the property D48 exists for.
+
 ## G. Slice results (measured on this machine, 2026-09-11, binary 2.1.268)
 
 Measured while building the D30 terminal slice, and extended by P1-T9. Every one of these was found
@@ -2910,3 +3006,27 @@ is wrong in the part it skipped, so print the whole thing and look at it. The se
 from the other side: the check that caught this did not exist until the output was read, and it is
 now the one that would catch it again (`a form nobody has touched does not claim to have been
 overridden`).
+
+### G.42 Three sabotages on a security control, and the one the docs would have caused (P4-T4, 2026-09-21)
+
+Each removed the mechanism its checks depend on (G.32), each verified to have LANDED before the
+result was read (G.38, G.40).
+
+| sabotage | what failed |
+| --- | --- |
+| add `--dangerously-skip-permissions` to the Ask argv | 2 tests — the adapter's "whatever the request says" and the route's "never lets a body choose it" |
+| append the complete `text` block as well as the deltas | smoke: `and the complete block that follows does not print it a second time`, whose detail printed `Three files changed.Three files changed.` |
+| spread the raw `system/init` record instead of narrowing it | 2 fixture tests — the key list, and "puts no Windows path into any record it produces" |
+
+The second is the one worth copying. The check's `detail` prints the answer it read, so the failure
+does not merely say a count was wrong — it shows the doubled sentence. **A check whose failure
+output is the evidence costs one extra argument and saves the trip back to reproduce it** (and
+G.41 is the other half of the same lesson: print the detail, then read it).
+
+**The bug the documentation would have caused.** RESEARCH.md D.8 lists five headless record types,
+taken from the published docs. A real run emits nine (F.9.1). Building `parseAskLine` against D.8
+would have produced a parser meeting five unknown shapes on its first run — and the one it would
+have missed entirely is `rate_limit_event`, which carries both quota windows in units the rest of
+this codebase does not use (F.9.2). **The capture is what caught it, and D28 is why the capture
+happened in this task rather than in P0**: a fixture captured without a consumer is captured wrong,
+and nobody would have thought to capture a record type they did not know existed.

@@ -10,6 +10,8 @@
 // `deck-store.ts` re-exports all three, so nothing that already imported them from there had to
 // change. That is deliberate rather than lazy: this is a split for the line count, not a new
 // boundary, and moving twelve import sites to prove it would be churn with no reader behind it.
+import type { AskRefusal } from '../../contracts/ask-run.ts';
+import type { AskRun } from './ask-slice.ts';
 import type { LaunchPreset, PresetRefusal } from '../../contracts/launch-preset.ts';
 import type { ImportRefusal, ProjectRecord } from '../../contracts/project.ts';
 import type { ProjectStatus } from '../../contracts/project-status.ts';
@@ -25,6 +27,15 @@ export interface DeckState {
   readonly unreadable: readonly SubscriptionId[];
   /** Both subscriptions' gauges, or `undefined` until the first `quota` frame (P2-T3). */
   readonly quota: QuotaSummary | undefined;
+  /**
+   * The Ask run this deck started, or `undefined` until somebody asks something — P4-T4.
+   *
+   * One, not a list: core runs one at a time (`AskRunner`), and a panel that kept a history would
+   * be keeping model text nobody asked to have kept.
+   */
+  readonly ask: AskRun | undefined;
+  /** Why the last Ask was refused, as core's code. `undefined` once one is accepted. */
+  readonly askRefusal: AskRefusal | undefined;
   /**
    * The expanded rows' details, keyed by `sessionKey` — P2-T4.
    *
@@ -114,6 +125,8 @@ export const EMPTY: DeckState = {
   rows: [],
   unreadable: [],
   quota: undefined,
+  ask: undefined,
+  askRefusal: undefined,
   details: {},
   previews: {},
   projects: [],

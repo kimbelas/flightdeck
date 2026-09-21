@@ -18,6 +18,7 @@
 //
 // A palette entry that does nothing is worse than an absent one: the first no-op teaches you not to
 // trust the entries beside it. So the list grows when those tasks land, and not before.
+import type { AskRequest } from '../../contracts/ask-run.ts';
 import type { PresetDraft, PresetLaunch, PresetRef } from '../../contracts/launch-preset.ts';
 import { PANE_LAYOUTS, type PaneLayout } from '../../contracts/pane-layout.ts';
 import {
@@ -84,6 +85,16 @@ export interface DeckActions {
    * takes its actions from this bag, not because the palette is missing it.
    */
   readonly onPreview: (row: SessionRowViewModel) => void;
+  /**
+   * Asking one headless question, and clearing its answer — P4-T4.
+   *
+   * Not a palette entry either, and for a different reason from `onRemove`'s: a question needs a
+   * question typed into it, so the palette entry that would matter is "focus the Ask box", which
+   * is what P2-T5 already does for the launch prompt. It is here because the panel takes its
+   * actions from this bag.
+   */
+  readonly onAsk: (draft: AskRequest) => void;
+  readonly onClearAsk: () => void;
 }
 
 export interface CommandTargets extends DeckActions {

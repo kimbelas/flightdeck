@@ -48,6 +48,8 @@ import {
   PROFILE_FUNCTIONS,
 } from '../../contracts/launch-preset.ts';
 import { parseProjectPathBody, projectKey, projectName } from '../../contracts/project.ts';
+import { ASK_MAX_BUDGET_USD } from '../../contracts/ask-run.ts';
+import { SUBSCRIPTION_IDS } from '../../contracts/session.ts';
 import { parseQuotaSummary } from '../../contracts/quota-summary.ts';
 import { parseSessionRef } from '../../contracts/session-ref.ts';
 import { parseDeckSnapshot, parseSessionRow } from '../../contracts/session-row.ts';
@@ -142,6 +144,11 @@ export class FixtureCore {
      * boolean would lose the count.
      */
     this.removals = [];
+    /** The bodies of every `POST /run` — the Ask panel's destination (P4-T4). */
+    this.asks = [];
+    /** The open run's id, or `undefined`. Core allows one at a time and so does this. */
+    this.askRunId = undefined;
+    this.askSubscription = '365';
     /**
      * Every session a preview was asked about, in order — P5a-T4.
      *
@@ -257,6 +264,7 @@ export class FixtureCore {
     if (request.method === 'POST' && path === '/sessions/rm') {
       return this.removeSession(await body(request));
     }
+    if (request.method === 'POST' && path === '/run') return this.startAsk(await body(request));
     if (request.method === 'POST' && path === '/pty-ticket') {
       const raw = await body(request);
       if (this.mintDelayMs > 0) await new Promise((done) => setTimeout(done, this.mintDelayMs));
@@ -453,6 +461,44 @@ export class FixtureCore {
     return [201, { sessionId: randomUUID() }];
   }
 
+  /**
+   * `POST /run` — Ask, screened exactly as core screens it (P4-T4, D47, D48).
+   *
+   * **It answers 202 and a run id, and sends nothing back down this request.** The records arrive
+   * as `ask` frames on the stream, which is the whole of D48 — so a fixture that replied with the
+   * answer would let a broken deck pass by reading a body core never writes.
+   *
+   * The refusals are core's, in core's order: an unknown permission mode does NOT refuse (the
+   * contract takes the default), a budget over the ceiling does, and a second run while one is
+   * open answers 409.
+   */
+  startAsk(raw) {
+    const request = parseJson(raw);
+    if (request === undefined) return [400, { error: 'empty' }];
+    const prompt = typeof request.prompt === 'string' ? request.prompt.trim() : '';
+    if (prompt === '') return [400, { error: 'empty' }];
+    if (!SUBSCRIPTION_IDS.includes(request.subscription)) return [400, { error: 'empty' }];
+    const budget = request.budgetUsd;
+    if (typeof budget !== 'number' || budget <= 0 || budget > ASK_MAX_BUDGET_USD) {
+      return [400, { error: 'bad_budget' }];
+    }
+    if (this.askRunId !== undefined) return [409, { error: 'busy' }];
+    this.asks.push(request);
+    this.askRunId = `ask-${String(this.asks.length)}`;
+    this.askSubscription = request.subscription;
+    return [202, { runId: this.askRunId }];
+  }
+
+  /** Publishes one Ask record for the open run, as core's runner would. */
+  publishAsk(record) {
+    if (this.askRunId === undefined) return;
+    this.publish('ask', {
+      runId: this.askRunId,
+      subscription: this.askSubscription,
+      record,
+    });
+    if (record.kind === 'done') this.askRunId = undefined;
+  }
   /**
    * `POST /sessions/rm` — the destructive verb, screened exactly as `stop` is.
    *

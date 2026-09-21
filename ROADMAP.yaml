@@ -2154,8 +2154,94 @@ phases:
           look at it.
       - id: P4-T4
         title: Ask — headless stream-json run with budget cap, streamed into the deck
-        status: todo
-        security: [SEC-PROC-4]
+        status: done
+        done_on: 2026-09-21
+        deliverables:
+          [
+            contracts/ask-record.ts,
+            contracts/ask-run.ts,
+            contracts/stream-event.ts,
+            contracts/deck-routes.ts,
+            core/ports/ask-commands.ts,
+            core/ports/process-stream.ts,
+            core/adapters/claude-cli/direct-ask-commands.ts,
+            core/adapters/claude-cli/spawn-process-stream.ts,
+            core/application/ask-runner.ts,
+            core/application/ask-broadcast.ts,
+            core/http/ask-route.ts,
+            core/http/session-stream-route.ts,
+            core/verbs.ts,
+            core/feeds.ts,
+            core/routes.ts,
+            core/main.ts,
+            app/deck/ask-slice.ts,
+            app/deck/ask-panel.tsx,
+            app/deck/ask-view-model.ts,
+            app/deck/session-rows.ts,
+            app/deck/deck-store.ts,
+            app/deck/deck-state.ts,
+            app/deck/deck-body.tsx,
+            app/globals.css,
+            fixtures/ask/headless-stream.jsonl,
+            scripts/capture-fixtures.mjs,
+            tests/fixtures/ask.test.ts,
+            tests/contracts/ask-run.test.ts,
+            tests/core/adapters/direct-ask-commands.test.ts,
+            tests/core/adapters/spawn-process-stream.test.ts,
+            tests/core/application/ask-runner.test.ts,
+            tests/core/http/ask-route.test.ts,
+            tests/fakes/fake-process-stream.ts,
+            tests/capture-frames.test.ts,
+            tests/e2e/fixture-core.mjs,
+            tests/e2e/smoke/deck-checks.mjs,
+            DECISIONS.md D47,
+            DECISIONS.md D48,
+            RESEARCH.md F.9,
+            RESEARCH.md G.42,
+          ]
+        notes: >-
+          **The task turned on a measurement nobody had taken, and it contradicts this repo's own
+          SPEC.** SPEC §5.2 wrote Ask as `<profile fn> -p …` and listed permission mode among its
+          controls. Every one of the four profile functions passes `--dangerously-skip-permissions`
+          unconditionally, so a run started through one reports
+          `permissionMode: "bypassPermissions"` whatever else is on the command line — and
+          `--permission-mode` beside it is **not refused, it is silently ignored**, measured on all
+          three values (F.9.3). P4-T1's note predicted the two "cannot be combined"; the later flag
+          is accepted and discarded, which is worse, because nothing says so. Through a profile
+          function the permission-mode control is a dropdown that does nothing and SEC-PROC-4 is
+          unenforceable by construction. So Ask spawns `claude.exe` with `CLAUDE_CONFIG_DIR` set
+          (D47) — which restores it: `--permission-mode plan` reports `plan` (F.9.4). That is not
+          D4 being reopened; `stop`, `rm` and `resume` have always spawned the binary directly, and
+          the launcher remains the only thing that needs the profile.
+          **The capture found a second thing the docs would have hidden.** RESEARCH.md D.8 lists
+          five headless record types from the published documentation; a real run emits **nine**
+          (F.9.1), including a `rate_limit_event` nobody had written down that carries both quota
+          windows — as FRACTIONS where the statusLine payload sends PERCENTAGES for the same
+          quantity (F.9.2). A parser built to the documentation would have met five unknown shapes
+          on its first run and silently mis-scaled a gauge. D28's rule earned its keep: the fixture
+          is captured by the task that parses it, because nobody captures a record type they do not
+          know exists.
+          **`contracts/ask-record.ts` is a security boundary, not a convenience.** The real
+          `system/init` carries `messaging_socket_path` (the pipe D12 says never to touch),
+          `memory_paths` and every plugin path — all with the Windows account name in them. Nothing
+          is relayed: each line is rebuilt into one of six small shapes and anything else is
+          dropped, so a field added upstream is excluded by default (SEC-UI-2, SEC-DATA-2).
+          **The answer rides the EXISTING stream** (D48). BUILD-PLAN sketched an SSE reply, which
+          would have been the deck's second live feed — the thing P1-T9 and P2-T3 both decided
+          against. `POST /run` answers 202 and a run id; records arrive as `ask` frames, so a run
+          survives a tab reload. `ask` is the one frame NOT replayed on connect, because a record
+          is an event in a conversation rather than a picture of the machine. One run at a time and
+          `busy` is 409 — a queue would turn four impatient presses into four runs' worth of spend
+          nobody can decline.
+          **Verified live, end to end, through the real core**: `POST /run` → 202 in milliseconds,
+          then `started`(permissionMode=**plan**), `delta`, `text`, `quota`, and TWO `done` frames —
+          the CLI's carrying the cost and core's closing one carrying none, which is why the panel
+          keeps the first (F.9.5).
+          Three sabotages, each watched to fail (G.42): the forbidden flag added to the argv breaks
+          two tests, appending the complete `text` block beside the deltas breaks a smoke check
+          whose detail prints the doubled sentence, and spreading the raw init record breaks both
+          SEC-UI-2 assertions.
+        security: [SEC-PROC-4, SEC-UI-2, SEC-DATA-2]
       - id: P4-T5
         title: Version chip — claude update, respawn --all, doctor output
         status: todo

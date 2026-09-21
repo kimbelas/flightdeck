@@ -11,6 +11,7 @@ import { PaneGrid } from './pane-grid.tsx';
 import { ProjectsPanel } from './projects-panel.tsx';
 import { ProjectsViewModel } from './projects-view-model.ts';
 import { SessionDetailViewModel } from './session-detail-view-model.ts';
+import { AskPanel } from './ask-panel.tsx';
 import { SessionList } from './session-list.tsx';
 import { SessionPreviewViewModel } from './session-preview-view-model.ts';
 import type { SessionRowViewModel } from './session-row-view-model.ts';
@@ -80,6 +81,17 @@ function DeckLeft({ rows, state, now, expanded, actions, onToggle }: DeckLeftPro
   return (
     <div className="deck-left">
       <DeckProjects state={state} actions={actions} />
+      {/* P4-T4. Above the session list: a question is a thing you START, like a launch, and the
+          answer belongs beside the sessions rather than inside one of them. */}
+      <AskPanel
+        run={state.ask}
+        refusal={state.askRefusal}
+        quota={state.quota}
+        now={now}
+        disabled={!state.coreUp}
+        onAsk={actions.onAsk}
+        onClear={actions.onClearAsk}
+      />
       <SessionList
         rows={rows.filter((row) => row.matches(search))}
         now={now}

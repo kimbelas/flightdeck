@@ -1342,3 +1342,63 @@ allowed" is not a mode the form enters; it is what a `useState` already is.
 compared the accounts its own way would be two screens recommending different ones — which is worse
 than neither recommending anything. `chosen` is optional precisely so the CLI can ask the question
 honestly, with nothing selected, instead of inventing a selection to get an answer.
+
+## D47 — Ask does not go through a profile function, because `--permission-mode` does not survive one (decided 2026-09-21, P4-T4)
+
+Every other spawn that starts something goes through one of the owner's four profile functions;
+D4 put model routing there and P4-T2 made the launcher honour it. Ask is the exception, and the
+reason is a measurement rather than a preference.
+
+**All four functions pass `--dangerously-skip-permissions` unconditionally.** A headless run
+started through one reports `permissionMode: "bypassPermissions"` whatever else is on the command
+line, and `--permission-mode` beside it is not refused — it is **silently ignored**, measured on
+all three values (RESEARCH.md F.9.3). P4-T1's note predicted the two "cannot be combined"; the
+later flag is in fact accepted and discarded, which is worse, because nothing says so.
+
+That collides head-on with two things already written down. SEC-PROC-4 says an Ask never runs with
+`--dangerously-skip-permissions` unless it says so explicitly. SPEC §5.2 lists permission mode
+among Ask's own controls. Through a profile function, the control is a dropdown that does nothing
+and the security control is unenforceable by construction — so Ask spawns the binary directly with
+`CLAUDE_CONFIG_DIR` set, which restores both: `--permission-mode plan` reports `plan` (F.9.4).
+
+**This does not reopen D4, and it is not even unusual.** D4 is about which model and which account
+a SESSION runs under — a thing the owner attaches to, steers, and comes back to. `stop`, `rm` and
+`resume` have always spawned the binary directly, because they start nothing and the account is
+already fixed by the session they name. Ask joins those three. The launcher remains the only thing
+that needs a shell, and the only thing the profile has anything to contribute to.
+
+**`bypassPermissions` is absent from `ASK_PERMISSION_MODES`**, so SEC-PROC-4 is a type rather than
+a rule: a value the deck cannot send is a run core cannot be asked for. The budget is a refusal and
+not a clamp for the same reason — a cap that silently lowers a request runs something nobody asked
+for. And the panel prints the mode the run **reported**, off the `started` record, rather than the
+one the dropdown was set to: a control that cannot be verified from the answer is one nobody should
+trust, and the two differ precisely in the case that matters.
+
+## D48 — an Ask is accepted by a POST and answered on the stream (decided 2026-09-21, P4-T4)
+
+`POST /run` answers **202 and a run id** in milliseconds. Every record — the model, the partial
+tokens, the quota reading, the result — arrives as an `ask` frame on `GET /stream`, beside
+`snapshot` and `quota`.
+
+BUILD-PLAN §4 sketched "SSE reply", which would have been the deck's second live feed. P1-T9
+removed a polling loop to get to one; P2-T3 chose a replayed frame over a poll for the header, and
+recorded three reasons. None of them has stopped being true for a result panel. Reusing the stream
+also means a run **survives the tab being reloaded**, which a response body could not, and that a
+question asked in one tab is visible in another.
+
+**`ask` is the one frame that is not replayed on connect.** Everything else on that stream is
+whole-state or a delta against a snapshot, and a subscriber that joins late is caught up by the
+replay. An Ask record is an event in a conversation: replaying the last one would put a stray
+sentence into a panel nobody opened, and replaying all of them would mean core keeping every run's
+transcript to no purpose. A deck that connects mid-run picks the answer up from the next record.
+
+**One run at a time, and `busy` is a 409.** Not a queue — a queue lets the owner press Ask four
+times, walk away, and come back to four runs' worth of spend they can no longer decline. SEC-PROC-4
+caps what one run costs; the single slot is what caps how many there are. 409 rather than 400
+because the request was fine and the state was not, and a deck told 400 would ask the owner to fix
+a prompt that is correct.
+
+**Core publishes a closing `done` of its own**, after the CLI's. A child killed on the timeout
+prints no `result` at all, and a panel waiting for one would spin for ever. The two are visible
+together in F.9.5 — the CLI's carries the cost, core's does not — which is why the panel keeps the
+FIRST: taking the last would show a finished run costing nothing.

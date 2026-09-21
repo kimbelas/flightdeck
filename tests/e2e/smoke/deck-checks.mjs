@@ -6,7 +6,7 @@
 // running the thing rather than by testing it. `chip-live` is the honest probe: it turns green only
 // after `DeckStore` has opened an `EventSource`, received a `snapshot` frame and parsed it, and
 // none of that happens on a page that rendered server-side and stopped (G.3, F.5.1).
-import { waitFor } from './report.mjs';
+import { pause, waitFor } from './report.mjs';
 
 const FIXTURE_ROWS = 7;
 
@@ -671,4 +671,104 @@ function readQuotas(page) {
       })),
     })),
   );
+}
+
+/**
+ * Ask — one headless question, streamed into the panel (P4-T4, D47, D48).
+ *
+ * Four properties, and the first two are the task:
+ *
+ *  - the answer arrives on the STREAM, not in the POST's body (D48) — so the check publishes
+ *    records through the fixture's stream and watches the panel fill, which a deck that read the
+ *    response body could not pass;
+ *  - the panel prints the permission mode the run REPORTED, not the one the dropdown was set to
+ *    (D47) — a panel that echoed the request back would look identical on the day the control
+ *    stopped working, which is the day it matters;
+ *  - the deltas build the answer and the complete `text` block that follows does NOT double it;
+ *  - `busy` reads as a sentence rather than as a dead button.
+ */
+export async function askChecks(page, report, core) {
+  report.group('Ask — a headless question, answered on the stream');
+  const panel = page.locator('section.ask');
+  const prompt = panel.locator('[aria-label="ask prompt"]');
+  const button = panel.locator('button', { hasText: 'ask' });
+
+  report.check(
+    'the panel offers a permission mode, and never the one SEC-PROC-4 forbids',
+    (await panel.locator('[aria-label="ask permission mode"] option').allTextContents()).join(
+      ' ',
+    ) === 'plan default acceptEdits',
+    (await panel.locator('[aria-label="ask permission mode"] option').allTextContents()).join(' '),
+  );
+
+  await prompt.fill('what changed in this repo today');
+  await button.first().click();
+  const sent = await waitFor(() => core.asks.length === 1);
+  report.check('asking reaches core', sent, JSON.stringify(core.asks[0] ?? {}));
+  report.check(
+    'it carries a budget cap and a turn cap — SEC-PROC-4, on the wire',
+    typeof core.asks[0]?.budgetUsd === 'number' && typeof core.asks[0]?.maxTurns === 'number',
+    JSON.stringify(core.asks[0] ?? {}),
+  );
+  report.check(
+    'and a permission mode that is not bypassPermissions',
+    core.asks[0]?.permissionMode === 'plan',
+  );
+
+  // D48: nothing has been answered yet, and the panel is already open on the run.
+  core.publishAsk({
+    kind: 'started',
+    sessionId: '7877f4f3-b48e-4db9-8baf-c8aa97428e7c',
+    model: 'claude-opus-5',
+    permissionMode: 'plan',
+  });
+  const opened = await waitFor(async () =>
+    ((await panel.locator('[aria-label="ask meta"]').allTextContents())[0] ?? '').includes('plan'),
+  );
+  report.check('the run reports what it was allowed to do, and the panel prints it', opened);
+
+  core.publishAsk({ kind: 'delta', text: 'Three files ' });
+  core.publishAsk({ kind: 'delta', text: 'changed.' });
+  const streamed = await waitFor(async () =>
+    ((await panel.locator('[aria-label="ask answer"]').allTextContents())[0] ?? '').includes(
+      'Three files changed.',
+    ),
+  );
+  report.check('the answer fills from the deltas while the run is still going', streamed);
+
+  // The complete block the CLI sends after the deltas carries the SAME sentence. Appending it
+  // would print every answer twice, which is invisible until an answer is long enough to notice.
+  core.publishAsk({ kind: 'text', text: 'Three files changed.' });
+  await pause(150);
+  const answer = (await panel.locator('[aria-label="ask answer"]').allTextContents())[0] ?? '';
+  report.check(
+    'and the complete block that follows does not print it a second time',
+    answer.split('Three files changed.').length - 1 === 1,
+    answer,
+  );
+
+  core.publishAsk({
+    kind: 'done',
+    ok: true,
+    costUsd: 0.0135,
+    durationMs: 1600,
+    stopReason: 'end_turn',
+  });
+  const finished = await waitFor(async () =>
+    ((await panel.locator('[aria-label="ask meta"]').allTextContents())[0] ?? '').includes(
+      '$0.0135',
+    ),
+  );
+  report.check('a finished run shows what it cost', finished);
+
+  await prompt.fill('a second question while the first is running');
+  core.askRunId = 'ask-held';
+  await button.first().click();
+  const refused = await waitFor(async () =>
+    ((await panel.locator('[aria-label="ask refusal"]').allTextContents())[0] ?? '').includes(
+      'One question at a time',
+    ),
+  );
+  report.check('a second run while one is open says so rather than doing nothing', refused);
+  core.askRunId = undefined;
 }

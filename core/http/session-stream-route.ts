@@ -40,6 +40,7 @@ import type { QuotaSummary } from '../../contracts/quota-summary.ts';
 import { parseSessionRow, type DeckSnapshot } from '../../contracts/session-row.ts';
 import { CORE_STREAM_PATH, type StreamFrame } from '../../contracts/stream-event.ts';
 import type { EventFeed } from '../application/event-hub.ts';
+import type { AskFeed } from '../application/ask-broadcast.ts';
 import { VITALS_EVENT } from '../application/statusline-queue.ts';
 import type { Logger } from '../ports/logger.ts';
 import type { Scheduler } from '../ports/scheduler.ts';
@@ -68,6 +69,8 @@ export interface StreamRouteParts {
   readonly sessions: LiveSessions;
   readonly quota: LiveQuota;
   readonly feed: EventFeed;
+  /** The Ask records (P4-T4). Its own feed, because an Ask record is not a session event. */
+  readonly ask: AskFeed;
   readonly scheduler: Scheduler;
   readonly logger: Logger;
 }
@@ -79,6 +82,7 @@ export class SessionStreamRoute implements StreamRoute {
   private readonly sessions: LiveSessions;
   private readonly quota: LiveQuota;
   private readonly feed: EventFeed;
+  private readonly ask: AskFeed;
   private readonly scheduler: Scheduler;
   private readonly logger: Logger;
   private readonly streams = new Set<EventStream>();
@@ -87,6 +91,7 @@ export class SessionStreamRoute implements StreamRoute {
     this.sessions = parts.sessions;
     this.quota = parts.quota;
     this.feed = parts.feed;
+    this.ask = parts.ask;
     this.scheduler = parts.scheduler;
     this.logger = parts.logger;
   }
@@ -109,12 +114,17 @@ export class SessionStreamRoute implements StreamRoute {
     const subscription = this.feed.subscribe((event) => {
       this.relay(stream, event);
     });
+    // Not replayed, unlike the two frames above — stream-event.ts says why.
+    const asking = this.ask.subscribe((frame) => {
+      stream.send('ask', frame);
+    });
     const heartbeat = this.scheduler.every(HEARTBEAT_MS, () => {
       stream.comment('hb');
     });
     this.streams.add(stream);
     stream.onClose(() => {
       subscription.cancel();
+      asking.cancel();
       heartbeat.cancel();
       this.streams.delete(stream);
       this.logger.info('stream_closed', { streams: this.streams.size });
