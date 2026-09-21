@@ -36,15 +36,26 @@ export function parseLaunchAccepted(value: unknown): LaunchAccepted | undefined 
  * than in `SessionLauncher` because the deck has to read it, and a second copy of the list on this
  * side is how a rename becomes a message nobody sees.
  *
- * `no_claude` is the one that is the operator's to fix rather than the request's — core is running
- * and answered; it just cannot find claude.exe.
+ * **`no_claude` became `no_shell` in P4-T2** and the rename is the task in one word: a launch goes
+ * through `powershell.exe` and one of the owner's four profile functions now (D4), not through
+ * `claude.exe` with a config directory set, so "cannot find claude.exe" was about to become a
+ * sentence that named the wrong binary. It is still the one code that is the operator's to fix
+ * rather than the request's.
+ *
+ * **`no_session_id` is the distinct outcome P4-T2 owes** — a launch that exited 0 and printed
+ * nothing a session id could be read out of. It used to be folded into `launch_failed`, which is
+ * the one reading that is actively unhelpful: the process may well have started a session, and
+ * "it failed" would have the owner start a second one. RESEARCH.md F.3.6 predicted this as a HANG
+ * for an untrusted folder; F.8.3 measured that `--bg` does not hang there, so what is left is the
+ * general case — any exit-0 run whose output this build cannot read.
  */
-export type LaunchFailure = 'no_claude' | 'bad_request' | 'launch_failed';
+export type LaunchFailure = 'no_shell' | 'bad_request' | 'launch_failed' | 'no_session_id';
 
 export const LAUNCH_FAILURES: readonly LaunchFailure[] = [
-  'no_claude',
+  'no_shell',
   'bad_request',
   'launch_failed',
+  'no_session_id',
 ];
 
 /** The code off a refusal body, or `undefined` for a body that carries none. */
@@ -99,4 +110,31 @@ export function parseStopFailure(value: unknown): StopFailure | undefined {
   const fields: Readonly<Record<string, unknown>> = Object.fromEntries(Object.entries(value));
   const code: unknown = fields['error'];
   return STOP_FAILURES.find((failure) => failure === code);
+}
+
+/**
+ * Why core would not DELETE a session — P4-T2.
+ *
+ * Its own union beside `StopFailure`, although the three codes read alike, because the two verbs
+ * are not alike at all: stopping keeps the session and its transcript and is undone by a resume,
+ * while `rm` deletes `jobs/<shortId>/` and there is nothing to undo. A shared union would make it
+ * one line's work to point the stop button at the destructive route.
+ *
+ * `rm` takes the SHORT id and refuses the full uuid, exactly as `stop` does (F.2.8b, and F.8.4
+ * measured the same for `rm`), so `bad_session` is the code for a row that does not carry both.
+ */
+export type RemoveFailure = 'no_claude' | 'bad_session' | 'remove_failed';
+
+export const REMOVE_FAILURES: readonly RemoveFailure[] = [
+  'no_claude',
+  'bad_session',
+  'remove_failed',
+];
+
+/** The code off a refused delete, or `undefined` for a body that carries none. */
+export function parseRemoveFailure(value: unknown): RemoveFailure | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const fields: Readonly<Record<string, unknown>> = Object.fromEntries(Object.entries(value));
+  const code: unknown = fields['error'];
+  return REMOVE_FAILURES.find((failure) => failure === code);
 }

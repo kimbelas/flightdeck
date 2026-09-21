@@ -21,6 +21,99 @@ export async function deckChecks(page, report, core) {
   await launchChecks(page, report, core);
   await resumeChecks(page, report, core);
   await stopChecks(page, report, core);
+  await deleteChecks(page, report, core);
+}
+
+/**
+ * The one control that destroys something — P4-T2.
+ *
+ * Four properties, and every one of them is a thing a "tidy-up" could take away without a unit
+ * test noticing:
+ *
+ *  - it is NOT on a collapsed row, so a row you scroll past has no delete button on it;
+ *  - it is NOT in `.row-actions`, where `stop` lives — the roadmap task says in as many words that
+ *    it must not arrive behind a button that looks like `stop`;
+ *  - the first press sends NOTHING, and the sentence that appears says what will be lost;
+ *  - cancel leaves core untouched.
+ *
+ * `fixture-alpha` is a live background row, which is the case F.2.8 measured: `rm` deletes a
+ * running session as readily as a stopped one.
+ */
+/** Presses a button if the build under test drew one. See the `allTextContents` note below. */
+async function clickIfPresent(root, label) {
+  const button = root.locator('button', { hasText: label });
+  if ((await button.count()) > 0) await button.first().click();
+}
+
+async function deleteChecks(page, report, core) {
+  const key = '365:a1b2c3d4-0000-4000-8000-000000000001';
+  const row = page.locator('article.row', { hasText: 'fixture-alpha' });
+  const interactive = page.locator('article.row', { hasText: 'fixture-delta' });
+
+  report.check(
+    'a collapsed row offers no way to delete anything',
+    (await row.locator('.row-delete').count()) === 0,
+  );
+
+  await page.locator(`[data-deck-row="${key}"]`).click();
+  const armed = await waitFor(async () => (await row.locator('.row-delete').count()) === 1);
+  report.check('expanding it is the first of the three acts', armed);
+
+  // Geometry, not a class name: the delete control is BELOW the row's lifecycle buttons, which is
+  // what keeps a hand that reaches for `stop` away from it.
+  const actions = await row.locator('.row-actions').boundingBox();
+  const danger = await row.locator('.row-delete').boundingBox();
+  report.check(
+    'it sits below the row’s stop button rather than beside it',
+    danger.y > actions.y + actions.height,
+    `${String(Math.round(danger.y))} > ${String(Math.round(actions.y + actions.height))}`,
+  );
+
+  const before = core.removals.length;
+  await row.locator('button', { hasText: 'delete…' }).click();
+  const warned = await waitFor(
+    async () => (await row.locator('.row-delete-warning').count()) === 1,
+  );
+  report.check('the first press arms it rather than doing it', warned);
+  report.check('and nothing reached core', core.removals.length === before);
+
+  // `allTextContents` rather than `textContent`: the second throws when the element is not there,
+  // and a sabotage that skips the arming step would crash the run instead of failing this check
+  // and the thirty after it (the runner's whole reason for recording rather than throwing).
+  const warning = (await row.locator('.row-delete-warning').allTextContents()).join(' ');
+  report.check(
+    'the warning says this one is running, and that nothing brings it back',
+    warning.includes('running') && warning.includes('no resume'),
+    warning,
+  );
+
+  await clickIfPresent(row, 'cancel');
+  const stood = await waitFor(async () => (await row.locator('.row-delete-warning').count()) === 0);
+  report.check(
+    'cancel puts it away, with core still untouched',
+    stood && core.removals.length === before,
+  );
+
+  await clickIfPresent(row, 'delete…');
+  await clickIfPresent(row, 'delete fixture-alpha');
+  const sent = await waitFor(() => core.removals.length > before);
+  const last = core.removals.at(-1);
+  report.check('the second press is the one that reaches core', sent, JSON.stringify(last ?? {}));
+  report.check(
+    'with BOTH ids — `rm` takes the SHORT one, as `stop` does (F.8.4)',
+    last?.shortId === 'a1b2c3d4' && last.sessionId === 'a1b2c3d4-0000-4000-8000-000000000001',
+    JSON.stringify(last ?? {}),
+  );
+  report.check(
+    'and the row is still on screen, because the reconciler has not said it is gone',
+    (await row.count()) === 1,
+  );
+
+  await page.locator('[data-deck-row="365:d4e5f6a7-0000-4000-8000-000000000004"]').click();
+  const none = await waitFor(async () => (await interactive.locator('.row-delete').count()) === 0);
+  report.check('an interactive session offers no delete — it is not core’s to delete', none);
+  await page.locator('[data-deck-row="365:d4e5f6a7-0000-4000-8000-000000000004"]').click();
+  await page.locator(`[data-deck-row="${key}"]`).click();
 }
 
 /**
@@ -395,9 +488,18 @@ async function streamChecks(page, report, core) {
   report.check('a readable sweep clears the banner', cleared);
 }
 
-/** The one control on the deck that creates something, and what core actually received. */
+/**
+ * The one control on the deck that creates something, and what core actually received.
+ *
+ * **P4-T2 changed what it sends**: a PROFILE FUNCTION rather than a subscription, because the
+ * function is the account and the model (D44), and a name that is now required (SPEC §5.7). Both
+ * are asserted against what core received rather than against the form, because the form agreeing
+ * with itself is not the thing that can break.
+ */
 async function launchChecks(page, report, core) {
-  await page.locator('[aria-label="subscription"]').selectOption('isg');
+  await launchGateChecks(page, report, core);
+
+  await page.locator('[aria-label="profile function"]').selectOption('claude-isg-ticket');
   await page.locator('[aria-label="session name"]').fill('smoke-launch');
   await page.locator('#launch-prompt').fill('summarise the ledger migration');
   await page.locator('button', { hasText: 'start background session' }).click();
@@ -405,10 +507,14 @@ async function launchChecks(page, report, core) {
   const received = await waitFor(() => core.launches.length === 1);
   report.check('the launch form reaches core', received, JSON.stringify(core.launches[0] ?? {}));
   report.check(
-    'it carries the chosen subscription, prompt and name',
-    core.launches[0]?.subscription === 'isg' &&
+    'it carries the chosen profile function, prompt and name',
+    core.launches[0]?.profileFn === 'claude-isg-ticket' &&
       core.launches[0]?.prompt === 'summarise the ledger migration' &&
       core.launches[0]?.name === 'smoke-launch',
+  );
+  report.check(
+    'and no subscription, which the function already decides',
+    core.launches[0]?.subscription === undefined,
   );
   const emptied = await waitFor(
     async () => (await page.locator('#launch-prompt').inputValue()) === '',
@@ -421,6 +527,36 @@ async function launchChecks(page, report, core) {
     () => core.requests.filter((request) => request.path === '/sessions').length > before,
   );
   report.check('refresh forces a sweep through the rewrite', swept);
+}
+
+/**
+ * What the form will not let you do — P4-T2's forced naming, and the one exception to it.
+ *
+ * Asserted on the BUTTON and on what core received, rather than on the field: "a name is
+ * required" is only true if nothing leaves the page without one.
+ */
+async function launchGateChecks(page, report, core) {
+  const start = page.locator('button', { hasText: 'start background session' });
+  await page.locator('#launch-prompt').fill('a prompt with no name beside it');
+  report.check(
+    'a prompt with no name cannot be started — D7’s `unnamed`, answered',
+    await start.isDisabled(),
+  );
+
+  await page.locator('[aria-label="profile function"]').selectOption('claude-isg-orch');
+  const freed = await waitFor(async () => !(await start.isDisabled()));
+  // `claude-isg-orch` passes `-n orchestrator`, so asking for a second name would be asking for
+  // one that is thrown away (`pinsSessionName`).
+  report.check('except for the function that names itself, which needs none', freed);
+  report.check(
+    'and its name box says so rather than sitting there empty',
+    await page.locator('[aria-label="session name"]').isDisabled(),
+  );
+
+  await page.locator('[aria-label="profile function"]').selectOption('claude-365');
+  const locked = await waitFor(async () => await start.isDisabled());
+  report.check('choosing a function that does not name itself locks it again', locked);
+  report.check('and nothing reached core while it was refusing', core.launches.length === 0);
 }
 
 function rowTitles(page) {

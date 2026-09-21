@@ -14,6 +14,7 @@ import { PaneRegistry } from './application/pane-registry.ts';
 import { type Reconciler } from './application/reconciler.ts';
 import { SessionLauncher } from './application/session-launcher.ts';
 import { SessionResumer } from './application/session-resumer.ts';
+import { SessionRemover } from './application/session-remover.ts';
 import { SessionStopper } from './application/session-stopper.ts';
 import { AuditLog } from './application/audit-log.ts';
 import { StatusReport } from './application/status-report.ts';
@@ -27,6 +28,7 @@ import { ExecFileProcessRunner } from './adapters/claude-cli/execfile-process-ru
 import { ConsoleLogger } from './adapters/console-logger.ts';
 import { SqliteStore } from './adapters/sqlite/sqlite-store.ts';
 import { NodePtyHost } from './adapters/node-pty/node-pty-host.ts';
+import { PowerShellLaunchCommands } from './adapters/windows/powershell-launch-commands.ts';
 import { WindowsPtyCommands } from './adapters/windows/windows-pty-commands.ts';
 import { WindowsFileAcl } from './adapters/windows/windows-file-acl.ts';
 import { WindowsTokenFile } from './adapters/windows/windows-token-file.ts';
@@ -43,12 +45,13 @@ import { RequestRouter } from './http/request-router.ts';
 import type { Route, StreamRoute } from './http/route.ts';
 import { warmUp } from './http/warm-up.ts';
 import { buildFeeds, type Feeds } from './feeds.ts';
-import { buildRouter } from './routes.ts';
+import { buildRouter, type RouterParts } from './routes.ts';
 import { projectRoutes } from './projects.ts';
 import { buildDetailReader, buildPreviewReader } from './reads.ts';
 import { stopCore, type Running } from './shutdown.ts';
 import { SystemClock } from './ports/clock.ts';
 import type { Logger } from './ports/logger.ts';
+import type { ProcessRunner } from './ports/process-runner.ts';
 
 export interface Core {
   readonly server: CoreServer;
@@ -270,11 +273,7 @@ function buildHttp(parts: HttpParts): HttpSide {
         // by its own route and its own click rather than riding the detail (`preview-route.ts`).
         preview: buildPreviewReader({ ...feeds, install, runner: parts.runner, clock, logger }),
         deck: new DeckQuery(parts.sessions, clock),
-        // One bag of ports for both session verbs: they differ in their argv, not in what they
-        // need to run one (SessionResumer's header says why they are two classes at all).
-        launcher: new SessionLauncher(sessionParts),
-        resumer: new SessionResumer(sessionParts),
-        stopper: new SessionStopper(sessionParts),
+        ...sessionVerbs(sessionParts),
         tickets,
         // P5a-T8. The directory is made on first paste, not at boot: a machine where nobody has
         // ever pasted an image has no `pasted\` folder to explain.
@@ -342,4 +341,36 @@ function readVersion(): string {
     if (typeof version === 'string') return version;
   }
   return '0.0.0';
+}
+
+/**
+ * The four verbs that act on a session — P4-T2.
+ *
+ * Three of them run `claude.exe` directly and share one bag of ports: they differ in their argv,
+ * not in what they need to run one (`SessionResumer`'s header says why they are separate classes
+ * at all). The LAUNCHER is the exception and takes a different port — it runs `powershell.exe` and
+ * one of the owner's four profile functions, because that is where model routing lives (D4) and
+ * spawning `claude.exe` with a config directory reproduced only two of the four.
+ */
+function sessionVerbs(
+  parts: SessionVerbParts,
+): Pick<RouterParts, 'launcher' | 'resumer' | 'stopper' | 'remover'> {
+  return {
+    launcher: new SessionLauncher({
+      commands: new PowerShellLaunchCommands(),
+      runner: parts.runner,
+      audit: parts.audit,
+      logger: parts.logger,
+    }),
+    resumer: new SessionResumer(parts),
+    stopper: new SessionStopper(parts),
+    remover: new SessionRemover(parts),
+  };
+}
+
+interface SessionVerbParts {
+  readonly install: ClaudeInstall;
+  readonly runner: ProcessRunner;
+  readonly audit: AuditLog;
+  readonly logger: Logger;
 }

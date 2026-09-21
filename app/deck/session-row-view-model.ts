@@ -91,6 +91,30 @@ export class SessionRowViewModel {
   }
 
   /**
+   * Whether this row can be DELETED — P4-T2.
+   *
+   * Every background session, live or not, which is the one place this family of getters is not
+   * the complement of another. `rm` deletes a live session as readily as a stopped one (F.2.8) —
+   * that is the measurement the confirm step exists for, not a reason to hide the verb on a row
+   * where it works. An interactive session is not a `--bg` job and is not core's to delete.
+   */
+  public get canRemove(): boolean {
+    return this.row.kind === 'background';
+  }
+
+  /**
+   * What deleting this row would actually cost, in a sentence.
+   *
+   * Two sentences rather than one, because the two cases are different sizes: a stopped session
+   * loses a conversation, and a live one loses a conversation AND is ended mid-turn. A confirm
+   * that said the same thing about both would be a confirm nobody reads the second time.
+   */
+  public get removeWarning(): string {
+    const ending = this.row.live ? 'It is running — this ends it, and the' : 'The';
+    return `${ending} conversation is deleted. There is no resume.`;
+  }
+
+  /**
    * Which session to ask about when this row is expanded — P2-T4.
    *
    * `shortId` is sent rather than derived from `sessionId`, even though it is the first block of

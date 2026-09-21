@@ -260,7 +260,7 @@ function PresetForgetButton(props: PresetEditorProps): JSX.Element | undefined {
  */
 function launchOf(props: PresetEditorProps, draft: EditorDraft, prompt: string): PresetLaunch {
   return {
-    subscription: props.line.subscription,
+    profileFn: props.line.profileFn,
     prompt,
     name: draft.sessionName,
     cwd: draft.cwd.trim() === '' ? props.projectPath : draft.cwd.trim(),

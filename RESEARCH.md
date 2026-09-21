@@ -1245,6 +1245,92 @@ Every fixture was regenerated from `fixtures/raw/` and the diff is confined to t
 
 ---
 
+### F.8 Launching through the PowerShell profile — P4-T2 (2026-09-20, Claude Code 2.1.278)
+
+**Setup.** The route SEC-PROC-1 has specified since P0 and nothing had built:
+`powershell.exe -NoLogo -NonInteractive -EncodedCommand <base64 UTF-16LE>`, where the script calls
+one allowlisted profile function and reads the prompt and the name from `FD_PROMPT` and `FD_NAME`.
+Measured against the owner's real profile and one throwaway `--bg` session per case.
+
+**F.8.1 The profile loads, and `-NoProfile` is the flag that must not be passed.**
+
+| Invocation | `Get-Command claude-365, claude-isg, claude-isg-ticket, claude-isg-orch` |
+|---|---|
+| `powershell -NoLogo -EncodedCommand …` | all four resolve |
+| `powershell -NoLogo -NoProfile -EncodedCommand …` | **none resolves**, exit 1 |
+
+The functions live in `Microsoft.PowerShell_profile.ps1`, so a launcher that reached for
+`-NoProfile` — which reads like tightening — would fail every launch with `The term 'claude-365'
+is not recognized`. Cost of loading it: **406 ms with the profile against 271 ms without**, so
+~135 ms, against `--bg`'s own 1.3-2.0 s.
+
+`-ExecutionPolicy Bypass` is **not** needed and is not passed. `CurrentUser` is `RemoteSigned` on
+this machine and a local profile loads under it; the flag would be a standing loosening for a case
+that does not exist.
+
+A whole launch through the route: **2 663 ms warm**, exit 0, stdout
+
+```
+backgrounded · 17d31085 · fd-t2-probe
+  claude agents             list sessions
+  claude attach 17d31085    open in this terminal
+  …
+```
+
+— the SHORT id, with four help lines that repeat it. `firstSessionId` therefore takes the first
+match, and prefers a uuid when one is present.
+
+**F.8.2 `$env:FD_PROMPT` in argument mode is a VALUE, and interpolation is remote code execution.**
+
+This is the measurement SEC-PROC-1 was written on and nobody had taken. The callee prints its own
+argv; the prompt carries spaces, an apostrophe, `$`, `;` and `|`.
+
+| Script | argv the child received |
+|---|---|
+| `node <echo> --bg -n $env:FD_NAME $env:FD_PROMPT` | `["--bg","-n","a name with spaces","two words 'quoted' and a $dollar and a ; semicolon and a \| pipe"]` — **one element** |
+| the same with the prompt interpolated into the string | **13 elements**, split on every space |
+
+A prompt of `--help --version -p leading dashes` arrives as ONE element too, so a prompt that reads
+like flags is not turned into flags by the shell. Backslashes survive: `C:\a path\with
+spaces\file.txt` comes back byte for byte.
+
+**And the interpolated form does not merely split it.** With `$(Get-Date)` in the prompt, the
+child received `09/20/2026 20:33:08` — the subexpression was EXECUTED in the owner's shell, with
+the owner's profile loaded. That is the whole of SEC-PROC-1 in one line: the difference between
+the two forms is not tidiness, it is whether a prompt can run a command. Measured by sabotaging
+`tests/win/powershell-launch.test.ts` to build the command string the naive way and watching all
+four cases fail.
+
+**F.8.3 `--bg` does NOT block on the untrusted-folder modal.** F.3.6 measured an INTERACTIVE
+session sitting on "Quick safety check: is this a project you created or one you trust?" at 18 s
+with `--dangerously-skip-permissions` passed and Ctrl+C twice ignored, and P4-T2's roadmap note
+predicted the same for a launch into a fresh worktree. It does not happen: a `--bg` launch into a
+directory `.claude-365` had never seen **exited 0 after 1 603 ms** and printed a session id, and
+`agents --json` then reported that session with `cwd` set to the temp folder. A background job has
+no terminal to render the dialog on.
+
+What survives of that note is the reporting, which is worth keeping for the general case:
+"exited 0 and printed nothing this build can read a session id out of" is now `no_session_id`
+rather than `launch_failed`, because a process that exited 0 may well have started a session and
+telling the owner it failed is how they end up with two.
+
+**F.8.4 `rm` takes the SHORT id and refuses the full uuid — the same way round as `stop`.**
+
+```
+claude rm fe534daf-100b-4797-a59f-ca0714840328
+  No job matching 'fe534daf-100b-4797-a59f-ca0714840328'        exit 1, 0.44 s
+claude rm fe534daf
+  removed fe534daf                                              exit 0, 0.88 s
+claude rm fe534daf   (again)
+  No job matching 'fe534daf'                                    exit 1
+```
+
+So three of the four verbs now have a measured id form and they do not agree: `--resume` wants the
+full uuid and **forks silently** on a short one (F.2.7), while `stop` (F.2.8b) and `rm` want the
+short one and fail loudly on a uuid. A "tidy-up" that gave the three one id helper would break two
+of them, one of them quietly. `rm` on a missing id is an ordinary exit 1, which is what makes a
+second press of a delete button harmless.
+
 ## G. Slice results (measured on this machine, 2026-09-11, binary 2.1.268)
 
 Measured while building the D30 terminal slice, and extended by P1-T9. Every one of these was found
@@ -2761,3 +2847,32 @@ Two smaller things came out of running it against the live core rather than the 
   the adapter fails it. Live: a preset pressed on the deck started `fd-t1-preset` in
   `C:\Users\belas\Documents\development\flightdeck`, the field `LaunchRequest` had carried since
   P2-T2 and nothing had ever passed on.
+
+### G.40 The sabotage that matched nothing, again, and the one that crashed the runner (P4-T2, 2026-09-20)
+
+Three sabotages, each removing the mechanism its check depends on (G.32), each verified to have
+LANDED before the result was read (G.38). Two of the three had something to teach beyond "the
+check works".
+
+| Sabotage | Result |
+|---|---|
+| build the launch command by interpolating the prompt instead of reading `$env:FD_PROMPT` | `tests/win/powershell-launch.test.ts`: all four cases FAIL — 13 argv elements instead of four, and `$(Get-Date)` executed (F.8.2) |
+| make the row's first `delete…` press call `onRemove()` instead of arming | smoke: 4 of 220 FAIL, starting with `the first press arms it rather than doing it` |
+| render the expanded section above `.row-actions` | smoke: `it sits below the row's stop button rather than beside it` FAIL |
+
+**G.38 happened again, in the same session that quotes it.** The third sabotage's first attempt
+searched for a `<RowAction …/>` spread over five lines; Prettier had collapsed it to one when the
+component was split, so the replace matched nothing, the build was the UNSABOTAGED one and the
+smoke printed `220 checks, all passing`. The assertion that the edit landed is what caught it —
+printing `sabotage landed: False` — and re-reading the file took ten seconds. **Search for the
+formatted text, or assert on the file after the edit; never on the exit code of the run.**
+
+**A check that crashes the runner hides the thirty after it.** The delete-confirm sabotage first
+produced a `locator.textContent: Timeout 30000ms exceeded` and an uncaught exception, because the
+check read `.row-delete-warning`'s `textContent` on a build that never drew one — so two real
+failures were reported and the rest of the suite never ran. `Report.check` exists precisely so one
+failure does not hide the others (D35), and a check that throws defeats it. The fix is a habit
+rather than a rule for this one file: **read with `allTextContents()`, which answers `[]`, not
+`textContent()`, which throws**, and press a button through a helper that looks first. Re-run with
+that in place: 4 of 220 failed and the other 216 still reported.
+

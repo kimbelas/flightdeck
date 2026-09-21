@@ -300,9 +300,13 @@ async function presetStartChecks(page, report, core, section) {
     typeof body.prompt === 'string' && body.prompt.includes('XWEB-2019'),
   );
   report.check(
-    'on the subscription the profile function exports, named by the ticket',
-    body.subscription === 'isg' && body.name === 'xweb-2019',
-    `${String(body.subscription)} - ${String(body.name)}`,
+    'under the profile function the preset names, and named by the ticket',
+    // A profile function, never a subscription: the function is the account AND the model, so
+    // sending both would be two fields the command line could contradict (D44, P4-T2).
+    body.profileFn === 'claude-isg-ticket' &&
+      body.subscription === undefined &&
+      body.name === 'xweb-2019',
+    `${String(body.profileFn)} - ${String(body.name)}`,
   );
 }
 

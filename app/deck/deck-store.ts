@@ -28,14 +28,13 @@
 // ordinary event on this machine (F.3.3), a deck that stopped retrying would be a deck that needs
 // a page reload every time. One path for both cases: close, wait, reopen.
 import {
-  CORE_SESSION_PATH,
+  CORE_REMOVE_PATH,
   CORE_RESUME_PATH,
   CORE_SESSIONS_PATH,
   CORE_STOP_PATH,
 } from '../../contracts/deck-routes.ts';
 import type { PresetDraft, PresetLaunch, PresetRef } from '../../contracts/launch-preset.ts';
-import { parseSessionDetail, type SessionDetail } from '../../contracts/session-detail.ts';
-import { sessionRefQuery, type SessionRef } from '../../contracts/session-ref.ts';
+import type { SessionRef } from '../../contracts/session-ref.ts';
 import {
   byAttentionThenAge,
   parseDeckSnapshot,
@@ -51,9 +50,11 @@ import {
   UNREADABLE,
   whatStarted,
   whyNotLaunched,
+  whyNotRemoved,
   whyNotResumed,
   whyNotStopped,
 } from './deck-replies.ts';
+import { DetailSlice } from './detail-slice.ts';
 import { PresetsSlice } from './presets-slice.ts';
 import { PreviewSlice } from './preview-slice.ts';
 import { ProjectsSlice } from './projects-slice.ts';
@@ -90,6 +91,8 @@ export class DeckStore {
   private readonly presets: PresetsSlice;
   /** The registry and its readings, lifted out for the line count when the fifth arrived. */
   private readonly projects: ProjectsSlice;
+  /** The preview's twin, split out for the same reason — see `detail-slice.ts` (P4-T2). */
+  private readonly details: DetailSlice;
   private state: DeckState = EMPTY;
   private source: EventStreamSource | undefined;
   private cancelRetry: (() => void) | undefined;
@@ -108,6 +111,9 @@ export class DeckStore {
     });
     this.projects = new ProjectsSlice(api, (changes) => {
       this.set(changes);
+    });
+    this.details = new DetailSlice(api, (details) => {
+      this.set({ details });
     });
   }
 
@@ -199,24 +205,43 @@ export class DeckStore {
    *
    * @returns the new session's id, or `undefined` if it could not start.
    */
-  public async launch(
-    subscription: SubscriptionId,
-    prompt: string,
-    name: string | undefined,
-  ): Promise<string | undefined> {
-    return this.start({ subscription, prompt, name: name ?? '', cwd: '' });
+  public async launch(request: PresetLaunch): Promise<string | undefined> {
+    this.set({ loading: true, error: undefined });
+    const reply = await this.api.post(CORE_SESSIONS_PATH, request);
+    const started = reply === undefined ? undefined : whatStarted(reply);
+    if (started !== undefined) {
+      this.set({ loading: false });
+      return started.sessionId;
+    }
+    // Not `coreUp: false`: the stream is the authority on that, and a refused launch says nothing
+    // about whether core is there — it usually means it answered.
+    this.set({ loading: false, error: whyNotLaunched(reply) });
+    return undefined;
   }
 
   /**
-   * Starts a session from a preset — P4-T1.
+   * Deletes a background session and its conversation — P4-T2.
    *
-   * The same route and the same reply as `launch`; what a preset adds is a `cwd`, which core has
-   * been parsing and dropping since P2-T2 and now honours (`SessionLauncher`). Two methods over one
-   * private one rather than a fifth parameter on `launch`, because the launch FORM has no folder
-   * and a preset always does — a parameter every caller had to pass as `''` would be a field that
-   * reads as optional and is not.
+   * Nothing is fetched afterwards, for `launch`'s reason: the reconciler's next sweep publishes
+   * `session.gone` and the row disappears then. A deleted row therefore lingers for a sweep, which
+   * is honest — it is gone once core has seen that it is gone, and a deck that removed the row
+   * itself would be guessing at the outcome of the one write that cannot be undone.
+   *
+   * The confirm step is the ROW's (`SessionRowCard`), not this method's: a store method that asked
+   * would be one nothing else could call.
+   *
+   * @returns whether core deleted it.
    */
-  public launchPreset = (request: PresetLaunch): Promise<string | undefined> => this.start(request);
+  public async remove(ref: SessionRef): Promise<boolean> {
+    this.set({ loading: true, error: undefined });
+    const reply = await this.api.post(CORE_REMOVE_PATH, ref);
+    if (reply?.status === 200) {
+      this.set({ loading: false });
+      return true;
+    }
+    this.set({ loading: false, error: whyNotRemoved(reply) });
+    return false;
+  }
 
   /**
    * Saves one preset for a project, then re-reads the list. See `PresetsSlice` for the rule.
@@ -272,59 +297,12 @@ export class DeckStore {
   }
 
   /**
-   * Fetches one session's detail for an expanded row — P2-T4.
-   *
-   * A REQUEST, deliberately, where everything else here is a frame. The rows are the picture of the
-   * machine and belong on the stream; a detail is one session that one person just clicked, and
-   * broadcasting every expansion's worth of model text to every open deck would be pushing SEC-UI-2
-   * material nobody asked for.
-   *
-   * **Re-asked on every expand, never cached past a collapse.** `state.json` and `timeline.jsonl`
-   * move while the row is open, and a detail from four minutes ago that looks current is worse than
-   * a spinner. Collapsing drops it (`forget`), so re-expanding is a fresh read.
-   */
-  public async expand(ref: SessionRef): Promise<void> {
-    const key = `${ref.subscription}:${ref.sessionId}`;
-    // Marked as asked BEFORE the await, so a second click while the first is in flight does not
-    // start a second request and the row can draw its spinner immediately.
-    if (key in this.state.details) return;
-    this.setDetail(key, undefined);
-    const reply = await this.api.get(`${CORE_SESSION_PATH}?${sessionRefQuery(ref)}`);
-    if (reply?.status !== 200) {
-      // The row stays expanded with nothing in it rather than snapping shut under the pointer: a
-      // detail that could not be read is a thing to say, and `SessionDetailView` says it.
-      return;
-    }
-    const detail = parseSessionDetail(reply.body);
-    // A body that is not a detail is dropped exactly as an unparseable frame is (§11 rule 1) —
-    // and it must not be rendered against this row, because the one field that is required is the
-    // session id that says which row it belongs to.
-    if (detail?.sessionId !== ref.sessionId) return;
-    this.setDetail(key, detail);
-  }
-
-  /**
-   * Reads one session's screen — P5a-T4. See `PreviewSlice`, which owns the shape and the rule.
-   *
-   * A slice rather than three more methods here, for the reason the workflow map is one: this file
-   * is at its line limit, and "the store delegates" is cheaper to read than "the store does
-   * everything". The one thing worth repeating at the call site is that this is NOT part of
-   * `expand` — a preview spawns `claude logs` and waits 2.7 s for 330 KB (RESEARCH.md F.2.5), so
-   * it happens on a press and at no other time.
-   */
-  public async preview(ref: SessionRef): Promise<void> {
-    await this.previews.read(ref);
-  }
-
-  /**
-   * Re-reads the project registry — P3-T1.
+   * Re-reads the project registry and everything annotating it — P3-T1, P3-T2, P3-T3, P4-T1.
    *
    * Called once when the deck mounts and after every import or withdrawal, rather than polled: the
    * registry moves only when somebody uses this page, so there is nothing to discover on a timer.
-   *
-   * A reply that cannot be read leaves the held list alone rather than emptying it. An empty
-   * registry is a real and ordinary state (D26), so rendering one because a request failed would
-   * tell the owner their projects are gone.
+   * The three readings ride along only when the registry itself was readable — a list nobody could
+   * read has nothing to annotate (`ProjectsSlice.load`).
    */
   public async loadProjects(): Promise<void> {
     if (!(await this.projects.load())) return;
@@ -337,29 +315,13 @@ export class DeckStore {
     ]);
   }
 
-  /**
-   * Re-reads stack and git for every imported folder — P3-T2.
-   *
-   * A second request rather than more fields on the first, because the two cost different things:
-   * listing the registry opens nothing, and this one may spawn a `git` per project. Core holds
-   * each reading for four seconds (`SignatureCache`), so asking again straight away is cheap and
-   * asking rarely is what keeps it accurate.
-   *
-   * **Replaced wholesale, never merged.** Core answers about every imported project, so a merge
-   * would leave a branch name on screen for a folder that has just been forgotten.
-   *
-   * A reply that cannot be read leaves what is held alone, exactly as `loadProjects` does: an
-   * empty answer is a real state, and rendering one because a request failed would say every
-   * project stopped being a repository.
-   */
+  /** Stack and git for every imported folder — P3-T2. See `ProjectsSlice` for the rules. */
   public loadProjectStatuses = (): Promise<void> => this.projects.loadStatuses();
 
   /**
    * Imports one folder by path — the owner's deliberate act (DECISIONS.md D26).
    *
-   * @returns whether it was imported. The refusal, when there is one, goes into `importRefusal`
-   * for `ProjectsViewModel` to put into English — it is core's own closed union, not a sentence
-   * core composed, so nothing displayed here came from the request.
+   * @returns whether it was imported. The refusal goes into `importRefusal` for the panel.
    */
   public async importProject(path: string): Promise<boolean> {
     const imported = await this.projects.import(path);
@@ -367,52 +329,39 @@ export class DeckStore {
     return imported;
   }
 
-  /**
-   * Withdraws one folder, taking the read permission with it.
-   *
-   * The list is re-read rather than filtered locally: what the registry holds is core's answer,
-   * and a deck that removed the row itself would be guessing at the outcome of a write.
-   */
+  /** Withdraws one folder, taking the read permission — and its presets — with it. */
   public async forgetProject(path: string): Promise<void> {
     if (await this.projects.forget(path)) await this.loadProjects();
   }
 
   /**
-   * Drops one detail and its preview, on collapse. See `expand` for why nothing is kept.
+   * Fetches one session's detail for an expanded row — P2-T4. See `DetailSlice` for the rules.
+   */
+  public async expand(ref: SessionRef): Promise<void> {
+    await this.details.read(ref);
+  }
+
+  /**
+   * Reads one session's screen — P5a-T4. See `PreviewSlice`, which owns the shape and the rule.
    *
-   * The preview goes with it for the stronger version of the same reason: a screen from four
-   * minutes ago that looks current is worse than a button, and a preview is the one thing here
-   * that is a photograph rather than a reading.
+   * The one thing worth repeating at the call site is that this is NOT part of `expand` — a
+   * preview spawns `claude logs` and waits 2.7 s for 330 KB (RESEARCH.md F.2.5), so it happens on
+   * a press and at no other time.
+   */
+  public async preview(ref: SessionRef): Promise<void> {
+    await this.previews.read(ref);
+  }
+
+  /**
+   * Drops one detail and its preview, on collapse.
+   *
+   * The preview goes with the detail for the stronger version of the same reason: a screen from
+   * four minutes ago that looks current is worse than a button, and a preview is the one thing
+   * here that is a photograph rather than a reading.
    */
   public forget(key: string): void {
     this.previews.forget(key);
-    if (!(key in this.state.details)) return;
-    // Rebuilt without the key rather than `delete`d: absent and "asked, waiting" are different
-    // states here — the spinner is drawn from the second — so the key has to GO, not become
-    // `undefined`, and a filtered rebuild says that without a dynamic delete.
-    const details = Object.fromEntries(
-      Object.entries(this.state.details).filter(([held]) => held !== key),
-    );
-    this.set({ details });
-  }
-
-  /** The one launch path. `cwd: ''` means core's own directory, which is what the form sends. */
-  private async start(request: PresetLaunch): Promise<string | undefined> {
-    this.set({ loading: true, error: undefined });
-    const reply = await this.api.post(CORE_SESSIONS_PATH, request);
-    const started = reply === undefined ? undefined : whatStarted(reply);
-    if (started !== undefined) {
-      this.set({ loading: false });
-      return started.sessionId;
-    }
-    // Not `coreUp: false`: the stream is the authority on that, and a refused launch says nothing
-    // about whether core is there — it usually means it answered.
-    this.set({ loading: false, error: whyNotLaunched(reply) });
-    return undefined;
-  }
-
-  private setDetail(key: string, detail: SessionDetail | undefined): void {
-    this.set({ details: { ...this.state.details, [key]: detail } });
+    this.details.forget(key);
   }
 
   /** One frame. Anything that does not parse is dropped rather than rendered (§11 rule 1). */

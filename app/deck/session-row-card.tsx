@@ -10,7 +10,7 @@
 // session and belongs against it: a side panel would cost the row's context and force a choice
 // about what happens when a second row is expanded. Several can be open at once, and the store
 // keys details per row for that reason.
-import type { JSX } from 'react';
+import { useState, type JSX } from 'react';
 import { SessionDetailView } from './session-detail-view.tsx';
 import type { SessionDetailViewModel } from './session-detail-view-model.ts';
 import type { SessionPreviewViewModel } from './session-preview-view-model.ts';
@@ -31,26 +31,21 @@ interface SessionRowCardProps {
   readonly onOpen: () => void;
   readonly onResume: () => void;
   readonly onStop: () => void;
+  readonly onRemove: () => void;
   readonly onPreview: () => void;
 }
 
-export function SessionRowCard({
-  row,
-  now,
-  expanded,
-  detail,
-  preview,
-  previewAsked,
-  onToggle,
-  onOpen,
-  onResume,
-  onStop,
-  onPreview,
-}: SessionRowCardProps): JSX.Element {
+export function SessionRowCard(props: SessionRowCardProps): JSX.Element {
+  const { row, now, expanded } = props;
   return (
     <article className={`row tone-${row.tone}${expanded ? ' row-open' : ''}`}>
       <div className="row-main">
-        <RowToggle rowKey={row.key} title={row.title} expanded={expanded} onToggle={onToggle} />
+        <RowToggle
+          rowKey={row.key}
+          title={row.title}
+          expanded={expanded}
+          onToggle={props.onToggle}
+        />
         <span className="tag">{row.subscriptionLabel}</span>
         <span className="tag">{row.kindLabel}</span>
       </div>
@@ -59,20 +54,116 @@ export function SessionRowCard({
         <span>{row.stateLabel}</span>
         <span>{row.startedAgo(now)}</span>
       </div>
-      <RowAction row={row} onOpen={onOpen} onResume={onResume} onStop={onStop} />
-      {expanded && <SessionDetailView detail={detail} now={now} />}
-      {/* Under the detail rather than beside it, and offered on EVERY expanded row: a session
-          that cannot be attached is the one this matters most for, and a session that can is
-          still one somebody may want to look at without taking the terminal (P5a-T4). */}
-      {expanded && (
-        <SessionPreviewView
-          preview={preview}
-          asked={previewAsked}
-          now={now}
-          onPreview={onPreview}
-        />
-      )}
+      <RowAction row={row} onOpen={props.onOpen} onResume={props.onResume} onStop={props.onStop} />
+      {expanded && <RowOpen {...props} />}
     </article>
+  );
+}
+
+/**
+ * What an open row shows under its title: the detail, the preview button, and the delete control.
+ *
+ * The preview is offered on EVERY expanded row: a session that cannot be attached is the one this
+ * matters most for, and a session that can is still one somebody may want to look at without
+ * taking the terminal (P5a-T4). The delete control is last — see `RowDelete`.
+ */
+function RowOpen({
+  row,
+  now,
+  detail,
+  preview,
+  previewAsked,
+  onRemove,
+  onPreview,
+}: Omit<
+  SessionRowCardProps,
+  'expanded' | 'onToggle' | 'onOpen' | 'onResume' | 'onStop'
+>): JSX.Element {
+  return (
+    <>
+      <SessionDetailView detail={detail} now={now} />
+      <SessionPreviewView preview={preview} asked={previewAsked} now={now} onPreview={onPreview} />
+      <RowDelete row={row} onRemove={onRemove} />
+    </>
+  );
+}
+
+interface RowDeleteProps {
+  readonly row: SessionRowViewModel;
+  readonly onRemove: () => void;
+}
+
+/**
+ * The one control that destroys something — P4-T2.
+ *
+ * **It is not in `RowAction`, and that is the whole design.** `rm` deletes `jobs/<shortId>/` and
+ * the conversation with it, with no resume afterwards (RESEARCH.md F.2.8), and the roadmap task
+ * says in as many words that it must not arrive behind a button that looks like `stop`. So it is
+ * three deliberate acts away from a collapsed row: expand it, press `delete…`, then press a button
+ * that names the session. None of the three is where a hand lands by habit, and `stop` never moves.
+ *
+ * **Armed state lives here rather than in the store.** "I am about to delete this" is a fact about
+ * this browser tab and this moment; putting it in `DeckState` would make it survive a re-render
+ * from an unrelated stream frame, which is the one thing it must not do.
+ */
+function RowDelete({ row, onRemove }: RowDeleteProps): JSX.Element | undefined {
+  const [armed, setArmed] = useState(false);
+  if (!row.canRemove) return undefined;
+  if (!armed) {
+    return (
+      <div className="row-delete">
+        <button
+          type="button"
+          className="ghost danger"
+          onClick={() => {
+            setArmed(true);
+          }}
+        >
+          delete…
+        </button>
+      </div>
+    );
+  }
+  return (
+    <RowDeleteArmed
+      row={row}
+      onRemove={onRemove}
+      onCancel={() => {
+        setArmed(false);
+      }}
+    />
+  );
+}
+
+interface RowDeleteArmedProps extends RowDeleteProps {
+  readonly onCancel: () => void;
+}
+
+/**
+ * The second act: the sentence, and the button that names the session.
+ *
+ * The warning takes the whole width so the two buttons sit UNDER it — the one that deletes cannot
+ * be pressed without the sentence having been on screen above it. It names the session because
+ * "delete" alone is a word that can be pressed on the wrong row.
+ */
+function RowDeleteArmed({ row, onRemove, onCancel }: RowDeleteArmedProps): JSX.Element {
+  return (
+    <div className="row-delete is-armed" role="group" aria-label={`delete ${row.title}`}>
+      <p className="row-delete-warning">{row.removeWarning}</p>
+      <button
+        type="button"
+        className="danger"
+        onClick={() => {
+          onCancel();
+          onRemove();
+        }}
+      >
+        {`delete ${row.title}`}
+      </button>
+      <button type="button" className="ghost" onClick={onCancel}>
+        cancel
+      </button>
+    </div>
   );
 }
 

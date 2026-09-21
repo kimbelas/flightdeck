@@ -25,6 +25,34 @@ function view(overrides: Partial<SessionRow> = {}): SessionRowViewModel {
   return new SessionRowViewModel({ ...BASE, ...overrides });
 }
 
+describe('SessionRowViewModel — deleting (P4-T2)', () => {
+  it('offers rm on every background session, live or not', () => {
+    // The one getter in this family that is not the complement of another. `rm` deletes a live
+    // session as readily as a stopped one (F.2.8) — that is what the confirm step exists for, not
+    // a reason to hide the verb where it works.
+    expect(view({ live: true }).canRemove).toBe(true);
+    expect(view({ live: false }).canRemove).toBe(true);
+  });
+
+  it('never offers it for an interactive session, which is not core’s to delete', () => {
+    expect(view({ kind: 'interactive' }).canRemove).toBe(false);
+  });
+
+  it('says a live session is ended as well as deleted', () => {
+    const warning = view({ live: true }).removeWarning;
+
+    expect(warning).toContain('running');
+    expect(warning).toContain('There is no resume.');
+  });
+
+  it('says only what a stopped one loses, which is not the same sentence', () => {
+    const warning = view({ live: false }).removeWarning;
+
+    expect(warning).not.toContain('running');
+    expect(warning).toContain('conversation is deleted');
+  });
+});
+
 describe('SessionRowViewModel — identity', () => {
   it('keys on subscription and session, because ids are only unique within a config dir', () => {
     expect(view().key).toBe('365:337975f9-c9c0-454a-a22a-2d53a86e0ea9');

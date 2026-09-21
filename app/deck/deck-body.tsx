@@ -79,22 +79,7 @@ function DeckLeft({ rows, state, now, expanded, actions, onToggle }: DeckLeftPro
   const [search, setSearch] = useState('');
   return (
     <div className="deck-left">
-      <ProjectsPanel
-        model={
-          new ProjectsViewModel({
-            projects: state.projects,
-            refusal: state.importRefusal,
-            statuses: state.statuses,
-            maps: state.maps,
-            presets: state.presets,
-            presetRefusal: state.presetRefusal,
-          })
-        }
-        disabled={!state.coreUp}
-        onImport={actions.onImportProject}
-        onForget={actions.onForgetProject}
-        presets={actions}
-      />
+      <DeckProjects state={state} actions={actions} />
       <SessionList
         rows={rows.filter((row) => row.matches(search))}
         now={now}
@@ -110,6 +95,7 @@ function DeckLeft({ rows, state, now, expanded, actions, onToggle }: DeckLeftPro
         onOpen={actions.onOpenPane}
         onResume={actions.onResume}
         onStop={actions.onStop}
+        onRemove={actions.onRemove}
         onPreview={actions.onPreview}
       />
     </div>
@@ -149,5 +135,38 @@ function previewViewModels(
       key,
       preview === undefined ? undefined : new SessionPreviewViewModel(preview),
     ]),
+  );
+}
+
+/**
+ * The projects panel and everything it draws from — split out for `DeckLeft`'s line count.
+ *
+ * The view model is built here rather than in the store, which holds wire values: a view model is
+ * presentation and the store is state (CODING-STANDARDS §3).
+ */
+function DeckProjects({
+  state,
+  actions,
+}: {
+  readonly state: DeckState;
+  readonly actions: DeckActions;
+}): JSX.Element {
+  return (
+    <ProjectsPanel
+      model={
+        new ProjectsViewModel({
+          projects: state.projects,
+          refusal: state.importRefusal,
+          statuses: state.statuses,
+          maps: state.maps,
+          presets: state.presets,
+          presetRefusal: state.presetRefusal,
+        })
+      }
+      disabled={!state.coreUp}
+      onImport={actions.onImportProject}
+      onForget={actions.onForgetProject}
+      presets={actions}
+    />
   );
 }

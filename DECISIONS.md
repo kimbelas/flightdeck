@@ -1230,3 +1230,73 @@ worktree under `<project>\.claude\worktrees\<name>` is a good place to start a s
 itself imported. It is then checked for containment in the project it is filed under, so a preset
 on `app-next` cannot start a session in `pdf-editor`. Verified against the live registry: a config
 directory, a file, another imported project and `C:\Windows\System32` are all `bad_cwd`.
+
+## D45 — the launcher goes through the profile, and `rm` is three acts away (decided 2026-09-20, P4-T2)
+
+**Two decisions in one task, and they pull in opposite directions: make starting a session easier,
+and make deleting one harder.**
+
+### Starting: the profile function IS the command
+
+D4 said model routing stays in the PowerShell profile. P2-T2's launcher did not honour it — it
+spawned `claude.exe` with `CLAUDE_CONFIG_DIR` set, which reproduces `claude-365` and `claude-isg`
+exactly and loses everything the other two do: `claude-isg-ticket` pins `--model "opusplan[1m]"`
+plus `ANTHROPIC_DEFAULT_OPUS_MODEL` and `ANTHROPIC_DEFAULT_SONNET_MODEL`, and `claude-isg-orch`
+pins a model, an agent and a name. A deck that offered four presets and ran two of them was going
+to be the drift P4-T0 had just finished deleting from `~/.bashrc`, in a different file.
+
+So the launcher runs `powershell.exe -NoLogo -NonInteractive -EncodedCommand <script>`, and
+**`-NoProfile` is the flag that must never be added**: without the profile none of the four
+functions exists (F.8.1). That reads backwards — the hardening flag is the one that breaks it —
+which is why it has a test of its own asserting its absence.
+
+**Four fixed scripts, one per function, and nothing is composed.** `ProfileFunction` is a closed
+union, so the table is exhaustive by type; a reviewer reads four lines and can see there is no
+interpolation in any of them. One template with the name substituted in would be a command string
+built from a value, and the whole point is that this file has none — even when the value is safe.
+
+**`FD_PROMPT` and `FD_NAME` are not a convenience, and F.8.2 is why.** `$env:FD_PROMPT` in
+PowerShell's argument mode is a VALUE: a prompt with spaces, quotes, `$`, `;` and `|` arrives at
+the child as one argv element, and a prompt that reads like flags arrives as one element too.
+The same script with the prompt interpolated splits it into thirteen and **executes `$(Get-Date)`
+in the owner's shell**. The difference between the two designs is not tidiness; it is whether a
+prompt can run a command. That is measured, and the measurement is a test that fails when the
+mechanism is removed.
+
+**`no_claude` became `no_shell`, and `no_session_id` is new.** The first is a rename that stops a
+sentence naming the wrong binary. The second is the outcome P4-T2's task note asked for: F.3.6
+predicted a HANG for a launch into an untrusted folder, and F.8.3 measured that `--bg` does not
+hang there — it starts in 1.6 s. What is left is the general case, and folding it into
+`launch_failed` is the one reading that is actively unhelpful: a process that exited 0 may well
+have started a session, so "it failed" is how the owner ends up with two.
+
+**A name is required now** (SPEC §5.7, D7's `unnamed`), except for `claude-isg-orch`, which passes
+`-n orchestrator` itself — asking for a second name would be asking for one that is thrown away.
+
+### Deleting: three deliberate acts, and never beside `stop`
+
+`rm` deletes `jobs/<shortId>/` and the conversation with it, with no confirmation from the CLI and
+nothing that brings it back (F.2.8). It is the only thing Flightdeck does that destroys something,
+so the design question is not "where does the button go" but "how many ways are there to press it
+by accident".
+
+- **It is not in `.row-actions`.** `stop` lives there and never moves. The roadmap task says in as
+  many words that `rm` must not arrive behind a button that looks like `stop`.
+- **It is inside the EXPANDED row**, under the detail and the preview. Reaching it takes three
+  deliberate acts: expand, `delete…`, then a button labelled `delete <name>`. None of the three is
+  where a hand lands by habit.
+- **It is not a palette entry**, and that is the one exception on `DeckActions`. Every other verb
+  is reachable by typing its name into Ctrl+K; a fuzzy list where `Stop fd-t1` and `Delete fd-t1`
+  sit one row apart is exactly the place to press the wrong one.
+- **The armed warning names what is lost, and the two sentences differ**: a live session is ended
+  as well as deleted. A confirm that said the same thing about both is a confirm nobody reads
+  twice.
+- **Its own route, `POST /sessions/rm`.** `RequestRouter` matches literally, so a body field
+  choosing between "stop" and "delete" would be one typo from the wrong one. Its own failure union
+  too, although the three codes read alike: a shared one would make it a line's work to point the
+  stop button at the destructive route.
+
+**The confirm is the deck's, not the use case's.** `SessionRemover` asks nothing — a use case that
+prompted would be one nothing could call twice, and what it owes instead is the audit row.
+SEC-PROC-3 exists for exactly this verb: `daemon.log` cannot tell a deletion from a session that
+ended on its own (F.2.3), so the row is the only record that it was Flightdeck that did it.

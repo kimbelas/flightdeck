@@ -171,8 +171,8 @@ describe('DeckStore — starting a session from a preset', () => {
     const { store, api } = rig();
     api.willAnswer(201, { sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' });
 
-    const started = await store.launchPreset({
-      subscription: 'isg',
+    const started = await store.launch({
+      profileFn: 'claude-isg-ticket',
       prompt: 'plan ticket XWEB-2019',
       name: 'XWEB-2019',
       cwd: APP_NEXT,
@@ -183,7 +183,7 @@ describe('DeckStore — starting a session from a preset', () => {
       method: 'POST',
       path: CORE_SESSIONS_PATH,
       body: {
-        subscription: 'isg',
+        profileFn: 'claude-isg-ticket',
         prompt: 'plan ticket XWEB-2019',
         name: 'XWEB-2019',
         cwd: APP_NEXT,
@@ -193,29 +193,29 @@ describe('DeckStore — starting a session from a preset', () => {
 
   it('reports a refusal the same way the launch form does', async () => {
     const { store, api } = rig();
-    api.willAnswer(503, { error: 'no_claude' });
+    api.willAnswer(503, { error: 'no_shell' });
 
-    const started = await store.launchPreset({
-      subscription: 'isg',
+    const started = await store.launch({
+      profileFn: 'claude-isg',
       prompt: 'go',
       name: 'x',
       cwd: APP_NEXT,
     });
 
     expect(started).toBeUndefined();
-    expect(store.snapshot().error).toContain('claude.exe');
+    expect(store.snapshot().error).toContain('powershell.exe');
   });
 
   it('leaves the launch form’s own call sending no folder', async () => {
     const { store, api } = rig();
     api.willAnswer(201, { sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' });
 
-    await store.launch('365', 'hello', 'name');
+    await store.launch({ profileFn: 'claude-365', prompt: 'hello', name: 'name', cwd: '' });
 
     // `''` is what core reads as "no cwd" (`optionalString`), so the form still starts a session
     // in core's own directory and nothing about it changed.
     expect(api.requests[0]?.body).toEqual({
-      subscription: '365',
+      profileFn: 'claude-365',
       prompt: 'hello',
       name: 'name',
       cwd: '',

@@ -147,8 +147,8 @@ All mutating routes and `/pty` require `Authorization: Bearer <token>`. All rout
 | `GET /stream` | SSE. **Built (P1-T9):** `snapshot` on connect (every row plus the unreadable subscriptions), then `session.upsert` / `session.gone`. To come: `quota` (P1-T6), `event` (P1-T5, which decides what of a hook payload is safe to show — SEC-UI-2) and `pty.*`. |
 | `GET /sessions` · `GET /sessions/:id` · `GET /sessions/:id/events?since=` | merged view of both subscriptions |
 | `GET /sessions/:id/tail` | SSE of parsed transcript records from the stored offset (enrichment view) |
-| `POST /sessions/:id/stop` · `/rm` · `/respawn` · `/resume` · `/rename` | wrappers over the CLI, per subscription (`$CFG` set on the child) |
-| `POST /launch` | `{presetId}` or explicit `Preset` fields → `powershell -NoLogo -Command "<profileFn> --bg -n <name> '<prompt>' …"`; returns `{shortId, sessionId?}` |
+| `POST /sessions/stop` · `/sessions/rm` · `/sessions/resume` | wrappers over the CLI, per subscription (`$CFG` set on the child). Literal paths, no parameters — and `rm` is its own row on purpose (D45). `respawn`/`rename` are P5a-T6. |
+| `POST /sessions` | `{profileFn, prompt, name, cwd}` → `powershell -NoLogo -NonInteractive -EncodedCommand <fixed script>` with `FD_PROMPT`/`FD_NAME` in the environment (P4-T2, SEC-PROC-1); returns `{sessionId}` |
 | `POST /run` | Ask: `-p --output-format stream-json --include-partial-messages [--json-schema] --max-budget-usd` under the chosen profile fn; SSE reply |
 | `GET /quota` | both subscriptions' last-known `Quota` + the recommended one (`most headroom`) |
 | `GET/POST /projects` · `POST /projects/forget` · `GET /projects/status` · `GET /projects/map` | F1/F6. Built with no path parameters — `RequestRouter` matches literally (P3-T1). |
