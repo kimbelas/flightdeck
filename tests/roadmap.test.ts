@@ -4,6 +4,7 @@ import {
   RoadmapReporter,
   RoadmapValidator,
   type Roadmap,
+  type Status,
 } from '../scripts/roadmap.ts';
 
 const ROADMAP_URL = new URL('../ROADMAP.yaml', import.meta.url);
@@ -104,6 +105,68 @@ describe('RoadmapValidator', () => {
     expect(errors.map((finding) => finding.message)).toContain(
       'P1: marked done but has unfinished tasks',
     );
+  });
+});
+
+describe('a phase nobody is going to build', () => {
+  /** P5b, DECISIONS.md D52 — dropped by the owner rather than deleted from the file. */
+  const dropped = (status: Status): Roadmap =>
+    roadmapWith({
+      phases: [
+        {
+          id: 'P0',
+          name: 'Spikes',
+          status: 'done',
+          gate: 'g',
+          tasks: [{ id: 'P0-T1', title: 'a', status: 'done', done_on: '2026-09-10' }],
+        },
+        {
+          id: 'P1',
+          name: 'Parked',
+          status,
+          gate: 'g',
+          tasks: [{ id: 'P1-T1', title: 'b', status: 'dropped' }],
+        },
+        {
+          id: 'P2',
+          name: 'Next',
+          status: 'todo',
+          gate: 'g',
+          tasks: [{ id: 'P2-T1', title: 'c', status: 'todo' }],
+        },
+      ],
+    });
+
+  it('asks for it to be marked dropped, never done — those are different things to read', () => {
+    const findings = new RoadmapValidator(dropped('todo')).validate();
+    expect(findings.map((finding) => finding.message)).toEqual([
+      'P1: every task is dropped — mark the phase dropped',
+    ]);
+  });
+
+  it('says nothing once it is', () => {
+    expect(new RoadmapValidator(dropped('dropped')).validate()).toEqual([]);
+  });
+
+  /**
+   * The bug this pins shipped for as long as it took to run the CLI once.
+   *
+   * P5b sits between P5a and P6, so the moment it was dropped it became the first phase that was
+   * not `done` — and "next up" went empty while P6 had seven tasks waiting in it.
+   */
+  it('is skipped when looking for what to do next', () => {
+    const reporter = new RoadmapReporter(dropped('dropped'));
+    expect(reporter.nextUp().map((task) => task.id)).toEqual(['P2-T1']);
+  });
+
+  it('counts for nothing in the percentage rather than counting against it', () => {
+    const reporter = new RoadmapReporter(dropped('dropped'));
+    // Two tasks are real, one of them is done. The dropped one is in neither total.
+    expect(reporter.overallPercent()).toBe(50);
+    expect(reporter.phases().find((phase) => phase.id === 'P1')).toMatchObject({
+      done: 0,
+      total: 0,
+    });
   });
 });
 

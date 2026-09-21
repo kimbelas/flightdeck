@@ -1771,7 +1771,7 @@ phases:
 
   - id: P4
     name: Launcher, quota-aware routing, Ask and Dispatch
-    status: doing
+    status: done
     goal: Every way the owner starts Claude today is one click, on the right subscription.
     gate: A new ticket session for app-next starts from the deck on the subscription with more headroom, named, in the right worktree, and no terminal command was typed.
     depends_on: [P3]
@@ -2382,7 +2382,7 @@ phases:
 
   - id: P5a
     name: Terminal grid
-    status: doing
+    status: done
     goal: Terminals stop being opened on the desktop.
     gate: Nine sessions in one window; typing in the focused pane is indistinguishable from a terminal; closing a pane never stops a session; reopening the deck re-attaches.
     depends_on: [P4]
@@ -2902,26 +2902,34 @@ phases:
 
   - id: P5b
     name: Tauri shell
-    status: todo
+    status: dropped
     goal: Tray badge, global summon hotkey, own taskbar entry.
     gate: The deck is summoned from the tray by hotkey with no browser window involved.
     depends_on: [P5a]
     notes: >-
-      Parked, not dropped (DECISIONS.md D22). D1 scheduled this on the Ctrl+W argument, which does not
-      apply to the owner; toasts are not a reason either (D16 fires them from core). Whether the phase runs
-      at all is decided at the end of P5a. The app is the same localhost app in every shell, so the
-      swap stays low-regret.
+      DROPPED by the owner on 2026-09-21, at exactly the point D22 said the question would be
+      asked — DECISIONS.md D52. D1 scheduled this phase on one argument, that Ctrl+W closes a
+      browser-hosted pane; D22 established that the owner does not use Ctrl+W to erase words, and
+      D16 already fires toasts from core with no window open. P5a then shipped the thing the
+      decision was waiting for: nine panes, layouts, the keyboard and the per-pane controls, all
+      in an Edge --app window that the owner has typed into. What Tauri would still add is a
+      tray badge, a global summon hotkey and its own taskbar entry, and none of those is worth a
+      Rust toolchain on this machine today.
+      **Reversible by construction, which is why dropping it costs nothing.** D1's first point
+      holds: the application is the same localhost app in every shell, so a window swap rewrites
+      no application code. The three tasks below are kept rather than deleted, because a roadmap
+      that silently loses a phase cannot tell "we decided not to" from "we forgot".
     tasks:
       - id: P5b-T1
         title: Probe — bare Tauri window loading the deck; confirm the tray, the global hotkey and WebView2 key handling
-        status: blocked
+        status: dropped
         depends_on: [P5a]
       - id: P5b-T2
         title: Shell — start core + Next if absent, tray badge, global hotkey, notification plugin
-        status: todo
+        status: dropped
       - id: P5b-T3
         title: Core Origin allowlist extended to the Tauri origin
-        status: todo
+        status: dropped
         security: [SEC-HTTP-2]
 
   - id: P6

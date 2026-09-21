@@ -185,16 +185,36 @@ export class RoadmapValidator {
     }
   }
 
+  /**
+   * A phase whose tasks are all DROPPED is dropped, not done — P5b, DECISIONS.md D52.
+   *
+   * The distinction is the whole point of dropping a phase rather than deleting it: "we decided
+   * not to" and "we did it" are different things to read off a roadmap a year later. Without this
+   * branch the validator asked for P5b to be marked `done`, which would have claimed a tray badge
+   * and a global hotkey that do not exist.
+   */
   private checkPhaseConsistency(phase: Phase): void {
     const statuses = phase.tasks.map((task) => task.status);
     const allDone =
       statuses.length > 0 && statuses.every((status) => status === 'done' || status === 'dropped');
     if (phase.status === 'done' && !allDone)
       this.error(`${phase.id}: marked done but has unfinished tasks`);
+    if (this.checkDroppedPhase(phase, statuses)) return;
     if (phase.status !== 'done' && allDone)
       this.warn(`${phase.id}: every task is done — mark the phase done`);
     if (phase.status === 'todo' && statuses.includes('doing'))
       this.warn(`${phase.id}: has a task in progress — mark the phase doing`);
+  }
+
+  /**
+   * @returns whether every task is dropped, in which case none of the other rules applies — a
+   * phase nobody is going to build cannot be "in progress" and must not be called "done".
+   */
+  private checkDroppedPhase(phase: Phase, statuses: readonly Status[]): boolean {
+    if (statuses.length === 0 || !statuses.every((status) => status === 'dropped')) return false;
+    if (phase.status !== 'dropped')
+      this.warn(`${phase.id}: every task is dropped — mark the phase dropped`);
+    return true;
   }
 
   private checkDecisions(): void {
@@ -230,8 +250,17 @@ export class RoadmapReporter {
     return totals.total === 0 ? 0 : Math.round((totals.done / totals.total) * 100);
   }
 
+  /**
+   * The next few tasks, out of the first phase that is neither finished nor abandoned.
+   *
+   * `dropped` is skipped alongside `done`, and that is a bug fixed rather than a nicety: P5b sits
+   * between P5a and P6, so the moment it was dropped it became the first phase that was not
+   * `done` — and "next up" went empty while P6 had seven tasks waiting in it.
+   */
   public nextUp(limit = 4): readonly Task[] {
-    const active = this.roadmap.phases.find((phase) => phase.status !== 'done');
+    const active = this.roadmap.phases.find(
+      (phase) => phase.status !== 'done' && phase.status !== 'dropped',
+    );
     if (active === undefined) return [];
     const doing = active.tasks.filter((task) => task.status === 'doing');
     const todo = active.tasks.filter((task) => task.status === 'todo');
