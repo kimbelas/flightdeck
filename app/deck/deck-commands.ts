@@ -89,6 +89,14 @@ export interface DeckActions {
    */
   readonly onPopOut: (row: SessionRowViewModel) => void;
   /**
+   * Silencing one session's Windows toasts — P6-T3, and NOT a palette entry.
+   *
+   * `onPopOut`'s reason rather than `onRemove`'s: it is nothing like dangerous, it is simply about
+   * the pane it sits on. A mute is set while looking at the session that keeps interrupting you,
+   * and a palette entry would be a way to silence a session with nothing on screen to say which.
+   */
+  readonly onMute: (row: SessionRowViewModel, muted: boolean) => void;
+  /**
    * Deleting one — P4-T2, and deliberately NOT a palette entry.
    *
    * Every other verb here is reachable by typing its name into Ctrl+K. This one is not, and that

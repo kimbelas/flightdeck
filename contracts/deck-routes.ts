@@ -93,6 +93,15 @@ export const CORE_STOP_PATH = `${CORE_PREFIX}sessions/stop`;
 export const CORE_POPOUT_PATH = `${CORE_PREFIX}sessions/popout`;
 
 /**
+ * Which sessions core stops toasting about — P6-T3, SPEC §5.5.
+ *
+ * One path, read by a GET and written by a POST, exactly as `/keybindings` is. Under `/toasts/`
+ * rather than `/sessions/` though the key is a session: nothing behind it starts, stops or reaches
+ * one, and core's literal-path table reads better when a path says which subsystem answers it.
+ */
+export const CORE_MUTES_PATH = `${CORE_PREFIX}toasts/mutes`;
+
+/**
  * DELETING one, conversation and all — P4-T2.
  *
  * Its own literal path rather than a field on the stop body, and that is a control rather than

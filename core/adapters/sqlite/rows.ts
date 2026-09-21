@@ -18,7 +18,7 @@ import {
 import { projectName, type ProjectRecord } from '../../../contracts/project.ts';
 import type { SubscriptionId } from '../../../contracts/session.ts';
 import type { VitalsSnapshot } from '../../../contracts/vitals-snapshot.ts';
-import type { ConfigSnapshot } from '../../ports/store.ts';
+import type { ConfigSnapshot, MutedSession } from '../../ports/store.ts';
 
 /** A stored payload back to a value. A column that will not parse reads as absent, never throws. */
 function decodePayload(value: unknown): unknown {
@@ -153,6 +153,23 @@ export function toConfigSnapshot(row: unknown): ConfigSnapshot {
     projectKey: stringAt(fields, 'project_key'),
     takenAt: numberAt(fields, 'taken_at'),
     digest: parseConfigDigest(jsonAt(fields, 'digest')) ?? EMPTY_DIGEST,
+  };
+}
+
+/**
+ * One muted session — P6-T3.
+ *
+ * `subscriptionOf` defaults an unreadable column to a real subscription like every other mapper
+ * here, and the consequence is worth naming: the worst a corrupt row can do is silence a session
+ * on the wrong subscription, which the owner can see and undo from the pane it belongs to. The
+ * alternative — dropping the row — would be a mute that quietly stopped working.
+ */
+export function toMutedSession(row: unknown): MutedSession {
+  const fields = asRecord(row) ?? {};
+  return {
+    subscription: subscriptionOf(stringAt(fields, 'subscription')),
+    sessionId: stringAt(fields, 'session_id'),
+    mutedAt: numberAt(fields, 'muted_at'),
   };
 }
 

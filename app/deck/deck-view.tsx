@@ -279,7 +279,7 @@ function askActions(store: DeckStore): Pick<DeckActions, 'onAsk' | 'onClearAsk'>
 /** Start, stop, wake — the three that change what a session IS rather than what is on screen. */
 function lifecycleActions(
   store: DeckStore,
-): Pick<DeckActions, 'onResume' | 'onStop' | 'onRemove' | 'onPreview'> {
+): Pick<DeckActions, 'onResume' | 'onStop' | 'onRemove' | 'onPreview' | 'onMute'> {
   return {
     onResume: (row: SessionRowViewModel) => {
       void store.resume(row.ref.subscription, row.ref.sessionId);
@@ -298,6 +298,11 @@ function lifecycleActions(
     // somebody presses the button and at no other time.
     onPreview: (row: SessionRowViewModel) => {
       void store.preview(row.ref);
+    },
+    // P6-T3. `muted` is the position being asked for rather than a toggle, so the button and the
+    // set it reads from cannot disagree about which way the press went.
+    onMute: (row: SessionRowViewModel, muted: boolean) => {
+      void store.setMuted(row.ref.subscription, row.ref.sessionId, muted);
     },
   };
 }

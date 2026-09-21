@@ -30,6 +30,7 @@ import type { ConfigDigest } from '../../contracts/config-snapshot.ts';
 import type { LaunchPreset } from '../../contracts/launch-preset.ts';
 import type { DraftEvent, FdEvent } from '../../contracts/fd-event.ts';
 import type { ProjectRecord } from '../../contracts/project.ts';
+import type { SubscriptionId } from '../../contracts/session.ts';
 import type { DraftVitalsSnapshot, VitalsSnapshot } from '../../contracts/vitals-snapshot.ts';
 
 export interface Store {
@@ -153,6 +154,48 @@ export interface Store {
    * @param projectKeyValue `projectKey(path)`, already canonical.
    */
   configSnapshots(projectKeyValue: string, limit: number): readonly ConfigSnapshot[];
+
+  /**
+   * Silences this session's toasts until it is unmuted — P6-T3, SPEC §5.5.
+   *
+   * Another of the things in here that is not an observation, alongside the project registry and
+   * the presets, and for the same reasons: a mute is a standing decision by the owner, it is
+   * keyed, and `unmuteSession` has to really remove the row rather than write a tombstone the next
+   * reader might miss. What makes it belong in the store at all rather than in the deck is that
+   * core raises the toast with no browser open (D16) — a mute that lived in a page would be one
+   * core could not read.
+   *
+   * Idempotent: muting a muted session moves `muted_at` and adds no row. Pruned to
+   * `MAX_SESSION_MUTES` in the same call, because a session id dies with its session and nothing
+   * else would ever bound this table.
+   *
+   * @throws if the store cannot be written. A mute reported as set and not recorded is a toast the
+   * owner will be surprised by at 2 a.m.
+   */
+  muteSession(subscription: SubscriptionId, sessionId: string, at: number): void;
+
+  /** @returns whether a row was actually removed. @throws as `muteSession`. */
+  unmuteSession(subscription: SubscriptionId, sessionId: string): boolean;
+
+  /** Every muted session, newest mute first. Empty until the owner mutes one. */
+  mutedSessions(): readonly MutedSession[];
+}
+
+/**
+ * How many mutes are kept.
+ *
+ * 500, which is far more sessions than the owner has ever had at once and small enough that the
+ * whole set is read into memory on boot (`MuteBook`). The bound exists because the key is a
+ * session id: it dies with its session, so without one this table grows with every session ever
+ * muted and never shrinks.
+ */
+export const MAX_SESSION_MUTES = 500;
+
+/** One muted session. Two ids, because one of them is not unique on its own (`sessionKey`). */
+export interface MutedSession {
+  readonly subscription: SubscriptionId;
+  readonly sessionId: string;
+  readonly mutedAt: number;
 }
 
 /** One snapshot before it has been stored — the id and nothing else is missing. */

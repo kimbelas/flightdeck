@@ -1763,3 +1763,45 @@ the terminal is even looked for.
 **And the card is closed on core's answer, not on the press.** Core replies `detached: true` when it
 released the hold; the deck closes that pane then. Left open, the card would say "evicted" — the
 right word for somebody ELSE taking the attach, and the wrong one for a button you pressed.
+
+## D58 — toasts are edges, never states, and the mute lives in core's database (decided 2026-09-21, P6-T3)
+
+D16 settled that core raises the toasts and named the three kinds: **needs-you**, **completed**,
+**errored**. What it did not say is when, and "when" is the whole feature — a toast that fires on a
+state rather than on a change is a machine that beeps.
+
+**Every rule is an edge.** The reconciler sweeps every ten seconds and re-observes the same blocked
+session each time, so `ToastAnnouncer` remembers each session's last toastable condition and speaks
+only when it MOVES. Two consequences follow and both are traps that were written down before they
+could happen:
+
+- **A first observation never toasts.** On boot the reconciler publishes `seen` for every session it
+  finds, so a core restarted beside three blocked sessions would open with three toasts about
+  nothing that just happened. `seen` sets the baseline and is silent.
+- **`gone` is not a completion.** It means the record left `agents --json --all` entirely, which is a
+  delete (F.2.2). It forgets the session and says nothing.
+
+**needs-you is `needsAttention`, the same sentence the deck sorts on**, now exported from
+`contracts/session-row.ts`. G.24 is what a second opinion about that sentence already cost: a
+five-day-dead session sat at the top of a real deck because `runState` keeps saying `blocked` after
+a session ends. A toast that disagreed with the row it is about would be worse than no toast.
+
+**The mute is per session, and it is in the store.** Not in the page, because the whole point of
+D16 is that core toasts with no browser open — a mute that lived in a tab would be one core could
+not read at 2 a.m. It is keyed on `(subscription, sessionId)` rather than the uuid, because a
+session id is unique only within a config dir (`sessionKey`), and it is BOUNDED, because a session
+id dies with its session and nothing else would ever shrink that table.
+
+It is the third thing in the database that is not an observation, after the project registry and
+for the same reasons: a standing decision, keyed, replaceable, and really removed on unmute.
+
+**There is nothing to double-notify with.** The deck raises no browser notifications and never has;
+`Notification` does not appear anywhere under `app/`. That is D16's design rather than an oversight,
+so the question "does core toasting while the deck is open notify twice" has no suppression rule
+attached to it — there is only one notifier, which is the arrangement the split was for.
+
+**One thing it cannot yet tell apart, said out loud.** A daemon-retired session and a finished one
+both read `state: done`, and only `daemon.log` separates them (F.2.3, P7-T4). So an idle retirement
+raises the "finished" toast. That is a wrong word rather than a wrong toast — the session did stop —
+and a heuristic guessing which it was would be worse than the word.
+

@@ -70,6 +70,15 @@ export interface DeckState {
    */
   readonly previews: Readonly<Record<string, SessionPreview | undefined>>;
   /**
+   * Which sessions core has been told to stop toasting about, as `sessionKey` strings — P6-T3.
+   *
+   * A LIST rather than a keyed map, unlike `details` and `previews`, and the difference is that
+   * this one has no third state: core answers with the whole set every time, so a key is either in
+   * it or it is not. There is no "asked and waiting" to draw, because nothing is asked per session
+   * — the set arrives once on connect and again after every press.
+   */
+  readonly muted: readonly string[];
+  /**
    * The imported projects, newest first — P3-T1.
    *
    * Empty is the honest starting state and stays empty until the owner imports something: the
@@ -165,6 +174,7 @@ export const EMPTY: DeckState = {
   respawn: undefined,
   details: {},
   previews: {},
+  muted: [],
   projects: [],
   importRefusal: undefined,
   statuses: {},

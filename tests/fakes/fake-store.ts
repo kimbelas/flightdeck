@@ -11,8 +11,15 @@ import { MAX_CONFIG_SNAPSHOTS } from '../../contracts/config-snapshot.ts';
 import type { DraftEvent, FdEvent } from '../../contracts/fd-event.ts';
 import { byProjectThenName, type LaunchPreset } from '../../contracts/launch-preset.ts';
 import { projectKey, type ProjectRecord } from '../../contracts/project.ts';
+import type { SubscriptionId } from '../../contracts/session.ts';
 import type { DraftVitalsSnapshot, VitalsSnapshot } from '../../contracts/vitals-snapshot.ts';
-import type { ConfigSnapshot, DraftConfigSnapshot, Store } from '../../core/ports/store.ts';
+import {
+  MAX_SESSION_MUTES,
+  type ConfigSnapshot,
+  type DraftConfigSnapshot,
+  type MutedSession,
+  type Store,
+} from '../../core/ports/store.ts';
 
 export class FakeStore implements Store {
   private readonly events: FdEvent[] = [];
@@ -27,6 +34,8 @@ export class FakeStore implements Store {
   private nextSnapshotId = 1;
   /** Newest LAST, which is insertion order — the reads below reverse it, as the adapter does. */
   private readonly configHistory: ConfigSnapshot[] = [];
+  /** Keyed `<subscription>|<sessionId>`, exactly as the sqlite table's composite key is. */
+  private readonly mutes = new Map<string, MutedSession>();
   private nextConfigId = 1;
   private writable = true;
 
@@ -170,6 +179,36 @@ export class FakeStore implements Store {
       .sort((left, right) => right.id - left.id)
       .slice(0, Math.max(0, limit));
   }
+
+  /** Written and pruned together, because the adapter's `muteSession` is. */
+  public muteSession(subscription: SubscriptionId, sessionId: string, at: number): void {
+    if (!this.writable) throw new Error('store is not writable');
+    this.mutes.set(muteSlot(subscription, sessionId), { subscription, sessionId, mutedAt: at });
+    for (const stale of this.mutedSessions().slice(MAX_SESSION_MUTES)) {
+      this.mutes.delete(muteSlot(stale.subscription, stale.sessionId));
+    }
+  }
+
+  public unmuteSession(subscription: SubscriptionId, sessionId: string): boolean {
+    if (!this.writable) throw new Error('store is not writable');
+    return this.mutes.delete(muteSlot(subscription, sessionId));
+  }
+
+  /** Newest mute first, then by key — the adapter's `ORDER BY muted_at DESC, subscription, id`. */
+  public mutedSessions(): readonly MutedSession[] {
+    return [...this.mutes.values()].sort(
+      (left, right) =>
+        right.mutedAt - left.mutedAt ||
+        muteSlot(left.subscription, left.sessionId).localeCompare(
+          muteSlot(right.subscription, right.sessionId),
+        ),
+    );
+  }
+}
+
+/** The composite key as one string. `|` is in neither a subscription id nor a uuid. */
+function muteSlot(subscription: SubscriptionId, sessionId: string): string {
+  return `${subscription}|${sessionId}`;
 }
 
 /** The composite key as one string. `|` is illegal in a Windows path and `presetId` folds it. */

@@ -85,8 +85,12 @@ export function byAttentionThenAge(left: SessionRow, right: SessionRow): number 
  * `SessionRowViewModel.tone` already got this right — `ended` is tested before `blocked` — which is
  * why the row was correctly dimmed while sitting in the attention slot. Two opinions about one
  * question, and only the quiet one was wrong.
+ *
+ * Exported since P6-T3, which is the third caller: the toast for **needs-you** fires on the same
+ * condition the deck sorts on, and a toast that disagreed with the row it is about would be worse
+ * than no toast. G.24 is what a second opinion about this sentence already cost once.
  */
-function needsAttention(row: SessionRow): boolean {
+export function needsAttention(row: SessionRow): boolean {
   return row.live && row.runState === 'blocked';
 }
 

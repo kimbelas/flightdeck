@@ -13,8 +13,10 @@
 //     button on. Nothing is missing here; the control is where the state is.
 //   - **interrupt** is Ctrl+C, which already reaches the PTY through xterm — `BROWSER_OWNED` claims
 //     only Ctrl+W/T/N — so a button would be a second way to do a thing that works.
-//   - **mute** belongs to the toasts it would silence, which are P6-T3. A mute with nothing to
-//     mute is a switch that does nothing.
+//   - **mute** arrived with the toasts it silences — P6-T3. It is the one control here whose
+//     position is core's rather than this page's: the label reads from `DeckState.muted`, which is
+//     the set core answered with, so a mute the store refused to keep shows the switch springing
+//     back rather than staying where the finger left it.
 //   - **pop out to Windows Terminal** is P6-T2, which has the AppX path resolution in it.
 //   - **rename** is this pane's label and NOT the session's. Claude Code has no rename: `-n/--name`
 //     is start-only and `respawn` takes no name, measured on 2.1.278 against every background verb.
@@ -44,6 +46,14 @@ export interface PaneControls {
    * pane and lets Windows Terminal try, which is exactly what an escape hatch is for.
    */
   readonly onPopOut: () => void;
+  /**
+   * Whether core is currently silent about this session — P6-T3.
+   *
+   * Core's answer, not a local boolean: the switch shows what core will actually do at 2 a.m. with
+   * this page closed, which is the only thing about a mute worth showing.
+   */
+  readonly muted: boolean;
+  readonly onMute: (muted: boolean) => void;
 }
 
 export interface PaneHeadProps {
@@ -147,7 +157,40 @@ function SessionVerbs({ controls }: { readonly controls: PaneControls | undefine
       >
         pop out
       </button>
+      <MuteSwitch controls={controls} />
     </>
+  );
+}
+
+/**
+ * The toasts this session raises, on or off — P6-T3, SPEC §5.5.
+ *
+ * `aria-pressed` rather than a checkbox, because it is a button whose LABEL says what pressing it
+ * will do and whose STATE says what is true now — and a screen reader needs the second half, which
+ * the one word cannot carry on its own.
+ *
+ * It is offered on every session pane with no flag beside it, for `pop out`'s reason: a mute does
+ * not need the session to be running or attachable. A finished session raises no more toasts, but
+ * a stopped one that is resumed tomorrow raises them again, and the switch is where it was left.
+ */
+function MuteSwitch({ controls }: { readonly controls: PaneControls }): JSX.Element {
+  return (
+    <button
+      type="button"
+      className="ghost"
+      data-pane-mute
+      aria-pressed={controls.muted}
+      title={
+        controls.muted
+          ? 'Flightdeck is not raising Windows toasts for this session'
+          : 'Stop raising Windows toasts for this session'
+      }
+      onClick={() => {
+        controls.onMute(!controls.muted);
+      }}
+    >
+      {controls.muted ? 'unmute' : 'mute'}
+    </button>
   );
 }
 

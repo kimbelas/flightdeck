@@ -217,6 +217,8 @@ export class FixtureCore {
     this.driftAgeMs = THREE_DAYS_MS;
     /** Every pop-out core was asked for — P6-T2. What the deck sent, not what it drew. */
     this.popouts = [];
+    /** `sessionKey` strings, exactly as `MuteBook` holds them — P6-T3. */
+    this.muted = new Set();
     /** Every request core answered, so a check can ask what the deck actually sent. */
     this.requests = [];
     /** The bodies of every `POST /sessions`. The launch form's real destination. */
@@ -395,6 +397,12 @@ export class FixtureCore {
     }
     if (request.method === 'POST' && path === PASTED_IMAGE_PATH) {
       return this.pasteImage(await body(request));
+    }
+    if (request.method === 'GET' && path === '/toasts/mutes') {
+      return [200, { muted: [...this.muted].sort() }];
+    }
+    if (request.method === 'POST' && path === '/toasts/mutes') {
+      return this.setMuted(await body(request));
     }
     if (request.method === 'GET' && path === '/keybindings') {
       return this.keybindingPlan(url.searchParams.get('direction') ?? 'apply');
@@ -940,6 +948,27 @@ export class FixtureCore {
     // terminal that attached while the pane still held it would evict it in silence (F.2.6).
     const detached = this.endAttached({ kind: 'session', sessionId, subscription });
     return [200, { detached: detached === true }];
+  }
+
+  /**
+   * Muting a session's Windows toasts — P6-T3.
+   *
+   * The double keeps the SET rather than a boolean per request, because that is the part of core
+   * the browser can see: both routes answer with the whole set, so a deck that edited its own copy
+   * would still draw the right switch until the first reply disagreed with it. Screened as core
+   * screens it, so a smoke check can send a bad body and get the same 400.
+   *
+   * No short id, matching `parseMuteRequest`: nothing behind this path names a directory or
+   * reaches a command line.
+   */
+  setMuted(raw) {
+    const { sessionId, subscription, muted } = parseJson(raw) ?? {};
+    const known = subscription === '365' || subscription === 'isg';
+    const full = typeof sessionId === 'string' && FULL_SESSION_ID.test(sessionId);
+    if (!known || !full || typeof muted !== 'boolean') return [400, { error: 'bad_session' }];
+    if (muted) this.muted.add(`${subscription}:${sessionId}`);
+    else this.muted.delete(`${subscription}:${sessionId}`);
+    return [200, { muted: [...this.muted].sort() }];
   }
 
   /** The replay, then nothing until `publish` — exactly core's contract (stream-event.ts). */

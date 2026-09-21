@@ -136,6 +136,29 @@ export const MIGRATIONS: readonly string[] = [
   );
   CREATE INDEX config_snapshots_project ON config_snapshots (project_key, id DESC);
   `,
+  // 6 — muted sessions: the toasts the owner has told core to stop raising (P6-T3, SPEC §5.5).
+  //
+  // **Keyed on BOTH ids, because a session id is unique only within a config dir.** The same uuid
+  // under the other subscription is a different session (`sessionKey`), and a mute keyed on the
+  // uuid alone would silence a session the owner can see beside it in the deck.
+  //
+  // **It is a standing decision, not an observation**, like the project registry and the presets
+  // above it, and admitted here for the reasons the port gives: it is keyed, it is replaceable,
+  // and unmuting really has to remove the row rather than write a tombstone the next reader might
+  // miss.
+  //
+  // **`muted_at` is here to bound the table, not to be displayed.** A session id dies with its
+  // session, so without a bound this would grow with every session ever muted. The store keeps the
+  // newest and drops the rest in the same call that writes one, which is `config_snapshots`' prune
+  // in a different shape.
+  `
+  CREATE TABLE session_mutes (
+    subscription TEXT    NOT NULL,
+    session_id   TEXT    NOT NULL,
+    muted_at     INTEGER NOT NULL,
+    PRIMARY KEY (subscription, session_id)
+  );
+  `,
 ];
 
 /**

@@ -43,6 +43,7 @@ import {
 import { AskSlice } from './ask-slice.ts';
 import { InstallSlice } from './install-slice.ts';
 import { LifecycleSlice } from './lifecycle-slice.ts';
+import { MuteSlice } from './mute-slice.ts';
 import { upsert, without } from './session-rows.ts';
 import type { AskRequest } from '../../contracts/ask-run.ts';
 import { DetailSlice } from './detail-slice.ts';
@@ -102,6 +103,8 @@ export class DeckStore {
   private readonly asks: AskSlice;
   /** Resume, stop, pop out, delete — one shape four times (P6-T2). */
   private readonly lifecycle: LifecycleSlice;
+  /** Which sessions core stops toasting about — P6-T3. Read on connect, written by a pane. */
+  private readonly mutes: MuteSlice;
   private state: DeckState = EMPTY;
   private source: EventStreamSource | undefined;
   private cancelRetry: (() => void) | undefined;
@@ -133,6 +136,9 @@ export class DeckStore {
     this.lifecycle = new LifecycleSlice(api, (changes) => {
       this.set(changes);
     });
+    this.mutes = new MuteSlice(api, (muted) => {
+      this.set({ muted });
+    });
   }
 
   public subscribe = (listener: () => void): (() => void) => {
@@ -152,6 +158,11 @@ export class DeckStore {
   public connect(): void {
     if (this.source !== undefined) return;
     this.set({ loading: true });
+    // P6-T3, and it is a read rather than a stream frame because nothing pushes it: a mute moves
+    // only when somebody presses the switch, and the one press that is not this page's is another
+    // tab's. Not awaited — the stream is what the deck is here for, and a set that arrives a
+    // moment later draws a switch that was already in the right position for all but new panes.
+    void this.mutes.load();
     const source = this.transport.open(DECK_STREAM_PATH);
     this.source = source;
     for (const name of STREAM_FRAME_NAMES) {
@@ -192,9 +203,16 @@ export class DeckStore {
    */
   public async refresh(): Promise<void> {
     this.set({ loading: true, error: undefined });
-    // In parallel: the two answers are independent, and a sweep of both subscriptions is the slow
-    // one. Nothing here throws, so neither can lose the other's result.
-    const [reply] = await Promise.all([this.api.get(CORE_SESSIONS_PATH), this.loadProjects()]);
+    // In parallel: the three answers are independent, and a sweep of both subscriptions is by far
+    // the slow one. Nothing here throws, so none of them can lose another's result.
+    const [reply] = await Promise.all([
+      this.api.get(CORE_SESSIONS_PATH),
+      this.loadProjects(),
+      // P6-T3, and here for the projects' reason rather than the quota's: the mute set has no
+      // stream frame, by design — nothing pushes it — so the deliberate act is the only thing that
+      // can move a switch another tab flipped.
+      this.mutes.load(),
+    ]);
     // Core down is an ordinary state the deck renders, not an exception (RESEARCH.md F.3.3).
     if (reply === undefined) {
       this.fail(UNREACHABLE);
@@ -274,6 +292,18 @@ export class DeckStore {
   /** Hands a session to Windows Terminal, detaching its pane first — P6-T2. */
   public popOut = (ref: SessionRef, title: string, cwd: string | undefined): Promise<boolean> =>
     this.lifecycle.popOut(ref, title, cwd);
+
+  /**
+   * Silences, or unsilences, one session's Windows toasts — P6-T3.
+   *
+   * `muted` is the position asked for rather than a toggle, and the set that comes back is core's
+   * rather than this page's guess at it (`MuteSlice`).
+   */
+  public setMuted = (
+    subscription: SubscriptionId,
+    sessionId: string,
+    muted: boolean,
+  ): Promise<void> => this.mutes.set(subscription, sessionId, muted);
 
   /**
    * Re-reads the project registry and everything annotating it — P3-T1, P3-T2, P3-T3, P4-T1.

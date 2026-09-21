@@ -3255,7 +3255,96 @@ phases:
           Windows path came back `...__8wek/wt.exe` there and `\wt.exe` here. `win32.join`.
       - id: P6-T3
         title: Windows toasts from core (toasted-notifier) with per-session mute
-        status: todo
+        status: done
+        done_on: 2026-09-21
+        security: [SEC-PROC-1]
+        deliverables:
+          [
+            contracts/session-mute.ts,
+            contracts/session-row.ts,
+            contracts/deck-routes.ts,
+            core/ports/store.ts,
+            core/adapters/sqlite/schema.ts,
+            core/adapters/sqlite/statements.ts,
+            core/adapters/sqlite/rows.ts,
+            core/adapters/sqlite/sqlite-store.ts,
+            core/adapters/windows/windows-toast-notifier.ts,
+            core/adapters/windows/toasted-notifier.d.ts,
+            core/application/mute-book.ts,
+            core/application/toast-announcer.ts,
+            core/http/mutes-route.ts,
+            core/feeds.ts,
+            core/routes.ts,
+            core/shutdown.ts,
+            core/main.ts,
+            app/deck/mute-slice.ts,
+            app/deck/deck-state.ts,
+            app/deck/deck-store.ts,
+            app/deck/deck-commands.ts,
+            app/deck/deck-view.tsx,
+            app/deck/deck-body.tsx,
+            app/deck/pane-grid.tsx,
+            app/deck/pane-head.tsx,
+            tests/contracts/session-mute.test.ts,
+            tests/core/application/toast-announcer.test.ts,
+            tests/core/application/mute-book.test.ts,
+            tests/core/adapters/windows-toast-notifier.test.ts,
+            tests/core/http/mutes-route.test.ts,
+            tests/core/ports/mute-store-contract.ts,
+            tests/core/adapters/node-esm-imports.test.ts,
+            tests/core/lifecycle.test.ts,
+            tests/app/deck-store-mutes.test.ts,
+            tests/fakes/fake-store.ts,
+            tests/e2e/fixture-core.mjs,
+            tests/e2e/smoke/mute-checks.mjs,
+            DECISIONS.md D58,
+            RESEARCH.md G.51,
+            RESEARCH.md G.52,
+          ]
+        notes: >-
+          SPEC §5.5 "**completed** → Windows toast (per-session mute)" and §6.3, and D16 picked the
+          library in 2026-09-10 from a survey nobody had run. G.51 ran it first, and four numbers
+          shaped the code: `notify()` returns in **3 ms**, the callback fires when the toast is
+          DISMISSED (3 786 ms for one that timed out), the spawned child does not hold the event
+          loop, and the package is clean at `npm audit --audit-level=high` with verified
+          signatures. The first two are why `Notifier.notify` is `void` — there is nothing to await
+          except the owner's attention span.
+          **Every rule is an EDGE, never a state** (D58), because a sweep re-observes the same
+          blocked session every ten seconds. Two traps were written down before they could happen:
+          a FIRST observation never toasts, or a core restarted beside three blocked sessions opens
+          with three toasts about nothing that just happened; and `gone` is a record being DELETED
+          (F.2.2), not work finishing.
+          **needs-you is `needsAttention`**, exported from `contracts/session-row.ts` so the toast
+          and the deck's sort order are one sentence — G.24 is what a second opinion about that
+          sentence cost once.
+          **The mute is in the store, keyed on BOTH ids and bounded.** In the store because core
+          toasts with no browser open, which is the whole of D16; on both ids because a uuid is
+          unique only within a config dir (`sessionKey`); bounded because a session id dies with
+          its session and nothing else would ever shrink that table. It is the third thing in the
+          database that is not an observation, and the port says so.
+          **The library does not spawn the same way on every platform, and that put a guard in the
+          adapter.** Its Windows path is `execFile`; its LINUX path is `cp.exec` — a shell — and a
+          toast body carries a session name, which is the owner's text, and the unit suite runs on
+          Linux in CI. So the adapter refuses off Windows and its test imports the real library
+          rather than a stub.
+          **The expected double-notify question has no answer because it has no premise**: the deck
+          raises no browser notifications and never has, which is D16's design.
+          Eight sabotages on the announcer, each watched to land and then to fail — and one
+          SURVIVED: the `changed`-only guard is unreachable through the reconciler's own event
+          shapes, so it got a test of its own rather than a shrug.
+          **And then the standing lesson collected a seventh, the worst kind** (G.52). `npm run
+          check` was green — including eight cases that import `toasted-notifier` for REAL rather
+          than stubbing it — and `flightdeck.cmd` would not boot: `import { notify }` from a CJS
+          module whose export is a live `WindowsToaster` instance is a load-time error under Node's
+          ESM loader, and vitest resolves CJS through Vite, which synthesises the named export Node
+          refuses. The test written specifically not to be fooled by a stub was fooled by the
+          loader. `tests/core/adapters/node-esm-imports.test.ts` is the guard: it spawns `node` and
+          imports every adapter that reaches a third-party package, `core/main.ts` included, and
+          asserts exit 0 — five subprocesses, 1.5 s, against a class of failure that costs a boot.
+          Verified live against the real core: migration 6 applied (`user_version: 6`), `POST
+          /toasts/mutes` persisted a row, a pane on a resumed background session drew the switch,
+          and pressing it flipped `mute`/`aria-pressed=false` to `unmute`/`true` with no page error.
+          `npm run check` 205 files / 2 533 tests; `npm run smoke` 374 checks.
       - id: P6-T4
         title: Preset groups ("morning") launch in one click
         status: todo

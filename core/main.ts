@@ -14,6 +14,7 @@ import { PaneRegistry } from './application/pane-registry.ts';
 import { type Reconciler } from './application/reconciler.ts';
 import { AuditLog } from './application/audit-log.ts';
 import { StatusReport } from './application/status-report.ts';
+import { type ToastAnnouncer } from './application/toast-announcer.ts';
 import { type TranscriptReader } from './application/transcript-reader.ts';
 import { type VitalsRegistry } from './application/vitals-registry.ts';
 import { TicketOffice } from './application/ticket-office.ts';
@@ -45,7 +46,7 @@ import { sessionVerbs, buildAsker, buildPopper } from './verbs.ts';
 import { buildRouter, type RouterParts } from './routes.ts';
 import { projectSlice, type ProjectSlice } from './projects.ts';
 import { buildDetailReader, buildPreviewReader } from './reads.ts';
-import { stopCore, type Running } from './shutdown.ts';
+import { stopCore } from './shutdown.ts';
 import { SystemClock } from './ports/clock.ts';
 import type { Logger } from './ports/logger.ts';
 
@@ -73,6 +74,14 @@ export interface Core {
    * bind must not leave a timer opening files every second for a service nobody can reach.
    */
   readonly transcripts: TranscriptReader;
+  /**
+   * The Windows toasts (P6-T3). Started by the caller, like the two above and for the same reason.
+   *
+   * It owns no timer — it is a listener on the hub — and it is still handed back rather than
+   * subscribed at construction, because `startCore` is the list of things that would otherwise be
+   * left unstarted, and a core that never bound must raise nothing.
+   */
+  readonly toasts: ToastAnnouncer;
   /**
    * The durable log (P1-T8). Closed by `shutdown`.
    *
@@ -154,20 +163,23 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
     install,
     logger,
   });
-  const running: Running = { ...http, ...feeds, store, issuer, logger };
-
   return {
     server: http.server,
     reconciler: feeds.reconciler,
     vitals: feeds.vitals,
     transcripts: feeds.transcripts,
+    toasts: feeds.toasts,
     store,
     logger,
     tokenPath: tokenFile.location(),
     ingestKeyPath: ingestKeyFile(),
     claudePath: install.executable,
     warmUp: () => warmUp(token, logger),
-    shutdown: () => stopCore(running),
+    // Built inside the closure rather than on a line of its own above, because this function is at
+    // its 40-line limit and P6-T3 needed one of them. It costs nothing: every field is an object
+    // already constructed above, `stopCore` is the only caller, and it is idempotent — so a list
+    // assembled per call and a list assembled once are the same list.
+    shutdown: () => stopCore({ ...http, ...feeds, store, issuer, logger }),
   };
 }
 

@@ -20,13 +20,21 @@ import { MAX_CONFIG_SNAPSHOTS } from '../../../contracts/config-snapshot.ts';
 import type { DraftEvent, FdEvent } from '../../../contracts/fd-event.ts';
 import type { LaunchPreset } from '../../../contracts/launch-preset.ts';
 import { projectKey, type ProjectRecord } from '../../../contracts/project.ts';
+import type { SubscriptionId } from '../../../contracts/session.ts';
 import type { DraftVitalsSnapshot, VitalsSnapshot } from '../../../contracts/vitals-snapshot.ts';
-import type { ConfigSnapshot, DraftConfigSnapshot, Store } from '../../ports/store.ts';
+import {
+  MAX_SESSION_MUTES,
+  type ConfigSnapshot,
+  type DraftConfigSnapshot,
+  type MutedSession,
+  type Store,
+} from '../../ports/store.ts';
 import {
   asRecord,
   toAudit,
   toConfigSnapshot,
   toEvent,
+  toMutedSession,
   toPreset,
   toProject,
   toSnapshot,
@@ -34,9 +42,11 @@ import {
 import { MIGRATIONS, PRAGMAS } from './schema.ts';
 import {
   prepareConfigStatements,
+  prepareMuteStatements,
   preparePresetStatements,
   prepareProjectStatements,
   type ConfigStatements,
+  type MuteStatements,
   type PresetStatements,
   type ProjectStatements,
 } from './statements.ts';
@@ -77,6 +87,7 @@ export class SqliteStore implements Store {
   private readonly presetRows: PresetStatements;
   /** The config history's three — P3-T7. */
   private readonly configRows: ConfigStatements;
+  private readonly muteRows: MuteStatements;
 
   /**
    * Opens (and creates) the store, applying any migrations it is behind on.
@@ -126,6 +137,7 @@ export class SqliteStore implements Store {
     this.projectRows = prepareProjectStatements(this.db);
     this.presetRows = preparePresetStatements(this.db);
     this.configRows = prepareConfigStatements(this.db);
+    this.muteRows = prepareMuteStatements(this.db);
   }
 
   /** The schema version this file is at. `flightdeck-core status` prints it (P1-T12). */
@@ -243,6 +255,20 @@ export class SqliteStore implements Store {
 
   public configSnapshots(projectKeyValue: string, limit: number): readonly ConfigSnapshot[] {
     return this.configRows.selectLatest.all(projectKeyValue, limit).map(toConfigSnapshot);
+  }
+
+  /** Written and pruned in one call, so the bound cannot be forgotten at a call site. */
+  public muteSession(subscription: SubscriptionId, sessionId: string, at: number): void {
+    this.muteRows.upsert.run(subscription, sessionId, at);
+    this.muteRows.prune.run(MAX_SESSION_MUTES);
+  }
+
+  public unmuteSession(subscription: SubscriptionId, sessionId: string): boolean {
+    return this.muteRows.remove.run(subscription, sessionId).changes > 0;
+  }
+
+  public mutedSessions(): readonly MutedSession[] {
+    return this.muteRows.selectAll.all().map(toMutedSession);
   }
 
   /** Closes the handle. Idempotent, because shutdown is (main.ts `stopCore`). */

@@ -57,5 +57,5 @@ fixture pipeline). The rules below are the summary; the skills are the procedure
 
 ## The standing lesson
 
-Six real bugs shipped past a green unit suite and were only found by running the thing
+Seven real bugs shipped past a green unit suite and were only found by running the thing
 (RESEARCH.md §G). Budget time for running it, not just for testing it.

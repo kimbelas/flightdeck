@@ -9,9 +9,11 @@ import { SUBSCRIPTION_IDS } from '../contracts/session.ts';
 import { AskBroadcast } from './application/ask-broadcast.ts';
 import { EventHub } from './application/event-hub.ts';
 import { HookQueue } from './application/hook-queue.ts';
+import { MuteBook } from './application/mute-book.ts';
 import { QuotaReport } from './application/quota-report.ts';
 import { Reconciler } from './application/reconciler.ts';
 import { StatuslineQueue } from './application/statusline-queue.ts';
+import { ToastAnnouncer } from './application/toast-announcer.ts';
 import { TranscriptReader } from './application/transcript-reader.ts';
 import { VitalsRegistry } from './application/vitals-registry.ts';
 import { type ClaudeCliSessionSource } from './adapters/claude-cli/claude-cli-session-source.ts';
@@ -22,6 +24,7 @@ import { FsDirectoryWatcher } from './adapters/node/fs-directory-watcher.ts';
 import { FsTranscriptFile } from './adapters/node/fs-transcript-file.ts';
 import { NodeScheduler } from './adapters/node/node-scheduler.ts';
 import { StoringEventSink } from './adapters/storing-event-sink.ts';
+import { WindowsToastNotifier } from './adapters/windows/windows-toast-notifier.ts';
 import { ReadPolicy } from './domain/read-policy.ts';
 import { SessionStreamRoute } from './http/session-stream-route.ts';
 import { type SystemClock } from './ports/clock.ts';
@@ -41,6 +44,9 @@ export interface Feeds {
   readonly storing: StoringEventSink;
   /** Where `AskRunner` publishes and the stream subscribes — P4-T4, D48. */
   readonly ask: AskBroadcast;
+  /** The Windows toasts, and the set of sessions that has been told to stop raising them (P6-T3). */
+  readonly toasts: ToastAnnouncer;
+  readonly mutes: MuteBook;
 }
 
 export interface FeedParts {
@@ -66,18 +72,7 @@ export function buildFeeds(parts: FeedParts): Feeds {
   const { install, sessions, store, clock, logger } = parts;
   const scheduler = new NodeScheduler();
   const hub = new EventHub(logger);
-  // Feed 4 rides the fan-out as a SUBSCRIBER, not as a producer: it learns which transcripts are
-  // live from the `transcript_path` the hook and statusLine payloads already carry, so nothing
-  // walks 1.1 GB of `projects/` looking for them and no existing class had to change (P1-T7).
-  const transcripts = new TranscriptReader({
-    file: new FsTranscriptFile(),
-    // SEC-FS-2: what a reported `transcript_path` is allowed to be, checked before any open. The
-    // two config dirs are the only roots, so a policy built from them says both "whose" and
-    // "what" (P1-T12).
-    policy: new ReadPolicy(SUBSCRIPTION_IDS.map((id) => install.configDirFor(id))),
-    scheduler,
-    logger,
-  });
+  const transcripts = buildTranscripts(install, scheduler, logger);
   // Four listeners, and none of them is redundant: the log is what an operator reads an hour
   // later, the hub is what a browser sees now, the store is what can still answer next month, and
   // the transcript reader is only here to learn which files are live (P1-T7).
@@ -94,6 +89,7 @@ export function buildFeeds(parts: FeedParts): Feeds {
   });
   const ask = new AskBroadcast();
   return {
+    ...buildToasts(hub, store, clock, logger),
     reconciler,
     ask,
     // The stream replays two things on connect and they come from different places: the session
@@ -118,4 +114,59 @@ export function buildFeeds(parts: FeedParts): Feeds {
     vitals,
     storing,
   };
+}
+
+/**
+ * The hub's second kind of subscriber, and the only one that reaches outside the browser.
+ *
+ * Every other subscriber to `EventHub` is a `/stream` for a browser tab, which comes and goes.
+ * This one is here whether a tab is or not — it is a listener on the same events, raising a
+ * Windows toast instead of writing a frame.
+ *
+ * That is what D16 decided core was for (P6-T3). Built as a pair because neither half is useful
+ * alone: an announcer with no mute book would be a machine that cannot be told to be quiet, and a
+ * mute book nothing consults would be a switch wired to nothing.
+ *
+ * It subscribes on `start`, beside the reconciler's timer rather than here, so a core that never
+ * bound raises nothing (core/shutdown.ts).
+ */
+function buildToasts(
+  hub: EventHub,
+  store: Store,
+  clock: SystemClock,
+  logger: Logger,
+): Pick<Feeds, 'toasts' | 'mutes'> {
+  const mutes = new MuteBook({ store, clock, logger });
+  return {
+    mutes,
+    toasts: new ToastAnnouncer({
+      feed: hub,
+      notifier: new WindowsToastNotifier(logger),
+      mutes,
+      logger,
+    }),
+  };
+}
+
+/**
+ * Feed 4 — P1-T7.
+ *
+ * It rides the fan-out as a SUBSCRIBER, not as a producer: it learns which transcripts are live
+ * from the `transcript_path` the hook and statusLine payloads already carry, so nothing walks
+ * 1.1 GB of `projects/` looking for them and no existing class had to change.
+ */
+function buildTranscripts(
+  install: ClaudeInstall,
+  scheduler: NodeScheduler,
+  logger: Logger,
+): TranscriptReader {
+  return new TranscriptReader({
+    file: new FsTranscriptFile(),
+    // SEC-FS-2: what a reported `transcript_path` is allowed to be, checked before any open. The
+    // two config dirs are the only roots, so a policy built from them says both "whose" and
+    // "what" (P1-T12).
+    policy: new ReadPolicy(SUBSCRIPTION_IDS.map((id) => install.configDirFor(id))),
+    scheduler,
+    logger,
+  });
 }

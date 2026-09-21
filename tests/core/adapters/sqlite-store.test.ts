@@ -16,6 +16,7 @@ import {
 import { MIGRATIONS } from '../../../core/adapters/sqlite/schema.ts';
 import { FakeStore } from '../../fakes/fake-store.ts';
 import { describeConfigStoreContract } from '../ports/config-store-contract.ts';
+import { describeMuteStoreContract } from '../ports/mute-store-contract.ts';
 import { describePresetStoreContract } from '../ports/preset-store-contract.ts';
 import { describeStoreContract } from '../ports/store-contract.ts';
 
@@ -55,6 +56,8 @@ describePresetStoreContract('SqliteStore', () => open(`${String(Math.random()).s
 
 describeConfigStoreContract('FakeStore', () => new FakeStore());
 describeConfigStoreContract('SqliteStore', () => open(`${String(Math.random()).slice(2)}.db`));
+describeMuteStoreContract('FakeStore', () => new FakeStore());
+describeMuteStoreContract('SqliteStore', () => open(`${String(Math.random()).slice(2)}.db`));
 
 describe('SqliteStore — the file', () => {
   it('creates the database and its directory', () => {

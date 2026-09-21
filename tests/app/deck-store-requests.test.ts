@@ -10,6 +10,7 @@
 // land in state and render.
 import { describe, expect, it } from 'vitest';
 import {
+  CORE_MUTES_PATH,
   CORE_PRESETS_PATH,
   CORE_PROJECT_MAP_PATH,
   CORE_PROJECT_STATUS_PATH,
@@ -69,12 +70,14 @@ describe('DeckStore.refresh', () => {
 
     await store.refresh();
 
-    // The registry rides along (P3-T2, P3-T3, P4-T1): none of the four has a stream frame, so a
-    // deliberate refresh is the only thing that can move them. Every path still goes through the
-    // rewrite.
+    // The registry rides along (P3-T2, P3-T3, P4-T1) and so does the mute set (P6-T3): none of the
+    // five has a stream frame, so a deliberate refresh is the only thing that can move them. The
+    // quota deliberately does NOT — it has a frame, and a second path to it would be a second
+    // opinion. Every path still goes through the rewrite.
     expect(api.requests.map((request) => request.path)).toEqual([
       CORE_SESSIONS_PATH,
       CORE_PROJECTS_PATH,
+      CORE_MUTES_PATH,
       CORE_PROJECT_STATUS_PATH,
       CORE_PROJECT_MAP_PATH,
       CORE_PRESETS_PATH,
