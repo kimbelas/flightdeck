@@ -12,7 +12,8 @@
 // The key itself is read here and nowhere else in this path. It is never returned, logged or
 // printed (SEC-DATA-4) — `isPublished` compares and answers a boolean.
 import { execFileSync } from 'node:child_process';
-import { INGEST_KEY_ENV_VAR, ingestKeyFile, readIngestKey } from '../../../contracts/ingest-key.ts';
+import { INGEST_KEY_ENV_VAR } from '../../../contracts/connect-plan.ts';
+import { ingestKeyFile, readIngestKey } from '../../../contracts/ingest-key.ts';
 import type { SessionEnvironment } from '../../ports/session-environment.ts';
 
 const SYSTEM32 = `${process.env['SystemRoot'] ?? 'C:\\Windows'}\\System32`;

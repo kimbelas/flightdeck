@@ -1438,3 +1438,48 @@ measured id form and the third to agree — `--resume` remains the only one that
 action writes a row", and a row per panel open would bury the rows a reviewer is looking for. The
 panel reads on open and changes nothing until a button is pressed — which is also why `update` is
 not run when the panel opens, since opening a panel must not be able to replace the binary.
+
+## D50 — Connect and Disconnect reach the deck, unchanged in shape (decided 2026-09-21, P4-T6)
+
+P1-T11 built Connect as two objects on purpose: `ConnectPlanner` computes and `Connector` writes,
+so there is no path where something is written that the owner was not shown (D13, SEC-FS-3). P4-T6
+puts that in the browser without loosening any of it. `GET /connect` cannot write. `POST /connect`
+**re-plans from disk** and takes nothing from the page but a `direction` from a two-member union —
+not a path, not a byte of content, not which subscription. It is `/keybindings`' shape (P5a-T7),
+which was itself copied from here.
+
+**The panel lives in the version chip's panel rather than in the `?` sheet.** That panel is already
+machine-wide — it draws both subscriptions whichever chip opened it — and it is already "the Claude
+Code installation". Connecting is what makes that installation report anything to Flightdeck at all,
+so it belongs beside `doctor`. The sheet is about keys.
+
+**It is whole-machine, not per subscription, and the title's word "subscription" describes what is
+being connected rather than a control.** A per-subscription Disconnect would have to decide whether
+the shared `statusline.py` and the machine-wide `FLIGHTDECK_TOKEN` stay — and the answer depends on
+the OTHER subscription's state, which is a rule nobody has needed and which the CLI has never had.
+The plan lists the two settings files as separate rows with separate diffs, which is the part of
+"per subscription" that is actually useful.
+
+**There is no confirm on top of the diff.** Reaching the write takes two presses with the whole
+unified diff between them, and Disconnect is exactly reversible. P4-T2 settled this when `rm` got
+its armed second button: a second prompt on top of a deliberate one is how people learn to click
+through prompts.
+
+**Core answers this route, so a core that is down cannot be disconnected from the deck.** That is
+not a gap the panel can close — `npm run disconnect` is the repair tool for that case and always was
+(SECURITY.md §5.3: a repair tool that needs the broken thing to work is not one). `Connector.apply`
+keeps its asymmetry either way: Connect refuses against a core that is not answering, Disconnect
+never asks.
+
+**Three things moved, and each move was forced by the deck being a second reader.**
+`StatuslinePatcher` went from `scripts/` to `core/adapters/statusline/` with its Python block,
+because `core/main.ts` importing from `scripts/` is the dependency rule backwards and the port said
+so in its own header. `unifiedDiff` went from `core/shared/` to `contracts/`, because
+`tsconfig.app.json` cannot see `core/` and two diff implementations would be two accounts of the
+same write. And `INGEST_KEY_ENV_VAR` went from `contracts/ingest-key.ts` to `contracts/connect-plan.ts`,
+because the first of those reads the key off the disk — see G.44 for how that was found.
+
+**Both writes audit; the plan does not.** D49's rule, applied to the more consequential pair: a row
+per diff nobody pressed would bury the rows a reviewer looks for. The row's `target` is the
+direction rather than a path, because this write is machine-wide, and the paths go in `args` where
+somebody asking "which files" finds all of them.

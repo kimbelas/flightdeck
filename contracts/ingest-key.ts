@@ -15,7 +15,9 @@
 // It sits in contracts/ for the same reason core-token.ts does: it is the one definition of the
 // path, and more than one process has to agree about it.
 //
-// **Server-only.** It touches node:fs, so nothing under a 'use client' boundary may import it.
+// **Server-only.** It touches node:fs, so nothing under a 'use client' boundary may import it —
+// which is why `INGEST_KEY_ENV_VAR` is NOT here but in connect-plan.ts. P4-T6 put the Connect panel
+// in the deck, the panel names the variable, and a name does not need a filesystem to be spelled.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -25,16 +27,6 @@ export function ingestKeyFile(): string {
   if (override !== undefined && override !== '') return override;
   return join(process.env['LOCALAPPDATA'] ?? process.cwd(), 'flightdeck', 'ingest-key');
 }
-
-/**
- * The environment variable Connect names in the hooks block, and the launcher exports.
- *
- * Named here rather than in the planner because two sides have to agree on the spelling: what
- * Connect writes into `settings.json` as `${FLIGHTDECK_TOKEN}`, and what puts a value there. A
- * name Claude Code does not find is interpolated to the empty string rather than left alone
- * (RESEARCH.md F.1.6), so a typo is a 401 rather than an error anyone can read.
- */
-export const INGEST_KEY_ENV_VAR = 'FLIGHTDECK_TOKEN';
 
 /**
  * The current ingest key, or `undefined` when core has never run on this machine.

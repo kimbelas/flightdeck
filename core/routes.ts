@@ -15,6 +15,7 @@ import { HealthRoute } from './http/health-route.ts';
 import { HooksRoute } from './http/hooks-route.ts';
 import { KeybindingPlanRoute, KeybindingWriteRoute } from './http/keybindings-route.ts';
 import { AskRoute } from './http/ask-route.ts';
+import { ConnectPlanRoute, ConnectWriteRoute } from './http/connect-routes.ts';
 import { DoctorRoute, RespawnRoute, UpdateRoute } from './http/install-routes.ts';
 import { LaunchRoute } from './http/launch-route.ts';
 import { PasteRoute } from './http/paste-route.ts';
@@ -30,6 +31,8 @@ import { StatusRoute } from './http/status-route.ts';
 import { StatuslineRoute } from './http/statusline-route.ts';
 import { TicketRoute } from './http/ticket-route.ts';
 import type { RateLimiter } from './http/rate-limiter.ts';
+import type { AuditLog } from './application/audit-log.ts';
+import type { Connector } from './application/connector.ts';
 import type { DeckQuery } from './application/deck-query.ts';
 import type { KeybindingHelper } from './application/keybinding-helper.ts';
 import type { PasteInbox } from './application/paste-inbox.ts';
@@ -67,6 +70,9 @@ export interface RouterParts {
   readonly tickets: TicketOffice;
   readonly paste: PasteInbox;
   readonly keybindings: KeybindingHelper;
+  /** Connect and Disconnect, planned then written — P4-T6. The write audits; the plan does not. */
+  readonly connector: Connector;
+  readonly audit: AuditLog;
   readonly limiter: RateLimiter;
   readonly install: ClaudeInstall;
   readonly logger: Logger;
@@ -104,6 +110,9 @@ export function buildRouter(parts: RouterParts, extra: readonly Route[]): Reques
     // Two routes on one path: the GET cannot write and the POST re-plans from disk (P5a-T7).
     new KeybindingPlanRoute(parts.keybindings),
     new KeybindingWriteRoute(parts.keybindings),
+    // The same two-routes-one-path shape, for the writer that started it — P4-T6, D13.
+    new ConnectPlanRoute(parts.connector),
+    new ConnectWriteRoute(parts.connector, parts.audit),
     ...extra,
     new HooksRoute({
       queue: parts.feeds.hooks,

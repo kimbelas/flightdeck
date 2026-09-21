@@ -13,10 +13,18 @@
 // (RESEARCH.md F.10.2).
 import type { JSX } from 'react';
 import type { SubscriptionId } from '../../contracts/session.ts';
+import { BrowserDeckApi } from './browser-deck-api.ts';
+import { ConnectPanel } from './connect-panel.tsx';
 import type { DeckActions } from './deck-commands.ts';
 import type { DeckState } from './deck-state.ts';
 import type { DeckStore } from './deck-store.ts';
 import { InstallPanel } from './install-panel.tsx';
+
+/**
+ * The Connect panel's own client, module-level for `SHEET_API`'s reason (deck-view.tsx): it is
+ * stateless, the panel is not always mounted, and nothing it does belongs in a session snapshot.
+ */
+const CONNECT_API = new BrowserDeckApi();
 
 /** The installation panel, wired. */
 export function DeckInstall({
@@ -35,7 +43,9 @@ export function DeckInstall({
       onUpdate={actions.onUpdateClaude}
       onRespawnAll={actions.onRespawnAll}
       onClose={actions.onCloseInstall}
-    />
+    >
+      <ConnectPanel api={CONNECT_API} />
+    </InstallPanel>
   );
 }
 

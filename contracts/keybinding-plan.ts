@@ -8,7 +8,12 @@
 // In contracts/ for connect-plan.ts's reason: the planner produces a plan and the deck renders it,
 // so both sides must agree, and contracts/ is the only folder both TypeScript projects compile.
 
-import type { FileChange, PlanRefusal } from './connect-plan.ts';
+import {
+  parseFileChange,
+  parsePlanRefusal,
+  type FileChange,
+  type PlanRefusal,
+} from './connect-plan.ts';
 
 /**
  * What the helper would write. `FileChange` and `PlanRefusal` are Connect's own, imported rather
@@ -180,7 +185,7 @@ function parseAccepted(fields: Record<string, unknown>): KeybindingPlan | undefi
   const changes = fields['changes'];
   const alreadyDone = fields['alreadyDone'];
   if (!Array.isArray(changes) || !Array.isArray(alreadyDone)) return undefined;
-  const parsed = changes.map(parseChange);
+  const parsed = changes.map(parseFileChange);
   if (parsed.includes(undefined)) return undefined;
   return {
     ok: true,
@@ -192,29 +197,12 @@ function parseAccepted(fields: Record<string, unknown>): KeybindingPlan | undefi
 function parseRefused(fields: Record<string, unknown>): KeybindingPlan | undefined {
   const refusals = fields['refusals'];
   if (!Array.isArray(refusals)) return undefined;
-  const parsed = refusals.map(parseRefusal);
+  const parsed = refusals.map(parsePlanRefusal);
   if (parsed.includes(undefined)) return undefined;
   return {
     ok: false,
     refusals: parsed.filter((refusal): refusal is PlanRefusal => refusal !== undefined),
   };
-}
-
-function parseChange(value: unknown): FileChange | undefined {
-  if (typeof value !== 'object' || value === null) return undefined;
-  const fields: Record<string, unknown> = { ...value };
-  const { path, label, before, after } = fields;
-  if (typeof path !== 'string' || typeof label !== 'string') return undefined;
-  if (typeof before !== 'string' || typeof after !== 'string') return undefined;
-  return { path, label, before, after };
-}
-
-function parseRefusal(value: unknown): PlanRefusal | undefined {
-  if (typeof value !== 'object' || value === null) return undefined;
-  const fields: Record<string, unknown> = { ...value };
-  const { path, reason } = fields;
-  if (typeof path !== 'string' || typeof reason !== 'string') return undefined;
-  return { path, reason };
 }
 
 /** Reads `POST /keybindings`'s body. */

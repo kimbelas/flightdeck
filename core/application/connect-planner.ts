@@ -9,6 +9,7 @@
 // a statusline.py whose anchors have moved, a `statusLine` that points somewhere else — each is a
 // sentence naming the file, and the whole plan fails rather than half of it applying.
 import type {
+  ConnectDirection,
   ConnectPlan,
   EnvironmentStep,
   FileChange,
@@ -63,7 +64,7 @@ export class ConnectPlanner {
     return this.plan('disconnect');
   }
 
-  private plan(direction: 'connect' | 'disconnect'): ConnectPlan {
+  private plan(direction: ConnectDirection): ConnectPlan {
     const changes: FileChange[] = [];
     const alreadyDone: string[] = [];
     const refusals: PlanRefusal[] = [];
@@ -89,7 +90,7 @@ export class ConnectPlanner {
     };
   }
 
-  private planSettings(source: SettingsSource, direction: 'connect' | 'disconnect'): Outcome {
+  private planSettings(source: SettingsSource, direction: ConnectDirection): Outcome {
     const { path, contents } = source;
     if (contents === undefined) {
       return { kind: 'refusal', refusal: { path, reason: 'settings.json does not exist' } };
@@ -128,7 +129,7 @@ export class ConnectPlanner {
    * it is patched once. Connect verifies that before it writes — a patch applied to a file nobody
    * runs is worse than no patch, because it looks done.
    */
-  private planStatusline(direction: 'connect' | 'disconnect'): Outcome {
+  private planStatusline(direction: ConnectDirection): Outcome {
     const { path, contents } = this.statusline;
     if (contents === undefined) {
       return { kind: 'refusal', refusal: { path, reason: 'statusline.py does not exist' } };

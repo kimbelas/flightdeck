@@ -4,15 +4,18 @@
 // what the CLI shows; `apply()` takes a plan it was given rather than computing one of its own, so
 // there is no path where something is written that the owner was not shown. That is D13's promise
 // and SEC-FS-3's procedure, expressed as a signature rather than as a convention.
-import type { ConnectPlan, FileChange } from '../../contracts/connect-plan.ts';
+import type {
+  AppliedChange,
+  ConnectDirection,
+  ConnectPlan,
+  FileChange,
+} from '../../contracts/connect-plan.ts';
 import type { ConfigFile } from '../ports/config-file.ts';
 import type { CoreHealth } from '../ports/core-health.ts';
 import type { Logger } from '../ports/logger.ts';
 import type { SessionEnvironment } from '../ports/session-environment.ts';
 import type { SourcePatcher } from '../ports/source-patcher.ts';
 import { ConnectPlanner, type SettingsSource, type StatuslineSource } from './connect-planner.ts';
-
-export type Direction = 'connect' | 'disconnect';
 
 export interface ConnectorParts {
   readonly files: ConfigFile;
@@ -22,12 +25,6 @@ export interface ConnectorParts {
   readonly settingsPaths: readonly { readonly subscription: string; readonly path: string }[];
   readonly statuslinePath: string;
   readonly logger: Logger;
-}
-
-/** One file written, and where its backup went. */
-export interface AppliedChange {
-  readonly path: string;
-  readonly backup: string;
 }
 
 export type ApplyOutcome =
@@ -57,7 +54,7 @@ export class Connector {
   }
 
   /** Reads every file and works out the change. Writes nothing, whatever the answer. */
-  public plan(direction: Direction): ConnectPlan {
+  public plan(direction: ConnectDirection): ConnectPlan {
     const settings: readonly SettingsSource[] = this.settingsPaths.map((entry) => ({
       subscription: entry.subscription,
       path: entry.path,
@@ -87,7 +84,7 @@ export class Connector {
    * stops immediately and reports what had already been applied, because the backups are the
    * recovery path and the operator needs to be told they exist.
    */
-  public async apply(direction: Direction, plan: ConnectPlan): Promise<ApplyOutcome> {
+  public async apply(direction: ConnectDirection, plan: ConnectPlan): Promise<ApplyOutcome> {
     if (!plan.ok) return { ok: false, reason: 'the plan was refused', applied: [] };
     if (direction === 'connect' && !(await this.health.isRunning())) {
       return { ok: false, reason: 'core is not running', applied: [] };
@@ -112,7 +109,7 @@ export class Connector {
     return written;
   }
 
-  private write(direction: Direction, changes: readonly FileChange[]): ApplyOutcome {
+  private write(direction: ConnectDirection, changes: readonly FileChange[]): ApplyOutcome {
     const applied: AppliedChange[] = [];
     for (const change of changes) {
       // Re-read and compare before replacing: the plan was computed from contents that were true

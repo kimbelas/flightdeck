@@ -1,13 +1,20 @@
-// P0-T5 / P1-T6 — merges the flightdeck block from scripts/statusline-block.py into a copy of
+// P0-T5 / P1-T6 — merges the flightdeck block from statusline-block.py into a copy of
 // ~/.claude/hooks/statusline.py, and takes it out again.
 //
 // SEC-ING-3 makes the change additive, so the patcher never rewrites a line it did not add: it
 // inserts two marker-delimited regions at two unique anchors, and Disconnect (SEC-OPS-2) deletes
 // exactly those regions. `remove(apply(source)) === source` is the test that keeps that promise
-// (tests/scripts/statusline-patch.test.ts).
+// (tests/core/adapters/statusline-patcher.test.ts).
+//
+// **It moved here from `scripts/` in P4-T6**, with the Python block beside it. It was in scripts/
+// because the spike that wrote it was, and that stopped being tenable the moment core itself had
+// to construct one: `core/main.ts` reaching into `scripts/` is the dependency rule backwards
+// (CODING-STANDARDS §2), and the port it implements said so in its own header. The block file
+// travels with the class rather than staying behind, because a core file computing a path into
+// `scripts/` is the same dependency wearing a different hat.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { PatchOutcome, SourcePatcher } from '../core/ports/source-patcher.ts';
+import type { PatchOutcome, SourcePatcher } from '../../ports/source-patcher.ts';
 
 const BLOCK_FILE = fileURLToPath(new URL('./statusline-block.py', import.meta.url));
 
@@ -55,7 +62,7 @@ export class StatuslinePatcher implements SourcePatcher {
     this.callRegion = StatuslinePatcher.region(blockSource, CALL_MARKERS);
   }
 
-  /** Reads the block from scripts/statusline-block.py, the one place it is maintained. */
+  /** Reads the block from statusline-block.py beside it, the one place it is maintained. */
   public static fromRepo(): StatuslinePatcher {
     return new StatuslinePatcher(readFileSync(BLOCK_FILE, 'utf8'));
   }

@@ -2,7 +2,7 @@
 // puts the file back exactly as it was, so `remove(apply(x)) === x` is the test the whole
 // control rests on — and it has to hold on CRLF, which is what statusline.py is on Windows.
 import { describe, expect, it } from 'vitest';
-import { StatuslinePatcher } from '../../scripts/statusline-patch.ts';
+import { StatuslinePatcher } from '../../../core/adapters/statusline/statusline-patcher.ts';
 
 /** The shape of statusline.py the patcher anchors on, trimmed to the two anchors. */
 const ORIGINAL = [

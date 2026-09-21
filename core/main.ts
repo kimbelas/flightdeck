@@ -31,6 +31,7 @@ import { CoreServer } from './http/core-server.ts';
 import { BUDGETS } from './http/limits.ts';
 import { LoopbackGuard } from './http/loopback-guard.ts';
 import { KeybindingHelper } from './application/keybinding-helper.ts';
+import { buildConnector } from './connect.ts';
 import { PasteInbox } from './application/paste-inbox.ts';
 import { BackingUpConfigFile } from './adapters/node/backing-up-config-file.ts';
 import { FsPastedImageStore } from './adapters/node/fs-pasted-image-store.ts';
@@ -41,7 +42,7 @@ import type { Route, StreamRoute } from './http/route.ts';
 import { warmUp } from './http/warm-up.ts';
 import { buildFeeds, type Feeds } from './feeds.ts';
 import { sessionVerbs, buildAsker } from './verbs.ts';
-import { buildRouter } from './routes.ts';
+import { buildRouter, type RouterParts } from './routes.ts';
 import { projectRoutes } from './projects.ts';
 import { buildDetailReader, buildPreviewReader } from './reads.ts';
 import { stopCore, type Running } from './shutdown.ts';
@@ -274,13 +275,7 @@ function buildHttp(parts: HttpParts): HttpSide {
         // P5a-T8. The directory is made on first paste, not at boot: a machine where nobody has
         // ever pasted an image has no `pasted\` folder to explain.
         paste: new PasteInbox({ store: new FsPastedImageStore(), clock, logger }),
-        // P5a-T7. The third sanctioned writer into `$CFG`, and the same `ConfigFile` Connect uses
-        // — back up, write temp, atomic rename, in that order, in one class (SEC-FS-3).
-        keybindings: new KeybindingHelper({
-          install,
-          files: new BackingUpConfigFile(),
-          logger,
-        }),
+        ...configWriters(install, parts.audit, logger),
         limiter,
         install,
         logger,
@@ -295,6 +290,30 @@ function buildHttp(parts: HttpParts): HttpSide {
   const sockets = new PtySocketServer({ guard, panes, tickets, logger });
   sockets.attachTo(server.raw);
   return { server, sockets, panes, tickets };
+}
+
+/**
+ * The two things allowed to write into `$CFG`, built together — P5a-T7 and P4-T6 (SEC-FS-3).
+ *
+ * Together because they are one idea rather than two neighbours: both rewrite a file the owner
+ * owns, both plan before they write, both back up first, and both can take every byte back out.
+ * `audit` rides along because it is what the Connect write records into and nothing else in this
+ * group needs it — a reader looking for "what can change my Claude Code config, and where is that
+ * written down" finds all of it here.
+ */
+function configWriters(
+  install: ClaudeInstall,
+  audit: AuditLog,
+  logger: Logger,
+): Pick<RouterParts, 'keybindings' | 'connector' | 'audit'> {
+  return {
+    // The same `ConfigFile` Connect uses — back up, write temp, atomic rename, in one class.
+    keybindings: new KeybindingHelper({ install, files: new BackingUpConfigFile(), logger }),
+    // Built by `connect.ts`, which `npm run connect` calls too, so the plan the panel shows and
+    // the plan the terminal prints cannot come apart.
+    connector: buildConnector(install, logger),
+    audit,
+  };
 }
 
 /**

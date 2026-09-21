@@ -7,46 +7,22 @@
 // It prints a whole unified diff per file, names the backup each write will produce, and refuses
 // out loud. It never prints the token or the ingest key (SEC-DATA-4) — the hooks block it writes
 // contains `${FLIGHTDECK_TOKEN}`, a name, so the diff is safe to paste anywhere.
-import { homedir } from 'node:os';
-import { join } from 'node:path';
-import type { ConnectPlan } from '../contracts/connect-plan.ts';
-import { INGEST_KEY_ENV_VAR, ingestKeyFile } from '../contracts/ingest-key.ts';
+//
+// **The Connector itself is built by `core/connect.ts` as of P4-T6**, because the deck presses the
+// same two buttons through `/connect` now. Two assemblies would be two answers to "what would
+// Connect write?", which is the one question this command exists to answer before anything moves.
+import {
+  INGEST_KEY_ENV_VAR,
+  type ConnectDirection,
+  type ConnectPlan,
+} from '../contracts/connect-plan.ts';
+import { ingestKeyFile } from '../contracts/ingest-key.ts';
+import { unifiedDiff } from '../contracts/text-diff.ts';
 import { ClaudeInstall } from '../core/adapters/claude-cli/claude-install.ts';
 import { ConsoleLogger } from '../core/adapters/console-logger.ts';
-import { BackingUpConfigFile } from '../core/adapters/node/backing-up-config-file.ts';
-import { HttpCoreHealth } from '../core/adapters/node/http-core-health.ts';
-import { UserEnvironmentVariable } from '../core/adapters/windows/user-environment-variable.ts';
-import { Connector, type Direction } from '../core/application/connector.ts';
-import { unifiedDiff } from '../core/shared/text-diff.ts';
-import { StatuslinePatcher } from './statusline-patch.ts';
+import { buildConnector } from '../core/connect.ts';
 
-/**
- * The shared statusline.py both subscriptions' `statusLine.command` point at.
- *
- * `~/.claude/hooks/`, the legacy config dir, which D14 keeps visible for exactly this reason: both
- * live configs reference it. It is patched once, not once per subscription.
- */
-function statuslinePath(): string {
-  return join(homedir(), '.claude', 'hooks', 'statusline.py');
-}
-
-function buildConnector(): Connector {
-  const install = new ClaudeInstall();
-  return new Connector({
-    files: new BackingUpConfigFile(),
-    health: new HttpCoreHealth(),
-    patcher: StatuslinePatcher.fromRepo(),
-    environment: new UserEnvironmentVariable(),
-    settingsPaths: [
-      { subscription: '365', path: join(install.configDirFor('365'), 'settings.json') },
-      { subscription: 'isg', path: join(install.configDirFor('isg'), 'settings.json') },
-    ],
-    statuslinePath: statuslinePath(),
-    logger: new ConsoleLogger(),
-  });
-}
-
-function printPlan(direction: Direction, plan: ConnectPlan): void {
+function printPlan(direction: ConnectDirection, plan: ConnectPlan): void {
   if (!plan.ok) {
     console.log(`\n${direction} REFUSED:\n`);
     for (const refusal of plan.refusals) console.log(`  ${refusal.path}\n    ${refusal.reason}`);
@@ -70,8 +46,8 @@ function printPlan(direction: Direction, plan: ConnectPlan): void {
   }
 }
 
-async function run(direction: Direction, apply: boolean): Promise<number> {
-  const connector = buildConnector();
+async function run(direction: ConnectDirection, apply: boolean): Promise<number> {
+  const connector = buildConnector(new ClaudeInstall(), new ConsoleLogger());
   const plan = connector.plan(direction);
   printPlan(direction, plan);
   if (!plan.ok) return 1;
@@ -100,7 +76,7 @@ async function run(direction: Direction, apply: boolean): Promise<number> {
 }
 
 const argv = process.argv.slice(2);
-const direction: Direction = argv.includes('disconnect') ? 'disconnect' : 'connect';
+const direction: ConnectDirection = argv.includes('disconnect') ? 'disconnect' : 'connect';
 void run(direction, argv.includes('--apply')).then((code) => {
   process.exitCode = code;
 });

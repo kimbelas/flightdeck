@@ -3147,3 +3147,46 @@ respawning that same session by name works — so "all" is the flag's spelling, 
 And `claude update`'s stdout is not only `claude update`'s: it runs a session lifecycle and fires
 the `SessionEnd` hook, so with core down it carries an ECONNREFUSED against **Flightdeck's own
 port**. Two ways to ship a screen that lies, both found by running the thing once each.
+
+### G.44 The type-only import that was load-bearing (P4-T6, 2026-09-21)
+
+Three sabotages on the smoke and one on the unit suite, each removing the mechanism its checks
+depend on (G.32), each verified to have LANDED before the result was read (G.38, G.40).
+
+| sabotage | what failed |
+| --- | --- |
+| re-print settings.json in `stringify`'s LF instead of the file's own endings | smoke: `disconnect restored .claude-isg\settings.json byte for byte`, detail `differs at 1: "\r\n  \"model\"…" vs "\n  \"model\"…"` |
+| put a literal key in the hooks block's `Authorization` | smoke: `and the Authorization header is the variable NAME, never a key`, detail `"Authorization": "Bearer 5f3c…"` |
+| render the write button outside the plan | smoke: `nothing can be written before a plan has been shown` |
+| stop the write route writing an audit row | 4 `ConnectWriteRoute` tests |
+
+**The first sabotage found a check that could not see G.13's own bug.** "Including the CRLF the isg
+file uses" asked whether the restored file *contained* a `\r\n`. Under a whole-file LF rewrite it
+still did — the trailing one survived — so the check passed while the file it was about had been
+rewritten in the wrong convention. That is G.13 exactly: a rewrite that keeps one line of the
+original. The check counts now: every `\n` in that file must be a `\r\n`, and it reports `1 of 3`
+under the sabotage. **A containment check on a whole-file property is not a check.**
+
+**`npm run check` was green, both TypeScript projects were green, and `next build` failed.**
+`contracts/keybinding-plan.ts` had imported `FileChange` from `connect-plan.ts` as a **type**, which
+is erased; P4-T6 made it import two parser functions from the same module as values. That pulled
+`connect-plan.ts` → `contracts/ingest-key.ts` → `node:fs` into the browser bundle, and Turbopack
+refused with "the chunking context does not support external modules (request: node:fs)". The file
+had said `**Server-only.** … nothing under a 'use client' boundary may import it` since P1-T11, and
+nothing enforced it — a type-only import was holding the boundary by accident. The variable's NAME
+moved to `connect-plan.ts`, which needs no filesystem to spell it; the key's location and reader
+stayed behind. **An import whose `type` keyword is load-bearing is a boundary with no guard on it**,
+and the only thing that reported it was a build the unit suite does not run.
+
+**Live, the panel's honest answer is "nothing to do".** This machine has been connected since
+P1-T11, so `show what connecting would write` renders four "nothing to do" lines and **no write
+button at all** — measured against the real `~/.claude-365`, `~/.claude-isg` and
+`~/.claude/hooks/statusline.py`. The reverse direction is the one with something to say: three files,
+−1 899 / −1 984 / −2 845 bytes, and `withdraw` for the environment step. Neither was applied; the
+plan route reads and the write button was never pressed on this machine.
+
+**Two orders on one screen.** `connect-cli.ts` built its Connector with `['365', 'isg']` spelled out
+and `doctor-cli.ts` built an identical one with `SUBSCRIPTION_IDS`, which is `['isg', '365']`. Nobody
+noticed while both only printed to a terminal one at a time; the deck rendering the same plan made
+the fixture and the live machine disagree about which subscription came first. All three
+constructions are now one function in `core/connect.ts`, over `SUBSCRIPTION_IDS`.
