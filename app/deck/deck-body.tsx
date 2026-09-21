@@ -85,6 +85,7 @@ function DeckLeft({ rows, state, now, expanded, actions, onToggle }: DeckLeftPro
         now={now}
         loading={state.loading}
         coreUp={state.coreUp}
+        quota={state.quota}
         search={search}
         expanded={expanded}
         details={detailViewModels(state.details)}

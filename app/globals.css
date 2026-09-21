@@ -871,6 +871,20 @@ button.ghost {
   resize: vertical;
 }
 
+/* The quota recommendation under the picker (P4-T3). One line, dim by default: it is advice the
+   owner may ignore, and advice that shouts is advice that gets switched off. It brightens only
+   when the picker is NOT on the recommended account, which is the one case worth a second look. */
+.quota-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--dim);
+}
+
+.quota-hint-overridden {
+  color: var(--warn);
+}
+
 /* ---- the pane area: chooser, then the grid (P5a-T5) ---- */
 
 .pane-area {

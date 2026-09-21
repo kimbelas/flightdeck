@@ -497,6 +497,7 @@ async function streamChecks(page, report, core) {
  * with itself is not the thing that can break.
  */
 async function launchChecks(page, report, core) {
+  await routingChecks(page, report, core);
   await launchGateChecks(page, report, core);
 
   await page.locator('[aria-label="profile function"]').selectOption('claude-isg-ticket');
@@ -527,6 +528,99 @@ async function launchChecks(page, report, core) {
     () => core.requests.filter((request) => request.path === '/sessions').length > before,
   );
   report.check('refresh forces a sweep through the rewrite', swept);
+}
+
+/**
+ * The quota-aware picker — P4-T3, SPEC §5.2.
+ *
+ * Three properties, and the middle one is the whole task. The fixture has `isg` bound by its 5h
+ * window at 42 % (58 % free) and `365` bound by its 5h at 88 % (12 % free), so the recommendation
+ * is `claude-isg` and the form must open on it rather than on the `claude-365` it defaults to.
+ *
+ * **The override check is the one a unit test cannot reach.** A `quota` frame arrives on every
+ * statusLine render. The bug this guards against is an effect that pushes the recommendation into
+ * the select: the owner picks `claude-365`, keeps typing their prompt, a frame lands, and the
+ * launch goes to the other account. So a frame is published AFTER the override with different
+ * numbers in it, the check waits for the hint to prove that frame was applied, and only then reads
+ * the select. Asserting the select alone would pass against a form that never saw the frame.
+ *
+ * Every read goes through `allTextContents()`, which answers `[]` for an absent element, rather
+ * than `textContent()`, which throws and takes the rest of the run with it (G.40).
+ */
+async function routingChecks(page, report, core) {
+  const picker = page.locator('[aria-label="profile function"]');
+  const hint = page.locator('[aria-label="quota recommendation"]');
+
+  const opened = await waitFor(async () => (await picker.inputValue()) === 'claude-isg');
+  report.check(
+    'the picker opens on the account with the most headroom, not on the default',
+    opened,
+    `select = ${await picker.inputValue()}`,
+  );
+  const sentence = (await hint.allTextContents())[0] ?? '';
+  report.check(
+    'and the advice names both figures and the window it judged on',
+    sentence.includes('isg 58% free (5h)') && sentence.includes('365 12% free (5h)'),
+    sentence,
+  );
+  // The check that caught the one real bug in this task. The select and the hint are derived from
+  // the same recommendation, and the first version asked the hint about the untouched DEFAULT
+  // while the select already showed the RECOMMENDED one — so a form nobody had touched reported
+  // itself as overridden and drew its advice in the warning colour.
+  report.check(
+    'a form nobody has touched does not claim to have been overridden',
+    sentence.includes('most headroom') &&
+      !((await hint.getAttribute('class')) ?? '').includes('quota-hint-overridden'),
+    sentence,
+  );
+
+  await picker.selectOption('claude-365');
+  core.publish('quota', emptierIsg(core.fixture.quota));
+  const applied = await waitFor(async () =>
+    ((await hint.allTextContents())[0] ?? '').includes('95% free'),
+  );
+  report.check('a later quota frame reaches the form', applied);
+  report.check(
+    'and it does NOT move a picker the owner has already set — the override is permanent',
+    (await picker.inputValue()) === 'claude-365',
+    `select = ${await picker.inputValue()}`,
+  );
+  report.check(
+    'the hint marks the override rather than hiding the recommendation',
+    ((await hint.getAttribute('class')) ?? '').includes('quota-hint-overridden'),
+  );
+
+  await picker.selectOption('claude-isg-ticket');
+  const pinned = await waitFor(async () =>
+    ((await hint.allTextContents())[0] ?? '').includes('isg by construction'),
+  );
+  report.check(
+    'a function that is isg by construction is told so, not offered a swap (D44)',
+    pinned,
+  );
+  report.check(
+    'and no headroom figures are printed beside a swap that cannot be made',
+    !((await hint.allTextContents())[0] ?? '').includes('% free'),
+  );
+
+  core.publish('quota', core.fixture.quota);
+  await picker.selectOption('claude-365');
+}
+
+/** The fixture's quota with `isg` almost empty, so a re-applied recommendation would be visible. */
+function emptierIsg(quota) {
+  return {
+    ...quota,
+    subscriptions: quota.subscriptions.map((entry) =>
+      entry.subscription === 'isg'
+        ? {
+            ...entry,
+            fiveHour: { ...entry.fiveHour, usedPercentage: 5 },
+            sevenDay: { ...entry.sevenDay, usedPercentage: 5 },
+          }
+        : entry,
+    ),
+  };
 }
 
 /**

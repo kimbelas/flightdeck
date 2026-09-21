@@ -2876,3 +2876,37 @@ rather than a rule for this one file: **read with `allTextContents()`, which ans
 `textContent()`, which throws**, and press a button through a helper that looks first. Re-run with
 that in place: 4 of 220 failed and the other 216 still reported.
 
+
+### G.41 The derived default that reported itself as overridden (P4-T3, 2026-09-21)
+
+Three sabotages, each removing the mechanism its checks depend on (G.32), each verified to have
+LANDED before the result was read (G.38, G.40).
+
+| sabotage | what failed |
+| --- | --- |
+| take headroom off the 5h window instead of the fuller one | `tests/contracts/quota-routing.test.ts`: 4 of 12 FAIL, starting with the case the task exists for |
+| drop `ROUTING_MARGIN_POINTS`, so any gap recommends a swap | same file: 2 FAIL — `tie` and the at-the-margin boundary |
+| let the recommendation win over the owner's pick | smoke: 7 of 228 FAIL, and the damage runs downstream into P4-T2's launch checks |
+
+The third is the one worth recording. It fails **seven** checks, not the two it targets: with the
+override gone the picker snaps back to `claude-isg` and the three P4-T2 checks that select a
+function and assert what core received fail too. A sabotage whose blast radius is larger than the
+check that names it is a sabotage that removed something real.
+
+**The bug this task actually shipped past its unit tests was found by READING a passing check.**
+All 227 checks were green, and the detail printed beside one of them read
+`claude-isg has more headroom — 365 12% free (5h) · isg 58% free (5h)`. That sentence is the
+*overridden* phrasing, on a form nobody had touched. The select and the hint are both derived from
+the recommendation, and the first version asked the hint about the untouched default
+(`claude-365`) while the select already showed the recommended one (`claude-isg`) — so a freshly
+loaded deck drew its advice in the warning colour and told the owner they had overridden something
+they had not. The fix is two calls to a pure function: ask for the comparison with no `chosen`,
+derive what the select shows, then ask for the verdict with that.
+
+Two lessons, and the first is new. **`Report.check`'s `detail` is evidence, and it is only evidence
+if somebody reads it** — the check passed because it asserted the two figures, which were right; the
+headline it did not assert was wrong. A check that reads part of a string will pass on a string that
+is wrong in the part it skipped, so print the whole thing and look at it. The second is G.29 again
+from the other side: the check that caught this did not exist until the output was read, and it is
+now the one that would catch it again (`a form nobody has touched does not claim to have been
+overridden`).

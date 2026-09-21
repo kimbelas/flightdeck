@@ -19,7 +19,12 @@
 // about events this screen does not have.
 import type { CoreStatus, SessionVitalsLine } from '../contracts/core-status.ts';
 import { parseCoreStatus } from '../contracts/core-status.ts';
-import { summariseQuota, type SubscriptionQuota } from '../contracts/quota-summary.ts';
+import {
+  summariseQuota,
+  type QuotaSummary,
+  type SubscriptionQuota,
+} from '../contracts/quota-summary.ts';
+import { recommendRouting, type RoutingVerdict } from '../contracts/quota-routing.ts';
 import { parseDeckSnapshot, type DeckSnapshot, type SessionRow } from '../contracts/session-row.ts';
 import {
   HttpCoreClient,
@@ -130,7 +135,37 @@ function counters(status: CoreStatus): readonly string[] {
  */
 function quota(status: CoreStatus, now: number): readonly string[] {
   const summary = summariseQuota(status.vitals, { at: now, spendSince: startOfLocalDay(now) });
-  return summary.subscriptions.map((entry) => quotaLine(entry, now));
+  return [
+    ...summary.subscriptions.map((entry) => quotaLine(entry, now)),
+    routingLine(summary, now),
+  ];
+}
+
+/**
+ * Where the next session belongs, by the same rule the deck's picker applies (P4-T3).
+ *
+ * `recommendRouting` rather than a comparison written here, for the reason the block above uses
+ * `summariseQuota`: a CLI that decided differently from the launch form would be two screens
+ * recommending different accounts, which is worse than neither recommending anything. No `chosen`
+ * is passed — there is no picker on a terminal, and a fake selection would make `not_routable`
+ * reachable from a screen that cannot launch anything.
+ */
+function routingLine(summary: QuotaSummary, now: number): string {
+  const routing = recommendRouting(summary, { now });
+  const figures = routing.headroom
+    .map((entry) =>
+      entry.headroom === undefined
+        ? `${entry.subscription} —`
+        : `${entry.subscription} ${String(Math.round(entry.headroom))}% free` +
+          (entry.boundWindow === undefined ? '' : ` (${entry.boundWindow})`),
+    )
+    .join(' · ');
+  return `  start on  ${(routing.recommended ?? verdictWord(routing.verdict)).padEnd(8)} ${figures}`;
+}
+
+/** What to print where a function name would go when there is nothing to recommend. */
+function verdictWord(verdict: RoutingVerdict): string {
+  return verdict === 'tie' ? 'either' : '—';
 }
 
 function quotaLine(entry: SubscriptionQuota, now: number): string {

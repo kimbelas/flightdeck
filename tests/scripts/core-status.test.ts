@@ -135,6 +135,59 @@ describe('renderStatus — the counters', () => {
   });
 });
 
+describe('renderStatus — where the next session belongs (P4-T3)', () => {
+  it('recommends the account with the most headroom, and prints both figures', () => {
+    // Only `isg` has reported in the default fixture, so the pair cannot be compared. Give `365`
+    // a reading that is comfortably emptier than isg's binding 7d window (88% used, 12% free).
+    const screen = render({
+      status: status({
+        vitals: [
+          vitals(),
+          vitals({
+            sessionId: '9f1c77aa-0000-4000-8000-000000000001',
+            subscription: '365',
+            fiveHourPercentage: 10,
+            sevenDayPercentage: 20,
+          }),
+        ],
+      }),
+      sessions: snapshot([]),
+    });
+    const line = screen.split('\n').find((text) => text.includes('start on')) ?? '';
+
+    expect(line).toContain('claude-365');
+    expect(line).toContain('365 80% free (7d)');
+    expect(line).toContain('isg 12% free (7d)');
+  });
+
+  it('prints `either` rather than a recommendation when the two are level', () => {
+    const screen = render({
+      status: status({
+        vitals: [
+          vitals({ fiveHourPercentage: 50, sevenDayPercentage: 50 }),
+          vitals({
+            sessionId: '9f1c77aa-0000-4000-8000-000000000001',
+            subscription: '365',
+            fiveHourPercentage: 51,
+            sevenDayPercentage: 52,
+          }),
+        ],
+      }),
+      sessions: snapshot([]),
+    });
+
+    expect(screen).toContain('start on  either');
+  });
+
+  it('recommends nothing when an account has not reported — silence is not an empty account', () => {
+    const screen = render({ status: status(), sessions: snapshot([]) });
+    const line = screen.split('\n').find((text) => text.includes('start on')) ?? '';
+
+    expect(line).toContain('365 —');
+    expect(line).not.toContain('claude-365');
+  });
+});
+
 describe("renderStatus — the table, which is P1's gate", () => {
   it('prints subscription, name, state, flags, model, context, cost and both quotas', () => {
     const screen = render({ status: status(), sessions: snapshot([row()]) });
