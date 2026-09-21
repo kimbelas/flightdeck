@@ -99,12 +99,22 @@ describe('DirectAskCommands — SEC-PROC-1, the prompt is a value', () => {
 
   it('names the account by config directory, chosen from the closed union', () => {
     // The browser asks for `365`, never for a folder (SECURITY.md §11 rule 2).
+    //
+    // Compared against `ClaudeInstall`'s own answer rather than against a pinned string: `join`
+    // uses the HOST separator, so a literal `C:\Users\ada\.claude-365` passes on Windows and fails
+    // on the Linux runner as `C:\Users\ada/.claude-365`. What is worth asserting is that the
+    // adapter takes the directory from the install and picks it by subscription — which is the
+    // control — not which slash this machine happens to write.
+    const install = new ClaudeInstall(HOME, BIN);
+
     expect(commands().forRun(request({ subscription: '365' }))?.env['CLAUDE_CONFIG_DIR']).toBe(
-      'C:\\Users\\ada\\.claude-365',
+      install.configDirFor('365'),
     );
     expect(commands().forRun(request({ subscription: 'isg' }))?.env['CLAUDE_CONFIG_DIR']).toBe(
-      'C:\\Users\\ada\\.claude-isg',
+      install.configDirFor('isg'),
     );
+    expect(install.configDirFor('365')).not.toBe(install.configDirFor('isg'));
+    expect(install.configDirFor('365').endsWith('.claude-365')).toBe(true);
   });
 
   it('starts in a named folder, or in core’s own when none was given', () => {
