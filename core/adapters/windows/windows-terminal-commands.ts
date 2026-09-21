@@ -22,7 +22,7 @@
 // window, measured: `-w 0` hands off to the running Windows Terminal and the variables still
 // arrive (G.50). That is the fact this whole design rests on; without it the config directory
 // would have had to be composed into the script.
-import { join } from 'node:path';
+import { win32 } from 'node:path';
 import type { Logger } from '../../ports/logger.ts';
 import type { ProcessRequest, ProcessRunner } from '../../ports/process-runner.ts';
 import type { PopoutSpec, TerminalCommands } from '../../ports/terminal-commands.ts';
@@ -146,7 +146,9 @@ export class WindowsTerminalCommands implements TerminalCommands {
       this.parts.logger.warn('windows_terminal_absent', { code: result.code });
       return undefined;
     }
-    return join(location, 'wt.exe');
+    // `win32.join`, not `join`: this is a Windows path whatever the host is, and the unit suite
+    // runs on Linux in CI, where the platform-shaped `join` would separate it with `/`.
+    return win32.join(location, 'wt.exe');
   }
 }
 

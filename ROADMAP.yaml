@@ -3250,6 +3250,9 @@ phases:
           tab titled `fd-popout-probe` running
           `powershell -NoLogo -NoExit -Command "& $env:FD_CLAUDE attach $env:FD_SESSION"`.
           `npm run check` 198 files / 2 426 tests; `npm run smoke` 363 checks.
+          One more found by CI rather than by the suite: the resolved binary was composed with
+          `node:path.join`, which is platform-shaped, and the unit job runs on Linux — so the
+          Windows path came back `...__8wek/wt.exe` there and `\wt.exe` here. `win32.join`.
       - id: P6-T3
         title: Windows toasts from core (toasted-notifier) with per-session mute
         status: todo
