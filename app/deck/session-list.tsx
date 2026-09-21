@@ -3,6 +3,7 @@
 // The left column: start a session, filter the list, then every session that survived the filter.
 import type { JSX } from 'react';
 import type { PresetLaunch } from '../../contracts/launch-preset.ts';
+import type { QuotaSummary } from '../../contracts/quota-summary.ts';
 import { SEARCH_INPUT_ID } from './deck-keyboard.ts';
 import { LaunchForm } from './launch-form.tsx';
 import type { SessionDetailViewModel } from './session-detail-view-model.ts';
@@ -16,6 +17,8 @@ interface SessionListProps {
   readonly now: number;
   readonly loading: boolean;
   readonly coreUp: boolean;
+  /** Both accounts' gauges, for the launch form's quota-aware picker (P4-T3). */
+  readonly quota: QuotaSummary | undefined;
   readonly search: string;
   /** Which rows are open, by `SessionRowViewModel.key`. A set, because several can be. */
   readonly expanded: ReadonlySet<string>;
@@ -39,12 +42,31 @@ interface SessionListProps {
 }
 
 export function SessionList(props: SessionListProps): JSX.Element {
-  const { rows, now, expanded, details, previews, onToggle, onOpen, onResume, onStop } = props;
   return (
     <section className="rows" aria-label="sessions">
-      <LaunchForm disabled={!props.coreUp || props.loading} onLaunch={props.onLaunch} />
+      <LaunchForm
+        disabled={!props.coreUp || props.loading}
+        quota={props.quota}
+        now={props.now}
+        onLaunch={props.onLaunch}
+      />
       <SessionSearch search={props.search} onSearch={props.onSearch} />
-      {rows.length === 0 && !props.loading && <EmptyRows search={props.search} />}
+      {props.rows.length === 0 && !props.loading && <EmptyRows search={props.search} />}
+      <SessionRows {...props} />
+    </section>
+  );
+}
+
+/**
+ * Every row that survived the filter.
+ *
+ * Split from `SessionList` when the launch form grew its quota props, and it is the right seam
+ * regardless: the section above it is four controls that do not change when a session does.
+ */
+function SessionRows(props: SessionListProps): JSX.Element {
+  const { rows, now, expanded, details, previews, onToggle, onOpen, onResume, onStop } = props;
+  return (
+    <>
       {rows.map((row) => (
         <SessionRowCard
           key={row.key}
@@ -74,7 +96,7 @@ export function SessionList(props: SessionListProps): JSX.Element {
           }}
         />
       ))}
-    </section>
+    </>
   );
 }
 

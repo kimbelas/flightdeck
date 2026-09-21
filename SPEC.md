@@ -316,10 +316,19 @@ change); a cross-project table (which repos lack a `CLAUDE.md`, have no hooks, a
   project), permission mode, budget cap. For *"summarise what changed in this repo today"*.
 - **Dispatch** — `--bg` for real work; appears as a row at once; attachable when you want to steer.
 
-**The subscription picker is quota-aware**: both 5h/7d gauges from the statusLine heartbeat, the
-one with more headroom pre-selected, override allowed. This is the daily question nothing answers
-today. **Also here:** the Claude Code version chip (2.1.267 shared by both subs), `claude update`,
-`respawn --all`, and `claude doctor` output.
+**The subscription picker is quota-aware** — built in P4-T3, D46. Both 5h/7d gauges come from the
+statusLine heartbeat, and the account with more headroom is pre-selected, override allowed. This is
+the daily question nothing answers today. Three things the sentence above left open and the build
+had to settle: **headroom is 100 minus the fuller of the two windows**, because an account at
+5h 10 % / 7d 95 % looks free on the bar that moves and has five points of week left; the advice
+**names the window it judged on**, or it contradicts the gauge beside it; and the pre-selection is a
+**default rather than a write**, because a `quota` frame arrives on every render and an effect that
+pushed it into the select would undo the owner's choice mid-prompt. The picker declines to
+recommend in three cases it words differently — a gap under five points (`tie`), an account that
+has never reported (`incomparable`), and the two profile functions that are `~\.claude-isg` by
+construction (`not_routable`, D44). `flightdeck-core status` prints the same recommendation from
+the same pure rule. **Also here:** the Claude Code version chip (2.1.267 shared by both subs),
+`claude update`, `respawn --all`, and `claude doctor` output.
 
 ### 5.3 F3 — The terminal grid
 

@@ -1300,3 +1300,45 @@ by accident".
 prompted would be one nothing could call twice, and what it owes instead is the audit row.
 SEC-PROC-3 exists for exactly this verb: `daemon.log` cannot tell a deletion from a session that
 ended on its own (F.2.3), so the row is the only record that it was Flightdeck that did it.
+
+## D46 — headroom is the fuller window, and the recommendation is a default rather than a write (decided 2026-09-21, P4-T3)
+
+SPEC §5.2 has said since rev 1 that the subscription picker is quota-aware, "the one with more
+headroom pre-selected, override allowed". Two of those words carried a decision nobody had made.
+
+**"More headroom" had to mean something, and the obvious meaning is wrong.** There are two windows
+per account, not one. An account at 5h 10 % / 7d 95 % draws an almost empty five-hour bar — which
+is the bar the owner actually watches, because it is the one that moves — and has five points of
+room before it stops accepting work for the rest of the week. A rule that read the five-hour gauge
+would recommend that account confidently, every time, and the owner would find out at the moment a
+session stopped. So headroom is **100 minus the fuller of the two windows**, the binding constraint
+is what decides, and `boundWindow` travels out with the answer so the advice names the window it
+was derived from. Without that the sentence contradicts the gauge beside it and reads as a bug.
+
+**Three different ways to decline, because they are three different sentences.** A gap under
+`ROUTING_MARGIN_POINTS` is a `tie` — a `quota` frame arrives on every statusLine render, so
+recommending a swap on a one-point difference would move the pre-selection under the owner's
+cursor every few seconds. An account that has never reported makes the pair `incomparable`: no
+reading is not 100 % free, and the account nothing has run on all day is also the one whose 7-day
+window nobody has looked at. And `claude-isg-ticket` / `claude-isg-orch` are `not_routable`, which
+is D44's consequence arriving exactly where it was predicted to (`ROUTABLE_PROFILE_FUNCTIONS`) —
+a picker offering a swap on those would be offering something it cannot do.
+
+**Staleness qualifies the advice; it never withdraws it.** Dropping an old reading would blank the
+recommendation on an idle machine, which is precisely where the first session of the day gets
+started. The age goes out with the number, as it already does in the header.
+
+**The half that is not a rule: the recommendation is a DEFAULT, not a write.** This is the part
+that would have been a bug in any implementation reached for by reflex. The natural shape is an
+effect that pushes the recommendation into the select when the quota changes — and the quota
+changes every few seconds, so that effect re-picks forever: the owner chooses an account, keeps
+typing their prompt, a frame lands, and the launch goes somewhere else. There is no effect. The
+override is a `useState` that starts `undefined`, the rendered value is
+`picked ?? recommended ?? claude-365`, and the first deliberate change wins permanently. "Override
+allowed" is not a mode the form enters; it is what a `useState` already is.
+
+**One rule, two screens.** `recommendRouting` is pure and in `contracts/` for the reason
+`summariseQuota` is: `flightdeck-core status` prints a `start on` line from it too, and a CLI that
+compared the accounts its own way would be two screens recommending different ones — which is worse
+than neither recommending anything. `chosen` is optional precisely so the CLI can ask the question
+honestly, with nothing selected, instead of inventing a selection to get an answer.

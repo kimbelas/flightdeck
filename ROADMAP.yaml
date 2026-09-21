@@ -9,7 +9,7 @@
 
 version: 1
 project: flightdeck
-updated: 2026-09-20
+updated: 2026-09-21
 
 docs:
   spec: SPEC.md
@@ -2093,7 +2093,65 @@ phases:
         security: [SEC-PROC-1, SEC-PROC-2, SEC-PROC-3]
       - id: P4-T3
         title: Quota model and recommendation (most headroom, override allowed)
-        status: todo
+        status: done
+        done_on: 2026-09-21
+        deliverables:
+          [
+            contracts/quota-routing.ts,
+            app/deck/routing-view-model.ts,
+            app/deck/launch-form.tsx,
+            app/deck/session-list.tsx,
+            app/deck/deck-body.tsx,
+            app/globals.css,
+            scripts/core-status.ts,
+            tests/contracts/quota-routing.test.ts,
+            tests/app/routing-view-model.test.ts,
+            tests/scripts/core-status.test.ts,
+            tests/e2e/smoke/deck-checks.mjs,
+            DECISIONS.md D46,
+            RESEARCH.md G.41,
+          ]
+        notes: >-
+          The MODEL was already built — P2-T3's `summariseQuota` decides which of an account's
+          readings represents it, and the header has drawn both pairs of gauges since. What was
+          missing is the RECOMMENDATION, and SPEC §5.2's one sentence for it ("the one with more
+          headroom pre-selected, override allowed") hid two decisions and one trap. D46 argues all
+          three.
+          **"More headroom" is 100 minus the FULLER window, not minus the 5-hour one.** There are
+          two windows per account. An account at 5h 10 % / 7d 95 % draws an almost empty five-hour
+          bar — the bar that moves, so the bar the owner watches — and has five points of room
+          before it stops accepting work for the rest of the week. Reading the 5-hour gauge would
+          recommend it confidently every time and the owner would find out when a session stopped.
+          The binding window decides, and `boundWindow` is published so the sentence can name it;
+          without that the advice contradicts the gauge beside it and reads as a bug.
+          **Three ways to decline, worded differently because they are different facts.** A gap
+          under `ROUTING_MARGIN_POINTS` (5) is a `tie` — a `quota` frame arrives on every statusLine
+          render, so recommending on a one-point difference would move the pre-selection under the
+          owner's cursor. An account that has never reported makes the pair `incomparable`: silence
+          is not 100 % free, and the account nobody has used today is also the one whose 7-day
+          window nobody has looked at. The two pinned functions are `not_routable` — D44's
+          consequence arriving exactly where D44 predicted it, via `ROUTABLE_PROFILE_FUNCTIONS`.
+          Staleness qualifies the advice and never withdraws it, or the recommendation would go
+          blank on the idle machine where the first session of the day gets started.
+          **The trap: the recommendation is a DEFAULT, never a write.** The shape reached for by
+          reflex is an effect that pushes the recommendation into the select when the quota changes
+          — and the quota changes every few seconds, so that effect re-picks forever: choose an
+          account, keep typing, a frame lands, launch goes elsewhere. There is no effect. `picked`
+          is a `useState` starting `undefined` and the rendered value is
+          `picked ?? recommended ?? claude-365`, so the first deliberate change wins permanently.
+          Sabotaged, it fails seven smoke checks — three of them P4-T2's, which is how you know the
+          mechanism was real.
+          **One rule, two screens**, as P2-T3 established: `flightdeck-core status` grew a
+          `start on` line from the same pure function, and `chosen` is optional so a terminal can
+          ask the question without inventing a selection to get an answer. No `GET /quota` — the
+          route BUILD-PLAN promised is recorded as not built, because the frame has carried this
+          since P2-T3 and the recommendation is derived, not served.
+          **G.41 is the lesson, and it came from reading a PASSING check.** All 227 were green; the
+          detail printed beside one read `claude-isg has more headroom` — the overridden phrasing —
+          on a form nobody had touched, because the hint was asked about the untouched default
+          while the select already showed the recommended one. A check that asserts part of a
+          string passes on a string that is wrong in the part it skipped. Print the whole thing and
+          look at it.
       - id: P4-T4
         title: Ask — headless stream-json run with budget cap, streamed into the deck
         status: todo
