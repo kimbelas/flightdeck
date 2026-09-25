@@ -13,6 +13,7 @@ import { IngestKeyIssuer } from './application/ingest-key-issuer.ts';
 import { PaneRegistry } from './application/pane-registry.ts';
 import { type Reconciler } from './application/reconciler.ts';
 import { type TranscriptIndexer } from './application/transcript-indexer.ts';
+import { type SpendLedger } from './application/spend-ledger.ts';
 import { AuditLog } from './application/audit-log.ts';
 import { StatusReport } from './application/status-report.ts';
 import { type ToastAnnouncer } from './application/toast-announcer.ts';
@@ -89,6 +90,8 @@ export interface Core {
    * owns a five-minute timer, and one nobody started is a search box that finds nothing.
    */
   readonly indexer: TranscriptIndexer;
+  /** The spend ledger — P7-T3. Started by `startCore`, for the indexer's reason. */
+  readonly ledger: SpendLedger;
   /**
    * The durable log (P1-T8). Closed by `shutdown`.
    *
@@ -138,7 +141,7 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
   // Opened before the feeds, because they are constructed around it — and before `listen`, so a
   // store that cannot be opened stops core at boot rather than on the first hook.
   const store = new SqliteStore(storeFile());
-  const feeds = buildFeeds({ install, sessions, store, clock, logger });
+  const feeds = buildFeeds({ install, sessions, store, spendStore: store.spend, clock, logger });
   // SEC-PROC-3: every mutating action writes a row, and `POST /launch` is the only one today.
   const audit = new AuditLog(store, clock, logger);
   // Built before the server binds, because an imported root is a security input: a route that
@@ -171,6 +174,7 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
     transcripts: feeds.transcripts,
     toasts: feeds.toasts,
     indexer: feeds.indexer,
+    ledger: feeds.ledger,
     store,
     logger,
     tokenPath: tokenFile.location(),

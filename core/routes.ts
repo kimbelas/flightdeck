@@ -23,6 +23,7 @@ import { SearchRoute, type TranscriptSearch } from './http/search-route.ts';
 import { OtlpLogsRoute, OtlpMetricsRoute, type OtlpRouteParts } from './http/otlp-routes.ts';
 import { TelemetryRoute } from './http/telemetry-route.ts';
 import { SearchToolsRoute, type TranscriptToolList } from './http/search-tools-route.ts';
+import { SpendRoute } from './http/spend-route.ts';
 import { HandoffRoute, type SessionForker } from './http/handoff-route.ts';
 import { LaunchRoute } from './http/launch-route.ts';
 import { MutesReadRoute, MutesWriteRoute } from './http/mutes-route.ts';
@@ -142,6 +143,8 @@ export function buildRouter(parts: RouterParts, extra: readonly Route[]): Reques
     // P7-T1/T2: the index with SPEC §5.8's filters, and how far its hours-long backfill has got.
     new SearchRoute(parts.search, parts.feeds.indexer),
     new SearchToolsRoute(parts.search),
+    // P7-T3. Over the ledger's tables, which the ledger fills in the background.
+    new SpendRoute(parts.feeds.spend),
     new StatusRoute(parts.report),
     new DaemonRoute(parts.daemons), // P7-T4 — roster, log tail, a probe per pid; nothing written.
     ...sessionRoutes(parts),

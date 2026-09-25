@@ -70,7 +70,7 @@ describe('DaemonHistory — supervisor runs', () => {
   });
 
   // isg's log, 2026-09-10 20:45: two starts 266 ms apart, the second refused in favour of the
-  // first, and one shutdown two minutes later — which belongs to the FIRST (G.57).
+  // first, and one shutdown two minutes later — which belongs to the FIRST (G.58).
   it('drops a start that was refused, so the shutdown after it closes the real supervisor', () => {
     const refused: DaemonLogEvent = { kind: 'refused', at: 3, runningPid: 23_140 };
     const history = DaemonHistory.of([start(1, 23_140), start(2, 34_948), refused, exited(9)]);

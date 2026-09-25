@@ -16,6 +16,7 @@
 // one list, two directions, and `tests/core/lifecycle.test.ts` asserts they cover the same set.
 import type { PaneRegistry } from './application/pane-registry.ts';
 import type { Reconciler } from './application/reconciler.ts';
+import type { SpendLedger } from './application/spend-ledger.ts';
 import type { ToastAnnouncer } from './application/toast-announcer.ts';
 import type { TicketOffice } from './application/ticket-office.ts';
 import type { TokenIssuer } from './application/token-issuer.ts';
@@ -33,6 +34,8 @@ export interface Running {
   readonly transcripts: TranscriptReader;
   /** P7-T1's five-minute walk. A timer, so it is here for the reason everything here is. */
   readonly indexer: TranscriptIndexer;
+  /** P7-T3's walk — a five-minute timer, and a fifteen-second catch-up while it is behind. */
+  readonly ledger: SpendLedger;
   readonly toasts: ToastAnnouncer;
   readonly store: SqliteStore;
   readonly stream: SessionStreamRoute;
@@ -64,6 +67,9 @@ export function startCore(running: StartableCore): void {
   // P7-T1's five-minute walk, plus one pass now — which is what makes a fresh store searchable
   // without waiting for the first tick.
   running.indexer.start();
+  // P7-T3's walk, plus one pass now. A ledger nobody started is a cost panel that says $0.00 for
+  // every week, which reads as a quiet month rather than as a bug — the P1-T7 shape a fourth time.
+  running.ledger.start();
 }
 
 /** A thing with a timer to start. Structural, so a test can supply a counter and not a Reconciler. */
@@ -84,6 +90,7 @@ export interface StartableCore {
   readonly transcripts: Startable;
   readonly toasts: Startable;
   readonly indexer: Startable;
+  readonly ledger: Startable;
 }
 
 /** Stops core. Idempotent, because every step below is. */
@@ -100,6 +107,8 @@ export async function stopCore(running: Running): Promise<void> {
   // The third timer NodeScheduler does not unref, and the one that would hold the loop open with
   // a walk of 374 files in flight.
   running.indexer.stop();
+  // Its twin, which may also hold a pending fifteen-second catch-up (P7-T3).
+  running.ledger.stop();
   // Second, and BEFORE the server, which is not interchangeable: `server.close()` waits for open
   // connections to end and an SSE response never does on its own, so a single deck tab would hold
   // core open through Ctrl+C. Closing the streams afterwards would not rescue it either —

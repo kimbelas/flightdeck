@@ -77,7 +77,7 @@ export class DaemonHistory {
  * pids 23140 and 34948 266 ms apart after an upgrade — and the second logs `another daemon is
  * already running (pid=23140 …)` and leaves without a shutdown line. Left in, it would be the
  * "latest" run: the real supervisor would read as replaced, and its own shutdown two minutes later
- * would be pinned on the one that never ran (RESEARCH.md G.57).
+ * would be pinned on the one that never ran (RESEARCH.md G.58).
  */
 function runsOf(events: readonly DaemonLogEvent[]): readonly SupervisorRun[] {
   const runs: SupervisorRun[] = [];

@@ -13,6 +13,7 @@ import { ProjectsPanel } from './projects-panel.tsx';
 import { ProjectsViewModel } from './projects-view-model.ts';
 import { SessionDetailViewModel } from './session-detail-view-model.ts';
 import { AskPanel } from './ask-panel.tsx';
+import { SpendPanel } from './spend-panel.tsx';
 import { handoffOffer, handoffRefusalLine, type HandoffOffer } from './handoff-view-model.ts';
 import { SessionList } from './session-list.tsx';
 import { SessionPreviewViewModel } from './session-preview-view-model.ts';
@@ -97,6 +98,13 @@ function DeckLeft(props: DeckLeftProps): JSX.Element {
   return (
     <div className="deck-left">
       <DeckProjects state={state} actions={actions} scope={props.scope} project={props.project} />
+      {/* P7-T3. Under the projects, because what it answers is where the money went by folder. */}
+      <SpendPanel
+        spend={state.spend}
+        projects={state.projects}
+        disabled={!state.coreUp}
+        onRead={actions.onReadSpend}
+      />
       {/* P4-T4. Above the session list: a question is a thing you START, like a launch, and the
           answer belongs beside the sessions rather than inside one of them. */}
       <AskPanel

@@ -51,6 +51,7 @@ import { DetailSlice } from './detail-slice.ts';
 import { PresetsSlice } from './presets-slice.ts';
 import { PreviewSlice } from './preview-slice.ts';
 import { ProjectsSlice } from './projects-slice.ts';
+import { SpendSlice } from './spend-slice.ts';
 import { WorkflowMapSlice } from './workflow-map-slice.ts';
 import {
   EMPTY,
@@ -82,6 +83,8 @@ export class DeckStore {
    * step for no reader's benefit.
    */
   public readonly install: InstallSlice;
+  /** The cost panel — P7-T3. Exposed for `install`'s reason: the store adds nothing on the way. */
+  public readonly spend: SpendSlice;
   private readonly subscribers = new Set<() => void>();
   private readonly transport: StreamTransport;
   private readonly api: DeckApi;
@@ -117,39 +120,29 @@ export class DeckStore {
   constructor(transport: StreamTransport, api: DeckApi) {
     this.transport = transport;
     this.api = api;
-    this.workflowMaps = new WorkflowMapSlice(api, (held) => {
-      this.set(held);
-    });
+    // One publisher for every slice whose changes are already named `DeckState` fields — the
+    // three below it name one field of their own and wrap it.
+    const patch = (changes: Partial<DeckState>): void => {
+      this.set(changes);
+    };
+    this.workflowMaps = new WorkflowMapSlice(api, patch);
     this.previews = new PreviewSlice(api, (previews) => {
       this.set({ previews });
     });
-    this.presets = new PresetsSlice(api, (changes) => {
-      this.set(changes);
-    });
-    this.projects = new ProjectsSlice(api, (changes) => {
-      this.set(changes);
-    });
-    this.asks = new AskSlice(api, (changes) => {
-      this.set(changes);
-    });
-    this.install = new InstallSlice(api, (changes) => {
-      this.set(changes);
-    });
+    this.presets = new PresetsSlice(api, patch);
+    this.projects = new ProjectsSlice(api, patch);
+    this.asks = new AskSlice(api, patch);
+    this.install = new InstallSlice(api, patch);
+    this.spend = new SpendSlice(api, patch);
     this.details = new DetailSlice(api, (details) => {
       this.set({ details });
     });
-    this.lifecycle = new LifecycleSlice(api, (changes) => {
-      this.set(changes);
-    });
+    this.lifecycle = new LifecycleSlice(api, patch);
     this.mutes = new MuteSlice(api, (muted) => {
       this.set({ muted });
     });
-    this.groups = new GroupSlice(api, (changes) => {
-      this.set(changes);
-    });
-    this.handoffs = new HandoffSlice(api, (changes) => {
-      this.set(changes);
-    });
+    this.groups = new GroupSlice(api, patch);
+    this.handoffs = new HandoffSlice(api, patch);
   }
 
   public subscribe = (listener: () => void): (() => void) => {

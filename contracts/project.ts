@@ -164,3 +164,21 @@ export function parseImportRefusal(value: unknown): ImportRefusal | undefined {
 function isPresent(segment: string): boolean {
   return segment !== '';
 }
+
+/**
+ * The directory Claude Code keeps a folder's transcripts in.
+ *
+ * Its own function because the spelling is Claude Code's and is observed rather than documented:
+ * every separator and every colon becomes `-`, so `C:\Users\belas\Documents\development\flightdeck`
+ * is `C--Users-belas-Documents-development-flightdeck`. Read off this machine's own `projects/`
+ * directories (19 of them) rather than inferred from one example.
+ *
+ * In `contracts/` as of P7-T3, out of `ObservedReader`: the spend summary is keyed by the slug a
+ * transcript sits in, and the deck matches it back to an imported folder with this same spelling.
+ * **A dot becomes `-` too**, which the first reading missed: `xpert-new\.claude\worktrees\xweb-1941`
+ * is `...-xpert-new--claude-worktrees-xweb-1941` in the isg dir, so every worktree under
+ * `.claude\worktrees` had a slug this function could not produce (RESEARCH.md G.59).
+ */
+export function projectSlug(path: string): string {
+  return path.replaceAll(/[\\/:.]/gu, '-');
+}

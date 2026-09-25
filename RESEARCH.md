@@ -3795,7 +3795,7 @@ moved aside, the deck task wrote one line (`no production build at … Run fligh
 and exited `1` without restarting. Not measured: an actual log off and log on, which would have
 ended the session doing the measuring. That is the owner's check.
 
-### G.57 What `daemon.log` actually says, and what a `/loop` fire actually is (P7-T4, 2026-09-25)
+### G.58 What `daemon.log` actually says, and what a `/loop` fire actually is (P7-T4, 2026-09-25)
 
 Read off both config directories on this machine, read-only, before a line of the parser was
 written. Claude Code 2.1.260 → 2.1.282 across the two logs.
@@ -3849,3 +3849,67 @@ time, two hours ahead of the UTC timestamp. So a tally keyed on the task id woul
 ones, and `ScheduleTally` counts per KIND. `prompt` is the owner's own words and never leaves the
 parser (SEC-DATA-1); the scrubber now lists it with the free-text keys and keeps `cron`,
 `taskKind` and `cronKind` readable.
+
+### G.59 What `cost-state` actually records, over every transcript on this machine (P7-T3, 2026-09-25)
+
+Read with a throwaway script over both `projects\` directories — the 423 top-level transcripts the
+catalogue walks today (206 in 365, 217 in isg; 1.3 GB of text) — before a line of the ledger was
+written. The task note was the one clause in P7's goal; everything below is what the ledger's shape
+came from.
+
+| | 365 | isg |
+|---|---|---|
+| transcripts | 206 | 217 |
+| with at least one `cost-state` | 197 | 186 |
+| `cost-state` lines | 336 | 343 |
+| lines with a `timestamp` | 0 | 0 |
+| lines whose `startTime + totalDuration` is missing | 0 | 0 |
+| a total that went DOWN inside a file | 1 ($85.69 → $8.23, new `startTime`) | 0 |
+| files whose readings span two weeks | 0 | 2 |
+| `hasUnknownModelCost: true` | 0 | 4 |
+| last total per file, summed | $7 043.92 | $7 802.04 |
+| increments per run, summed | $7 129.60 | $7 802.04 |
+
+**It is written at exit, not per turn.** 283 of 679 lines are the file's very last line and 533 are
+within its last five; 36 follow another `cost-state` with the same run and the same total. So a
+`cost-state` is "this process is done, and this is what it cost", and a session running right now
+has not written one.
+
+**The total is per run, and the one reset shows why that matters.** The only decrease on the machine
+came with a new `startTime`: a resumed session's second process starting from zero. Taking the last
+total per file would have lost $85.69 of it; the per-run increment keeps both. One run's `startTime`
+appears in two files ($0.04) — the only sign of a fork copying a total, and small enough to leave.
+
+**Per week, local Mondays, across both accounts:**
+
+| week of | 365 | isg |
+|---|---|---|
+| 24 Aug | $1 536.97 | $161.55 |
+| 31 Aug | $992.86 | $2 632.41 |
+| 7 Sep | $2 089.80 | $1 866.81 |
+| 14 Sep | $1 070.43 | $1 854.85 |
+| 21 Sep (to Friday) | $1 439.54 | $1 286.41 |
+
+Five weeks, because `cleanupPeriodDays` is thirty: anything older was deleted before it could be
+read. The ledger's tables keep what it reads, so the window fills forward from here.
+
+**A dot in a folder is a dash in its slug.** `projectSlug` replaced separators and the colon, read
+off nineteen slugs that happened to have no dot in them. The isg directory has
+`…-xpert-new--claude-worktrees-xweb-1941` for `xpert-new\.claude\worktrees\xweb-1941`, so the
+observed reading could never have found a worktree's transcripts, and the spend panel could not have
+named one. It now replaces `.` too.
+
+**Then the ledger itself, run over the same files into a throwaway database** (a probe script, the
+real `SpendLedger`, `FsTranscriptCatalogue` and `SqliteStore`, nothing under `~/.claude*` written).
+Its weeks match the table above to the cent, except the current one, which had grown by $54.21
+of sessions that ended in the hour between the two runs. With one slice per file per pass — the
+indexer's rule — it took 29 passes to catch up, the last seventeen spent on a handful of files over
+20 MB. Reading a file to its end while the budget lasts took 12 passes of 0.4–1.2 s each (1.4–6.4 s
+with four test suites running beside it); a pass with nothing new costs ~100–140 ms and the summary
+query 4–5 ms.
+
+**One more thing the ledger had to route around rather than fix.** The search indexer leaves its
+cursor before a trailing partial line so the line is read whole next pass — and a line longer than
+its 1 MB slice has no newline in it at all, so the cursor never moves past the line's first byte.
+P1-T7 found a 3.2 MB line. The ledger steps over a partial line once it is longer than 128 KB, which
+no `cost-state` is (the longest is 1.3 KB). The indexer's copy of the rule is P7-T1's to revisit.

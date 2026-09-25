@@ -73,6 +73,11 @@ export interface DeckActions {
    */
   readonly onObserveProject: (path: string) => void;
   /**
+   * Reading the cost summary — P7-T3. On opening the panel and on its refresh, never on a timer:
+   * core's ledger has done the reading, so this is two queries, but nobody is owed them unasked.
+   */
+  readonly onReadSpend: () => void;
+  /**
    * The three preset verbs — P4-T1.
    *
    * On this interface rather than threaded into the projects panel on their own, because that is

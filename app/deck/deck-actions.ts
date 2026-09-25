@@ -104,6 +104,15 @@ export function groupActions(
   };
 }
 
+/** The cost panel's one verb — P7-T3. See `SpendSlice` for when it is pressed. */
+export function spendActions(store: DeckStore): Pick<DeckActions, 'onReadSpend'> {
+  return {
+    onReadSpend: () => {
+      void store.spend.load();
+    },
+  };
+}
+
 /**
  * The registry's two and the presets' three, which no other part of the deck touches (P3-T1, P4-T1).
  *

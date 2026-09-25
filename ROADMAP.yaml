@@ -3657,7 +3657,7 @@ phases:
 
   - id: P7
     name: Search and analytics
-    status: todo
+    status: done
     goal: Every transcript searchable; cost visible per project, subscription and week.
     gate: '"Where did I do that Cloudflare Workers deploy?" returns the session in under a second.'
     depends_on: [P2]
@@ -3809,8 +3809,92 @@ phases:
           space (P7-T3 fixes it). Smoke grew 18 checks (508 in all).
       - id: P7-T3
         title: Cost and activity analytics from cost-state
-        status: todo
+        status: done
+        done_on: 2026-09-25
         depends_on: [P9]
+        security: [SEC-FS-1, SEC-DATA-1]
+        deliverables:
+          [
+            contracts/spend-summary.ts,
+            contracts/transcript-record.ts,
+            contracts/project.ts,
+            contracts/deck-routes.ts,
+            core/domain/spend-fold.ts,
+            core/ports/spend-store.ts,
+            core/application/spend-ledger.ts,
+            core/application/spend-report.ts,
+            core/application/observed-reader.ts,
+            core/adapters/sqlite/schema.ts,
+            core/adapters/sqlite/spend-statements.ts,
+            core/adapters/sqlite/sqlite-spend-ledger.ts,
+            core/adapters/sqlite/sqlite-store.ts,
+            core/http/spend-route.ts,
+            core/feeds.ts,
+            core/routes.ts,
+            core/main.ts,
+            core/shutdown.ts,
+            app/deck/spend-slice.ts,
+            app/deck/spend-view-model.ts,
+            app/deck/spend-panel.tsx,
+            app/deck/deck-state.ts,
+            app/deck/deck-store.ts,
+            app/deck/deck-actions.ts,
+            app/deck/deck-commands.ts,
+            app/deck/deck-view.tsx,
+            app/deck/deck-body.tsx,
+            app/globals.css,
+            tests/contracts/spend-summary.test.ts,
+            tests/contracts/project.test.ts,
+            tests/core/domain/spend-fold.test.ts,
+            tests/core/application/spend-ledger.test.ts,
+            tests/core/application/spend-ledger-timers.test.ts,
+            tests/core/application/spend-ledger-harness.ts,
+            tests/core/application/spend-report.test.ts,
+            tests/core/adapters/sqlite-spend-ledger.test.ts,
+            tests/core/http/spend-route.test.ts,
+            tests/core/lifecycle.test.ts,
+            tests/fixtures/transcript.test.ts,
+            tests/fakes/fake-spend-store.ts,
+            tests/app/spend-view-model.test.ts,
+            tests/app/deck-store-spend.test.ts,
+            tests/e2e/fixture-core.mjs,
+            tests/e2e/smoke/spend-checks.mjs,
+            tests/e2e/smoke.mjs,
+            BUILD-PLAN.md,
+            DECISIONS.md D61,
+            RESEARCH.md G.59,
+          ]
+        notes: >-
+          **Done 2026-09-25; P7's gate and goal both met.** **The unit is the run, not the
+          transcript** (D61, G.59). Read off every transcript first: 679 `cost-state` lines, none
+          with a `timestamp`, 283 of them a file's very last line — Claude Code writes one when a
+          process exits, not per turn — and one reset, $85.69 → $8.23 at a new `startTime`, which is
+          a resumed session's second process. So a week's spend is the sum of increments per run
+          (`SpendFold`): the last total per file would have lost $85.69, the maximum loses the
+          smaller run, and a sum of lines double-counts the 36 that repeat the total before them.
+          D5 holds — nothing is multiplied by a rate — and the price is that a running session is
+          the header's figure until it exits. **A ledger with its own cursors** (migration 10)
+          rather than the index's, which have been advancing past every `cost-state` since P7-T1;
+          recovering the money through them would have meant another re-index. Only lines holding
+          the token `"cost-state"` are parsed; a pass reads a file to its end while the budget
+          lasts and schedules a catch-up in 15 s while behind. **Running it changed the design**:
+          at one slice per file per pass it needed 29 passes; reading to the end took 12 of 0.4–1.2
+          s. `GET /analytics/spend` pivots eight weeks per subscription and slug; the deck names a
+          slug from the imported folders and shows any other as itself, in a closed panel that
+          fetches on open and on refresh, never on a timer. **Two bugs found by reading the
+          corpus**: `projectSlug` did not turn `.` into `-`, so no worktree under
+          `.claude\worktrees` ever matched its project (fixed, moved to `contracts/`); and the P7-T1
+          indexer pins its cursor to the first byte of a line longer than its 1 MB slice (a 3.2 MB
+          one exists) — the ledger steps over such lines, the indexer's copy is still open.
+          **Merged after P7-T2 and P7-T4, so renumbered at the rebase:** its migration 9 became 10,
+          its D60 became D61, and its G.58 became G.59 — P7-T4's daemon note had landed as a second
+          G.57 beside P8-T1's and is G.58 now. **Live, with flightdeck.cmd, the store backed up
+          first and every non-GET aborted:** `user_version` 10, 401 without the token, 15 ms a
+          read; the ledger read all 426 transcripts in 13 passes and its week of 7 September is
+          365 $2089.80 / isg $1866.81 — the branch's independent script to the cent. The panel
+          fetched nothing until opened, once on open and once on refresh, said "Every one of 426
+          transcripts read", and named xpert-new and pdf-editor among twelve folders. `npm run
+          check` 274 files / 3 482 tests; smoke grew 14 checks (522 in all).
       - id: P7-T4
         title: Daemon visibility (roster, retire events) and scheduled-task visibility
         status: done
@@ -3851,7 +3935,7 @@ phases:
             tests/fixtures/daemon-log.test.ts,
             tests/fixtures/scheduled-fires.test.ts,
             DECISIONS.md D60,
-            RESEARCH.md G.57,
+            RESEARCH.md G.58,
           ]
         notes: >-
           **Done 2026-09-25.** The daemon.log fixture is OWNED (D28), and the "same non-JSON
@@ -3873,7 +3957,7 @@ phases:
           logs follows a retirement: no background session here ever finished on its own.
           Scheduled tasks: `scheduled_task_fire` now carries kind and cron (never the prompt), and
           the observed reading lists fires PER KIND, because a `/loop` wake-up is a one-shot with a
-          fresh task id each time (G.57). **Live, with flightdeck.cmd:** `GET /daemon` answered in
+          fresh task id each time (G.58). **Live, with flightdeck.cmd:** `GET /daemon` answered in
           138 ms, 401 without the token; both subscriptions read `stale` — isg's roster names
           27708, which the log saw idle-exit four days earlier, and 365's roster (rewritten that
           morning after being absent at capture time) names 9700, idle-exited four hours before;

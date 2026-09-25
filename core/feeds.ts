@@ -13,6 +13,8 @@ import { HookQueue } from './application/hook-queue.ts';
 import { MuteBook } from './application/mute-book.ts';
 import { QuotaReport } from './application/quota-report.ts';
 import { Reconciler } from './application/reconciler.ts';
+import { SpendLedger } from './application/spend-ledger.ts';
+import { SpendReport } from './application/spend-report.ts';
 import { StatuslineQueue } from './application/statusline-queue.ts';
 import { TelemetryTally } from './application/telemetry-tally.ts';
 import { ToastAnnouncer } from './application/toast-announcer.ts';
@@ -33,6 +35,7 @@ import { ReadPolicy } from './domain/read-policy.ts';
 import { SessionStreamRoute } from './http/session-stream-route.ts';
 import { type SystemClock } from './ports/clock.ts';
 import type { Logger } from './ports/logger.ts';
+import type { SpendStore } from './ports/spend-store.ts';
 import type { Store } from './ports/store.ts';
 
 /** The event side: what notices things, what is told about them, and what hands them to a browser. */
@@ -69,12 +72,23 @@ export interface Feeds {
    * an owner who turns it on changes what `/telemetry` answers and nothing else core does.
    */
   readonly telemetry: TelemetryTally;
+  /**
+   * Every `cost-state` line on the machine, folded into amounts per week — P7-T3.
+   *
+   * The indexer's twin, with its own cursors, and here for the indexer's reasons: it walks, it
+   * owns a timer on the one scheduler, and it reads through the same `ReadPolicy`.
+   */
+  readonly ledger: SpendLedger;
+  /** What `GET /analytics/spend` answers with, over the ledger's tables. */
+  readonly spend: SpendReport;
 }
 
 export interface FeedParts {
   readonly install: ClaudeInstall;
   readonly sessions: ClaudeCliSessionSource;
   readonly store: Store;
+  /** The spend ledger's tables — `SqliteStore.spend`, behind a port of its own (P7-T3). */
+  readonly spendStore: SpendStore;
   readonly clock: SystemClock;
   readonly logger: Logger;
 }
@@ -115,6 +129,7 @@ export function buildFeeds(parts: FeedParts): Feeds {
     reconciler,
     ask,
     indexer: buildIndexer({ install, store, scheduler, clock, logger }),
+    ...buildLedger({ install, store: parts.spendStore, scheduler, clock, logger }),
     // The stream replays two things on connect and they come from different places: the session
     // table from the reconciler's map, the quota gauges from the vitals registry (P2-T3). Neither
     // costs a sweep.
@@ -201,6 +216,32 @@ function buildIndexer(parts: {
     clock: parts.clock,
     logger: parts.logger,
   });
+}
+
+/**
+ * The spend ledger and the report over its tables — P7-T3.
+ *
+ * Built as a pair because the report's "still reading" line is the ledger's own progress, and with
+ * the same `ReadPolicy` shape as the indexer's, from the same two config directories (SEC-FS-2).
+ */
+function buildLedger(parts: {
+  readonly install: ClaudeInstall;
+  readonly store: SpendStore;
+  readonly scheduler: NodeScheduler;
+  readonly clock: SystemClock;
+  readonly logger: Logger;
+}): Pick<Feeds, 'ledger' | 'spend'> {
+  const { install, store, clock } = parts;
+  const ledger = new SpendLedger({
+    catalogue: new FsTranscriptCatalogue(install),
+    files: new FsTranscriptFile(),
+    store,
+    policy: new ReadPolicy(SUBSCRIPTION_IDS.map((id) => install.configDirFor(id))),
+    scheduler: parts.scheduler,
+    clock,
+    logger: parts.logger,
+  });
+  return { ledger, spend: new SpendReport({ store, ledger, clock }) };
 }
 
 /**

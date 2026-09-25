@@ -60,6 +60,15 @@ export type TranscriptRecord =
        * fallback rather than the rule.
        */
       readonly at: number | undefined;
+      /**
+       * `startTime` — when the RUN this total belongs to began, epoch ms. Added in P7-T3.
+       *
+       * `totalCostUSD` is a running total per claude process, not per transcript: a session
+       * resumed into the same file starts a new run, and its first `cost-state` is back near zero
+       * with a new `startTime` (measured, RESEARCH.md G.59 — $85.69 then $8.23). Summing or
+       * taking the maximum would both be wrong; the run is the unit a total is cumulative over.
+       */
+      readonly startedAt: number | undefined;
     }
   | { readonly kind: 'away'; readonly summary: string; readonly at: number | undefined }
   | {
@@ -299,6 +308,7 @@ function parseCost(fields: Readonly<Record<string, unknown>>): TranscriptRecord 
     linesRemoved: countAt(fields, 'totalLinesRemoved') ?? 0,
     spend: usage === undefined ? [] : spendOf(usage),
     at: costInstant(fields),
+    startedAt: countAt(fields, 'startTime'),
   };
 }
 

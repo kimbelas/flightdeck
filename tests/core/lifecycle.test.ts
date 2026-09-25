@@ -31,8 +31,9 @@ describe('startCore', () => {
     const transcripts = new Startable();
     const toasts = new Startable();
     const indexer = new Startable();
+    const ledger = new Startable();
 
-    startCore({ reconciler, transcripts, toasts, indexer });
+    startCore({ reconciler, transcripts, toasts, indexer, ledger });
 
     expect(reconciler.started).toBe(1);
     // The one that was missing. Feed 4 polls every second and reads nothing until this is called.
@@ -43,6 +44,9 @@ describe('startCore', () => {
     // P7-T1, and the same shape a third time: an indexer nobody started is a search box that
     // finds nothing, with no error anywhere to say why.
     expect(indexer.started).toBe(1);
+    // P7-T3, a fourth time: a ledger nobody started says $0.00 for every week, which reads as a
+    // quiet month rather than as a bug.
+    expect(ledger.started).toBe(1);
   });
 
   it('is idempotent, so a caller that starts twice does not run two polls', () => {
@@ -50,9 +54,10 @@ describe('startCore', () => {
     const transcripts = new Startable();
     const toasts = new Startable();
     const indexer = new Startable();
+    const ledger = new Startable();
 
-    startCore({ reconciler, transcripts, toasts, indexer });
-    startCore({ reconciler, transcripts, toasts, indexer });
+    startCore({ reconciler, transcripts, toasts, indexer, ledger });
+    startCore({ reconciler, transcripts, toasts, indexer, ledger });
 
     // `startCore` forwards every call; idempotence is each `start`'s own, and both use `??=` on
     // their timer. Asserting the forwarding here keeps this test about the list rather than about
@@ -61,5 +66,6 @@ describe('startCore', () => {
     expect(transcripts.started).toBe(2);
     expect(toasts.started).toBe(2);
     expect(indexer.started).toBe(2);
+    expect(ledger.started).toBe(2);
   });
 });

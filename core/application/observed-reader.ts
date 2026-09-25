@@ -20,7 +20,7 @@
 // from it is a directory name inside a config dir, and it is screened again by `ReadPolicy` before
 // anything is opened (SEC-FS-1, the rule `TranscriptReader` follows for the same reason).
 import type { ObservedBehaviour } from '../../contracts/observed-behaviour.ts';
-import { projectKey, type ProjectRecord } from '../../contracts/project.ts';
+import { projectKey, projectSlug, type ProjectRecord } from '../../contracts/project.ts';
 import { SUBSCRIPTION_IDS, type SubscriptionId } from '../../contracts/session.ts';
 import { childPath } from '../../contracts/windows-path.ts';
 import { ObservedTally } from '../domain/observed-tally.ts';
@@ -183,16 +183,4 @@ export class ObservedReader {
     }
     return parts.join('|');
   }
-}
-
-/**
- * The directory Claude Code keeps a folder's transcripts in.
- *
- * Its own function because the spelling is Claude Code's and is observed rather than documented:
- * every separator and every colon becomes `-`, so `C:\Users\belas\Documents\development\flightdeck`
- * is `C--Users-belas-Documents-development-flightdeck`. Read off this machine's own `projects/`
- * directories (19 of them) rather than inferred from one example.
- */
-export function projectSlug(path: string): string {
-  return path.replaceAll(/[\\/:]/gu, '-');
 }
