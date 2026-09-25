@@ -7,6 +7,7 @@ import type { SessionRef } from '../../contracts/session-ref.ts';
 import type { SessionRow } from '../../contracts/session-row.ts';
 import type { PtyTarget } from '../../contracts/pty-protocol.ts';
 import { sharedCwdWarning, sharesCwd } from '../../contracts/duplicate-cwd.ts';
+import { ENDING_LABELS, endingOf } from '../../contracts/session-ending.ts';
 
 export type RowTone = 'needs-you' | 'working' | 'idle' | 'ended';
 
@@ -59,7 +60,14 @@ export class SessionRowViewModel {
     return this.row.kind;
   }
 
+  /**
+   * What the row says about its state. A stopped background session says how it ENDED when core
+   * has read that off `daemon.log` (D62) — "done" is the listing's word for a stop, a finish and a
+   * retirement alike (F.2.3), and a retired `blocked` would otherwise still read "blocked".
+   */
   public get stateLabel(): string {
+    const ending = endingOf(this.row);
+    if (ending !== undefined) return ENDING_LABELS[ending];
     if (!this.row.live) return this.row.runState ?? 'not running';
     return this.row.runState ?? this.row.status ?? 'running';
   }

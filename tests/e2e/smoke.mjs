@@ -45,6 +45,7 @@ import { groupChecks } from './smoke/group-checks.mjs';
 import { duplicateCwdChecks } from './smoke/duplicate-cwd-checks.mjs';
 import { handoffChecks } from './smoke/handoff-checks.mjs';
 import { adoptChecks } from './smoke/adopt-checks.mjs';
+import { endingChecks } from './smoke/ending-checks.mjs';
 import { searchChecks } from './smoke/search-checks.mjs';
 import { securityChecks } from './smoke/security-checks.mjs';
 import { LOOPBACK_ADDRESS, UI_PORT } from '../../contracts/origins.ts';
@@ -117,6 +118,9 @@ try {
   // Before the handoff, which leaves the fixture's own snapshot in place: this group pushes one
   // with a CLOSED terminal on it and puts the fixture's back (P6-T7). It needs no project.
   await adoptChecks(page, report, core);
+  // Beside the adoption for its reason: it pushes snapshots and puts the fixture's own back, and
+  // it needs no project (D62).
+  await endingChecks(page, report, core);
   // After the project groups, because the trees it offers come from an imported folder's map —
   // `projectViewChecks` leaves ledger imported, and four of the fixture's sessions are in it
   // (P6-T6). Before `groupChecks`, which reloads the page and re-imports a second folder.
