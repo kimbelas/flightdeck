@@ -123,6 +123,28 @@ export function focusControl(id: string): void {
   control?.scrollIntoView({ block: 'nearest' });
 }
 
+/**
+ * Opens one preset's editor and puts the caret in `box` — the palette's `Launch` for a preset that
+ * cannot start as it stands (P9-T4, `preset-targets.ts`).
+ *
+ * The chip's own click, not a second way to select it: the panel's state stays the panel's, and a
+ * press lands exactly where pressing the chip would. A chip already open is not clicked again,
+ * because a second click is the chip's toggle and would close it. The editor exists only after the
+ * render that click caused, so the caret is placed on the next frame.
+ */
+export function openPreset(chip: string, box: 'name' | 'prompt'): void {
+  const button = document.querySelector<HTMLElement>(`[data-preset-chip="${CSS.escape(chip)}"]`);
+  if (button === null) return;
+  if (button.getAttribute('aria-pressed') !== 'true') button.click();
+  requestAnimationFrame(() => {
+    const panel = button.closest('.presets');
+    const field = box === 'name' ? '.preset-session-name' : '.preset-prompt';
+    const control = panel?.querySelector<HTMLElement>(`.preset-editor ${field}`);
+    control?.focus();
+    control?.scrollIntoView({ block: 'nearest' });
+  });
+}
+
 /** Focuses and expands one session row by its key. The palette's "jump to session". */
 export function focusRow(key: string): void {
   const row = document.querySelector<HTMLElement>(`[data-deck-row="${CSS.escape(key)}"]`);

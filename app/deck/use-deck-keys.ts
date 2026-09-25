@@ -66,7 +66,15 @@ export interface DeckKeyActions {
   readonly onMovePane: (delta: number) => void;
 }
 
-export function useDeckKeys(commands: readonly DeckCommand[], actions: DeckKeyActions): DeckKeys {
+/**
+ * @param commandsFor the palette's entries for what is typed. A function rather than a list since
+ * P9-T4, because one entry — `Plan <id> in <project>` — is built from the query itself; the query
+ * is this hook's state, so it is handed out here rather than threaded back in (`deck-commands.ts`).
+ */
+export function useDeckKeys(
+  commandsFor: (query: string) => readonly DeckCommand[],
+  actions: DeckKeyActions,
+): DeckKeys {
   const keymap = useMemo(() => standardKeymap(), []);
   const [open, setOpen] = useState(false);
   const [sheetOpen, setSheet] = useState(false);
@@ -78,7 +86,7 @@ export function useDeckKeys(commands: readonly DeckCommand[], actions: DeckKeyAc
   // sheet, the sheet's state is this hook's, and threading that state out and back would be the
   // long way round to the same place.
   const palette = new CommandPaletteViewModel(
-    [...commands, shortcutsCommand(controls)],
+    [...commandsFor(query), shortcutsCommand(controls)],
     query,
     cursor,
   );

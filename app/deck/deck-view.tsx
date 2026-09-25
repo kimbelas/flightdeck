@@ -22,8 +22,10 @@ import { installActions } from './deck-install.tsx';
 import { askActions, groupActions, lifecycleActions, projectActions } from './deck-actions.ts';
 import { DeckTop, projectTargets } from './deck-top.tsx';
 import { groupTargets } from './group-targets.ts';
+import { presetTargets, ticketTarget, type PresetSources } from './preset-targets.ts';
 import { DeckStore } from './deck-store.ts';
-import { deckCommands, type DeckActions } from './deck-commands.ts';
+import { commandsFor, type CommandTargets, type DeckActions } from './deck-commands.ts';
+import type { DeckState } from './deck-state.ts';
 import { SessionRowViewModel } from './session-row-view-model.ts';
 import { ShortcutSheet } from './shortcut-sheet.tsx';
 import { ProjectScope } from './project-scope.ts';
@@ -70,10 +72,8 @@ export function DeckView(): JSX.Element {
   // `onLayout` comes from the grid rather than from `useDeckActions`: the palette's six layout
   // entries and the chooser's six buttons must be the same call, or one of them gets the next fix.
   const targets = { rows, ...actions, onLayout: grid.setLayout, onChooseProject: project.choose };
-  // `groupTargets` is derived from the presets already on screen — a group is every preset wearing
-  // its name (P6-T4), so there is nothing to fetch and nothing that can go stale on its own.
-  const palette = { ...targets, projects: projectTargets(state, scope), groups: groupTargets(state.presets) }; // prettier-ignore
-  const keys = useDeckKeys(deckCommands(palette), { onMovePane: grid.movePaneBy });
+  const palette = { ...targets, ...paletteSources(state, scope, project.key, now) };
+  const keys = useDeckKeys(commandsFor(palette), { onMovePane: grid.movePaneBy });
 
   return (
     <main className="deck">
@@ -98,6 +98,28 @@ export function DeckView(): JSX.Element {
       <DeckOverlays keys={keys} />
     </main>
   );
+}
+
+/**
+ * The palette's entries that are derived from the deck's state rather than from its actions.
+ *
+ * Every one of them is computed from what is already on screen, so nothing is fetched and nothing
+ * can go stale on its own: a group is every preset wearing its name (P6-T4), and single presets and
+ * a typed ticket are the presets as their own start would send them (P9-T4, `preset-targets.ts`).
+ */
+function paletteSources(
+  state: DeckState,
+  scope: ProjectScope,
+  current: string | undefined,
+  now: number,
+): Pick<CommandTargets, 'projects' | 'groups' | 'presetTargets' | 'planTarget'> {
+  const sources: PresetSources = { ...state, current, now };
+  return {
+    projects: projectTargets(state, scope),
+    groups: groupTargets(state.presets),
+    presetTargets: presetTargets(sources),
+    planTarget: (query) => ticketTarget(query, sources),
+  };
 }
 
 /**

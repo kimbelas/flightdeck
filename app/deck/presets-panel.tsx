@@ -71,6 +71,7 @@ export function PresetsPanel(props: PresetsPanelProps): JSX.Element | undefined 
             <button
               type="button"
               className="preset-chip"
+              data-preset-chip={held.key}
               aria-pressed={mapDraft === undefined && held.key === selected}
               /* What the chip cannot say in one word, and the only thing that tells a saved
                  preset from the built-in it shadows before you open it (running it, P4-T1). */

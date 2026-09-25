@@ -4200,9 +4200,50 @@ phases:
           owner wants one, it is its own task with its own SEC-NET decision.
       - id: P9-T4
         title: Presets and tickets in the palette — `Launch <project> · <preset>`, and a ticket-shaped query plans the ticket
-        status: todo
+        status: done
+        done_on: 2026-09-25
         depends_on: [P9-T3]
+        security: [SEC-UI-2]
+        deliverables:
+          [
+            app/deck/preset-targets.ts,
+            app/deck/preset-commands.ts,
+            app/deck/deck-commands.ts,
+            app/deck/deck-keyboard.ts,
+            app/deck/deck-view.tsx,
+            app/deck/presets-panel.tsx,
+            app/deck/use-deck-keys.ts,
+            tests/app/preset-targets.test.ts,
+            tests/e2e/smoke/palette-preset-checks.mjs,
+          ]
         notes: >-
+          **Done 2026-09-25. Verified against the real core and the real deck, and no session was
+          started.** A headless browser on the real deck aborted and recorded every non-GET request.
+          With no current project, `Ctrl+K launch` lists the 12 entries, claude-kit, pdf-editor and
+          xpert-new in `byProjectThenName` order. After choosing xpert-new, its four come first.
+          `XWEB-2126` offers nothing with no current project. In xpert-new it offers `Plan XWEB-2126
+          in xpert-new` first, hinted `on disk`. Enter sent exactly one request, the aborted `POST
+          /sessions` carrying `claude-isg-ticket`, the `TicketPrompt` text, the name `XWEB-2126` and
+          the xpert-new root as cwd. `XWEB-9999` is still offered, hinted `not on disk yet`.
+          `Launch xpert-new · ticket` opened the ticket editor with the caret in the id box and sent
+          nothing. **One decision these notes did not make: a built-in cannot start in one press.**
+          All four store an empty prompt (`PresetCatalogue`), and `--bg` will not start without one
+          (B.4). So a preset whose `presetPrompt` is empty, or whose saved agent the roster has lost,
+          still gets its entry. That entry opens the preset's own editor (the chip's own click,
+          `openPreset` in deck-keyboard.ts), with the caret in the ticket box or the prompt box, and
+          the hint says `opens it for a prompt` or `opens it for a ticket id`. A preset that can
+          start as it stands launches in one press, with what its own start would send. **Where the
+          query goes:** `useDeckKeys` now takes `(query) => DeckCommand[]` rather than a list, and
+          `deckCommands(targets, query)` asks `planCommands` for the query's entry, which comes
+          first when present. The palette's view model stays a filter, and `Plan` passes it because
+          its label carries the id. `preset-targets.ts` is a leaf that decides every press and every
+          hint, reusing `TICKET_SHAPE`, `TicketPrompt`, `presetPrompt` and `RoutingViewModel`.
+          `preset-commands.ts` holds the entries so that `deck-commands.ts` stays under `max-lines`.
+          The id may be any term of the query (`plan xweb-1` works). The press uses the project's
+          `ticket` preset, or failing that any preset with `promptSource: ticket`; if the owner saves
+          over `ticket` with a literal prompt, nothing is offered. Smoke grew 13 checks (473 in all).
+
+          *The task as planned:*
           `Ctrl+K` lists `Launch <group>` (P6-T4) but not a single preset, so one press today is
           three: open the project, find the row, press. Two palette entries close the gap.
           **`Launch <project> · <preset>`** for every preset of every imported project, ordered by
