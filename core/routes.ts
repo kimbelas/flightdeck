@@ -27,6 +27,7 @@ import { LaunchRoute } from './http/launch-route.ts';
 import { MutesReadRoute, MutesWriteRoute } from './http/mutes-route.ts';
 import { PasteRoute } from './http/paste-route.ts';
 import { PreviewRoute, type PreviewSource } from './http/preview-route.ts';
+import { DaemonRoute, type DaemonSource } from './http/daemon-route.ts';
 import { RequestRouter } from './http/request-router.ts';
 import { RemoveRoute } from './http/remove-route.ts';
 import { ResumeRoute } from './http/resume-route.ts';
@@ -65,6 +66,8 @@ export interface RouterParts {
   readonly report: StatusReport;
   readonly detail: DetailSource;
   readonly preview: PreviewSource;
+  /** Each subscription's background daemon, read fresh per request — P7-T4. */
+  readonly daemons: DaemonSource;
   readonly deck: DeckQuery;
   /**
    * The transcript index, asked a question — P7-T1, SPEC §5.8.
@@ -137,6 +140,8 @@ export function buildRouter(parts: RouterParts, extra: readonly Route[]): Reques
     // P7-T1. A read of the index and nothing else — the filters SPEC §5.8 lists are P7-T2's.
     new SearchRoute(parts.search),
     new StatusRoute(parts.report),
+    // P7-T4. The roster, the log's tail and a probe per pid — no process spawned, nothing written.
+    new DaemonRoute(parts.daemons),
     ...sessionRoutes(parts),
     // P4-T5. The read is a GET and writes no audit row; the two writes are POSTs and do.
     new DoctorRoute(parts.doctor),
@@ -155,6 +160,19 @@ export function buildRouter(parts: RouterParts, extra: readonly Route[]): Reques
     new MutesReadRoute(parts.feeds.mutes),
     new MutesWriteRoute(parts.feeds.mutes),
     ...extra,
+    ...ingestRoutes(parts),
+  ]);
+}
+
+/**
+ * What Claude Code itself posts — hooks, the statusline and, when it is on, OTLP (P7-T5).
+ *
+ * Lifted out of `buildRouter` when the daemon read (P7-T4) pushed it over its line limit. These
+ * are the coherent piece: every one is fed by a session rather than by the deck, and the ingest
+ * key reaches no route outside this list (SEC-HTTP-7).
+ */
+function ingestRoutes(parts: RouterParts): readonly Route[] {
+  return [
     new HooksRoute({
       queue: parts.feeds.hooks,
       paths: subscriptionPaths(parts.install),
@@ -172,7 +190,7 @@ export function buildRouter(parts: RouterParts, extra: readonly Route[]): Reques
       limiter: parts.limiter,
       logger: parts.logger,
     }),
-  ]);
+  ];
 }
 
 /**

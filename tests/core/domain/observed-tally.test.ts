@@ -143,8 +143,8 @@ describe('ObservedTally', () => {
       '365',
       [
         { kind: 'compaction', trigger: 'auto', preTokens: 1, postTokens: 0, at: NOW },
-        { kind: 'scheduled', at: NOW },
-        { kind: 'scheduled', at: NOW },
+        { kind: 'scheduled', at: NOW, taskKind: 'loop', cron: '56 9 * * *' },
+        { kind: 'scheduled', at: NOW, taskKind: 'loop', cron: '27 10 * * *' },
       ],
       0,
     );
@@ -155,6 +155,28 @@ describe('ObservedTally', () => {
       scheduledFires: 2,
       unknownLines: 1,
     });
+  });
+
+  // P7-T4. A `/loop` wake-up is a one-shot with a fresh task id each time, so the unit is the kind.
+  it('groups scheduled fires by kind, counting each session once and keeping the newest cron', () => {
+    const tally = new ObservedTally();
+    const fire = (at: number, cron: string | undefined, taskKind: string | undefined) =>
+      ({ kind: 'scheduled', at, taskKind, cron }) as const;
+    tally.addSession(
+      'isg',
+      [fire(NOW - 60, '56 9 * * *', 'loop'), fire(NOW, '27 10 * * *', 'loop')],
+      0,
+    );
+    tally.addSession(
+      '365',
+      [fire(NOW - 120, undefined, 'loop'), fire(NOW - 5, undefined, undefined)],
+      0,
+    );
+
+    expect(tally.summarise('C:/p', NOW, 0).schedules).toEqual([
+      { kind: 'loop', fires: 3, sessions: 2, lastAt: NOW, lastCron: '27 10 * * *' },
+      { kind: 'scheduled', fires: 1, sessions: 1, lastAt: NOW - 5, lastCron: undefined },
+    ]);
   });
 
   it('caps every list, because a long tail is not a dashboard', () => {

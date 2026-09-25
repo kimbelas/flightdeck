@@ -277,3 +277,11 @@ export const CORE_RESPAWN_PATH = `${CORE_PREFIX}sessions/respawn`;
  * (SECURITY.md §5.3 — a repair tool that needs the broken thing to work is not a repair tool).
  */
 export const CORE_CONNECT_PATH = `${CORE_PREFIX}connect`;
+
+/**
+ * Each subscription's background daemon — P7-T4, SPEC §6(13).
+ *
+ * A GET with no parameters: both subscriptions are answered every time, so the browser names
+ * nothing and core opens only the two files it derives from a subscription id (SEC-FS-1).
+ */
+export const CORE_DAEMON_PATH = `${CORE_PREFIX}daemon`;

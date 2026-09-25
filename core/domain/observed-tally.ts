@@ -18,6 +18,7 @@ import {
 } from '../../contracts/observed-behaviour.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
 import type { TranscriptRecord } from '../../contracts/transcript-record.ts';
+import { ScheduleTally } from './schedule-tally.ts';
 
 /** Seven days, in ms — what "this week" means in `sessionsThisWeek`. */
 export const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -41,6 +42,7 @@ export class ObservedTally {
   private readonly sessions: ObservedSession[] = [];
   private compactions = 0;
   private scheduledFires = 0;
+  private readonly schedules = new ScheduleTally();
   private unknownLines = 0;
   private bytesRead = 0;
 
@@ -67,6 +69,7 @@ export class ObservedTally {
       costUsd = Math.max(costUsd, record.kind === 'cost' ? record.costUsd : 0);
       this.count(record);
     }
+    this.schedules.endSession();
     this.sessions.push({ subscription, newestAt, peakContextTokens, costUsd });
   }
 
@@ -96,6 +99,7 @@ export class ObservedTally {
       ),
       compactions: this.compactions,
       scheduledFires: this.scheduledFires,
+      schedules: this.schedules.summarise(),
       unknownLines: this.unknownLines,
     };
   }
@@ -108,8 +112,10 @@ export class ObservedTally {
    */
   private count(record: TranscriptRecord): void {
     if (record.kind === 'compaction') this.compactions += 1;
-    else if (record.kind === 'scheduled') this.scheduledFires += 1;
-    else this.name(record);
+    else if (record.kind === 'scheduled') {
+      this.scheduledFires += 1;
+      this.schedules.add(record);
+    } else this.name(record);
   }
 
   /**

@@ -1856,3 +1856,47 @@ first unfinished phase, so `npm run roadmap` names P8 next rather than "search U
 two milestones; DP4 (Tailscale on both devices) and DP5 (a ticket from outside the repo) are the two
 questions only the owner answers.
 
+## D60 — a line log's scrubber is a grammar, and the log outranks the roster (decided 2026-09-25, P7-T4)
+
+**Forced by D28.** That decision moved the `daemon.log` capture into the task that parses it, and
+P7-T4's notes asked for "the same non-JSON scrubber path P5a-T4 needs". There is no such single
+path, and finding that out was the point of waiting for a consumer: D42's frame rule — replace every
+letter in place and never read the words — is exactly wrong for a log, because the WORDS are what
+the parser reads. `bg retire 3f1a…: idle-prompt, idle 32m` scrubbed by D42 is `xx xxxxxx 3f1a…:
+xxxx-xxxxxx, xxxx 32x`, and the retirement reason — the one fact this task exists to surface — is
+gone.
+
+**Verdict: `.log` gets its own path, and it is an allowlist of whole-line templates.** Every line
+must be `[<instant>] [<channel>] <message>` and every message must match one of fourteen templates
+in `scripts/capture-log.mjs`, whole. A template's literal words are Claude Code's own and pass
+through; its variable parts are either a class that cannot hold identity by construction (`\d+`, a
+dotted version, a lowercase vocabulary word) or one of two named slots the script rewrites — a short
+session id (a digest of itself, so a `bg retire` and the `bg settled` 1.1 s later still name ONE
+session) and a Windows path (the JSON rule's own `fakePath`). Instants shift by the JSON rule's
+constant. Pids are kept: the supervisor pid is the join between this log and `daemon/roster.json`,
+and F.2.16's dead daemon is only visible through it.
+
+**A line no template describes FAILS the capture and names its line number.** That is
+`assertNoDataKeys`' rule again, and for the same reason: the day Claude Code logs a prompt, a folder
+or a session name, the capture stops instead of committing it. The control pipe is a small proof —
+Claude Code prints its id as `*`, and the template requires the star, so a build that printed the
+real name would stop the capture rather than publish it.
+
+**The second half is about trust, and it is what the verdict of the panel rests on.** Three
+witnesses answer "is there a daemon", and each is wrong in a known way. The roster is a cache the
+supervisor stops writing when it exits — both rosters on this machine named dead supervisors when
+P5a-T4 looked, and isg's still does (G.57). The process probe answers "does a process with this pid
+exist", which a reissued pid answers yes. The log records what HAPPENED — every start with its pid,
+every shutdown with its cause — and is never stale about the past. So `DaemonReader` trusts them in
+that order: the log's "that supervisor shut down" (or "was replaced by a later start") makes the
+roster `stale` without asking the probe; otherwise the probe decides; and with no roster at all,
+the log's still-open start is the only candidate and counts only if its pid is alive.
+
+**What this costs, stated plainly.** Only the last 64 KiB of the log is read, so a roster can name
+a supervisor whose start has scrolled out of the window; then the probe decides alone, which is
+P5a-T4's pre-check and no worse. The endings are the newest twenty, which covers a working day of
+background sessions and not a month. And one gap is deliberately left: the rows still read
+`EndReason: unknown` — the reconciler does not yet consult the log, so an idle retirement still
+raises the "finished" toast D58 described. The endings are on the panel, where they can be read;
+putting them on the row is a change to the reconciler's sweep and is left for a task that owns it.
+

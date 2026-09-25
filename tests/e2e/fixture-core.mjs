@@ -43,6 +43,7 @@ import { StatuslinePatcher } from '../../core/adapters/statusline/statusline-pat
 import { PresetCatalogue } from '../../core/domain/preset-catalogue.ts';
 import { ConfigHistorian } from '../../core/application/config-historian.ts';
 import { FakeStore } from '../fakes/fake-store.ts';
+import { fixtureDaemonReader } from './smoke/daemon-fixture.mjs';
 import {
   agentRoster,
   byProjectThenName,
@@ -280,6 +281,12 @@ export class FixtureCore {
     this.respawns = [];
     /** How many times `GET /doctor` was asked. The panel must not poll it (F.10.1: ~2 s). */
     this.doctorReads = 0;
+    /**
+     * How many times `GET /daemon` was asked — P7-T4. The panel reads on a press and never polls,
+     * and a count is what lets the smoke say "exactly one per press".
+     */
+    this.daemonReads = 0;
+    this.daemons = fixtureDaemonReader();
     /** The open run's id, or `undefined`. Core allows one at a time and so does this. */
     this.askRunId = undefined;
     this.askSubscription = '365';
@@ -430,6 +437,10 @@ export class FixtureCore {
     }
     if (request.method === 'POST' && path === '/run') return this.startAsk(await body(request));
     if (request.method === 'GET' && path === '/doctor') return this.doctor(url);
+    if (request.method === 'GET' && path === '/daemon') {
+      this.daemonReads += 1;
+      return [200, await this.daemons.read()];
+    }
     if (request.method === 'POST' && path === '/update') return this.update(await body(request));
     if (request.method === 'POST' && path === '/sessions/respawn') {
       return this.respawn(await body(request));
@@ -1526,6 +1537,17 @@ function observedBehaviour(project) {
     medianPeakContextTokens: 137_000,
     compactions: 3,
     scheduledFires: 2,
+    // P7-T4. Two `/loop` wake-ups in one session, the shape tests/fixtures/scheduled-fires.test.ts
+    // pins: one kind, not two tasks, because each wake-up carries a fresh task id.
+    schedules: [
+      {
+        kind: 'loop',
+        fires: 2,
+        sessions: 1,
+        lastAt: Date.now() - 3 * 3_600_000,
+        lastCron: '27 10 * * *',
+      },
+    ],
     unknownLines: 5,
   };
 }

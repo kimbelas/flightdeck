@@ -18,7 +18,12 @@
 // button whose warning is an underestimate is worse than no warning, because it is the reason
 // somebody presses it (G.47).
 import type { JSX } from 'react';
-import type { ObservedBehaviour, ObservedCount } from '../../contracts/observed-behaviour.ts';
+import type {
+  ObservedBehaviour,
+  ObservedCount,
+  ObservedSchedule,
+} from '../../contracts/observed-behaviour.ts';
+import { agoLabel } from './ago.ts';
 
 interface ObservedPanelProps {
   /** The folder this is about. */
@@ -76,6 +81,7 @@ function Reading({ reading }: { readonly reading: ObservedBehaviour }): JSX.Elem
       <Counts label="skills" entries={reading.skills} />
       <Counts label="session names" entries={reading.sessionNames} />
       <Counts label="files" entries={reading.files} />
+      <Schedules entries={reading.schedules} at={reading.at} />
       <Footnote reading={reading} />
     </div>
   );
@@ -141,6 +147,40 @@ function Counts({
         // `title` carries the whole of it: a file entry is an absolute path and the pill clips.
         <span key={entry.name} className="observed-count" title={entry.name}>
           {entry.name} <b>{entry.count}</b>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The scheduled fires, by kind — P7-T4, SPEC §6(11).
+ *
+ * By kind because a `/loop` wake-up is a one-shot with a new task id every time
+ * (core/domain/schedule-tally.ts). The cron is in the `title`, not the pill: for a loop it is just
+ * the minute the next wake-up chose, in local time, and a pill of `27 10 * * *` reads as a schedule
+ * it is not. Ages are measured from when the reading was taken, like every age on a photograph.
+ */
+function Schedules({
+  entries,
+  at,
+}: {
+  readonly entries: readonly ObservedSchedule[];
+  readonly at: number;
+}): JSX.Element | undefined {
+  if (entries.length === 0) return undefined;
+  return (
+    <div className="observed-counts" data-observed-counts="scheduled">
+      <span className="observed-label">scheduled</span>
+      {entries.map((entry) => (
+        <span
+          key={entry.kind}
+          className="observed-count"
+          title={entry.lastCron === undefined ? entry.kind : `last cron ${entry.lastCron}`}
+        >
+          {entry.kind} <b>{entry.fires}</b> · {entry.sessions} session
+          {entry.sessions === 1 ? '' : 's'}
+          {entry.lastAt !== undefined && ` · last ${agoLabel(at - entry.lastAt)} ago`}
         </span>
       ))}
     </div>

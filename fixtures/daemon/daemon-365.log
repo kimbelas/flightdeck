@@ -1,0 +1,165 @@
+[2020-09-12T12:51:26.195Z] [supervisor] ─── daemon start ─── version=2.1.268 pid=4308 origin=transient
+[2020-09-12T12:51:26.467Z] [supervisor] auth: scheduling proactive refresh in 19365s
+[2020-09-12T12:51:26.485Z] [supervisor] auth: scheduling proactive refresh in 19365s
+[2020-09-12T12:51:26.488Z] [supervisor] workers=0
+[2020-09-12T12:51:26.560Z] [bg] bg: control socket bound at \\.\pipe\cc-daemon-*-control
+[2020-09-12T12:51:26.742Z] [bg] bg spawned 3d584ded (shell)
+[2020-09-12T13:24:26.874Z] [bg] bg retire 3d584ded: idle-prompt, idle 32m [low memory]
+[2020-09-12T13:24:30.880Z] [bg] bg settled 3d584ded (done)
+[2020-09-12T13:24:35.897Z] [supervisor] idle 5s with no clients — exiting
+[2020-09-12T13:24:35.930Z] [supervisor] shutting down (cause=idle_exit, uptime=1989s, leases=0, live_workers=0)
+[2020-09-12T13:28:33.115Z] [supervisor] ─── daemon start ─── version=2.1.268 pid=21392 origin=transient
+[2020-09-12T13:28:33.720Z] [supervisor] auth: scheduling proactive refresh in 17138s
+[2020-09-12T13:28:33.724Z] [supervisor] auth: scheduling proactive refresh in 17138s
+[2020-09-12T13:28:33.726Z] [supervisor] workers=0
+[2020-09-12T13:28:33.815Z] [bg] bg: control socket bound at \\.\pipe\cc-daemon-*-control
+[2020-09-12T13:28:33.983Z] [bg] bg spawned f4dc42fb (shell)
+[2020-09-12T13:34:34.103Z] [bg] bg retire f4dc42fb: idle-prompt, idle 5m [low memory]
+[2020-09-12T13:34:34.525Z] [bg] bg settled f4dc42fb (done)
+[2020-09-12T13:34:39.562Z] [supervisor] idle 5s with no clients — exiting
+[2020-09-12T13:34:39.566Z] [supervisor] shutting down (cause=idle_exit, uptime=366s, leases=0, live_workers=0)
+[2020-09-12T13:38:48.169Z] [supervisor] ─── daemon start ─── version=2.1.268 pid=7772 origin=transient
+[2020-09-12T13:38:48.381Z] [supervisor] auth: scheduling proactive refresh in 16523s
+[2020-09-12T13:38:48.385Z] [supervisor] auth: scheduling proactive refresh in 16523s
+[2020-09-12T13:38:48.390Z] [supervisor] workers=0
+[2020-09-12T13:38:48.426Z] [bg] bg: control socket bound at \\.\pipe\cc-daemon-*-control
+[2020-09-12T13:38:48.594Z] [bg] bg spawned f0a85b23 (shell)
+[2020-09-12T13:42:52.274Z] [bg] bg spawned 3c19cd24 (shell)
+[2020-09-12T13:46:14.719Z] [bg] bg spawned 00b1c463 (shell)
+[2020-09-12T14:43:49.378Z] [bg] bg retire f0a85b23: settled, idle 64m
+[2020-09-12T14:43:50.945Z] [bg] bg settled f0a85b23 (done)
+[2020-09-12T14:46:49.165Z] [bg] bg retire 3c19cd24: settled, idle 64m
+[2020-09-12T14:46:49.542Z] [bg] bg settled 3c19cd24 (done)
+[2020-09-12T18:14:12.141Z] [supervisor] auth: proactive refresh starting
+[2020-09-12T18:14:18.067Z] [supervisor] auth: scheduling proactive refresh in 28560s
+[2020-09-12T18:14:18.067Z] [supervisor] auth: proactive refresh succeeded
+[2020-09-12T19:21:50.783Z] [supervisor] binary at C:\Users\path-03206b\AppData\Roaming\path-d79677\path-dba27c\path-b80caa\path-28e174\path-51a1f0\path-11b496.exe changed (mtime changed) — self-restarting for upgrade
+[2020-09-12T19:21:50.793Z] [supervisor] shutting down (cause=upgrade, uptime=20582s, leases=0, live_workers=1)
+[2020-09-12T19:21:52.922Z] [supervisor] ─── daemon start ─── version=2.1.269 pid=15356 origin=transient
+[2020-09-12T19:21:53.015Z] [supervisor] auth: scheduling proactive refresh in 24505s
+[2020-09-12T19:21:53.020Z] [supervisor] auth: scheduling proactive refresh in 24505s
+[2020-09-12T19:21:53.022Z] [supervisor] workers=0
+[2020-09-12T19:21:53.039Z] [bg] bg: control socket bound at \\.\pipe\cc-daemon-*-control
+[2020-09-12T19:21:53.084Z] [bg] bg adopt: adopted=1 respawned=0 dead=0
+[2020-09-12T19:22:08.181Z] [bg] bg: post-takeover prewarm burst — respawned 0/1 stale workers, 1 refused in 0s
+[2020-09-12T19:46:53.064Z] [supervisor] binary at C:\Users\path-03206b\AppData\Roaming\path-d79677\path-dba27c\path-b80caa\path-28e174\path-51a1f0\path-11b496.exe changed (mtime changed) — self-restarting for upgrade
+[2020-09-12T19:46:53.069Z] [supervisor] shutting down (cause=upgrade, uptime=1500s, leases=0, live_workers=1)
+[2020-09-12T19:46:54.336Z] [supervisor] ─── daemon start ─── version=2.1.269 pid=35708 origin=transient
+[2020-09-12T19:46:54.402Z] [supervisor] auth: scheduling proactive refresh in 23003s
+[2020-09-12T19:46:54.406Z] [supervisor] auth: scheduling proactive refresh in 23003s
+[2020-09-12T19:46:54.409Z] [supervisor] workers=0
+[2020-09-12T19:46:54.425Z] [bg] bg: control socket bound at \\.\pipe\cc-daemon-*-control
+[2020-09-12T19:46:54.449Z] [bg] bg adopt: adopted=1 respawned=0 dead=0
+[2020-09-12T19:47:09.502Z] [bg] bg: post-takeover prewarm burst — respawned 0/1 stale workers, 1 refused in 0s
+[2020-09-21T14:53:59.729Z] [supervisor] ─── daemon start ─── version=2.1.278 pid=21084 origin=transient
+[2020-09-21T14:54:00.054Z] [supervisor] auth: scheduling proactive refresh in 25859s
+[2020-09-21T14:54:00.059Z] [supervisor] auth: scheduling proactive refresh in 25859s
+[2020-09-21T14:54:00.069Z] [supervisor] workers=0
+[2020-09-21T14:54:00.094Z] [bg] bg: control socket bound at \\.\pipe\cc-daemon-*-control
+[2020-09-21T14:54:00.190Z] [bg] bg adopt: adopted=0 respawned=0 dead=1 dead_epoch=1
+[2020-09-21T14:54:00.253Z] [bg] bg spawned d48c09a1 (shell)
+[2020-09-21T15:55:00.543Z] [bg] bg retire d48c09a1: settled, idle 61m
+[2020-09-21T15:55:00.799Z] [bg] bg settled d48c09a1 (done)
+[2020-09-21T15:55:05.801Z] [supervisor] idle 5s with no clients — exiting
+[2020-09-21T15:55:05.809Z] [supervisor] shutting down (cause=idle_exit, uptime=3666s, leases=0, live_workers=0)
+[2020-09-21T16:02:20.095Z] [supervisor] ─── daemon start ─── version=2.1.278 pid=19664 origin=transient
+[2020-09-21T16:02:20.138Z] [supervisor] auth: scheduling proactive refresh in 21759s
+[2020-09-21T16:02:20.140Z] [supervisor] auth: scheduling proactive refresh in 21759s
+[2020-09-21T16:02:20.141Z] [supervisor] workers=0
+[2020-09-21T16:02:20.148Z] [bg] bg: control socket bound at \\.\pipe\cc-daemon-*-control
+[2020-09-21T16:02:20.272Z] [bg] bg spawned d48c09a1 (fleet)
+[2020-09-21T16:20:26.409Z] [bg] bg settled d48c09a1 (killed)
+[2020-09-21T16:20:31.411Z] [supervisor] idle 5s with no clients — exiting
+[2020-09-21T16:20:31.416Z] [supervisor] shutting down (cause=idle_exit, uptime=1091s, leases=0, live_workers=0)
+[2020-09-21T17:58:29.719Z] [supervisor] ─── daemon start ─── version=2.1.278 pid=26732 origin=transient
+[2020-09-21T17:58:29.757Z] [supervisor] auth: scheduling proactive refresh in 14790s
+[2020-09-21T17:58:29.759Z] [supervisor] auth: scheduling proactive refresh in 14790s
+[2020-09-21T17:58:29.761Z] [supervisor] workers=0
+[2020-09-21T17:58:29.777Z] [bg] bg: control socket bound at \\.\pipe\cc-daemon-*-control
+[2020-09-21T17:58:29.807Z] [bg] bg spawned 87f5042a (shell)
+[2020-09-21T17:58:57.574Z] [bg] bg settled 87f5042a (killed)
+[2020-09-21T17:59:02.575Z] [supervisor] idle 5s with no clients — exiting
+[2020-09-21T17:59:02.577Z] [supervisor] shutting down (cause=idle_exit, uptime=33s, leases=0, live_workers=0)
+[2020-09-21T18:10:12.444Z] [supervisor] ─── daemon start ─── version=2.1.278 pid=9048 origin=transient
+[2020-09-21T18:10:12.496Z] [supervisor] auth: scheduling proactive refresh in 14087s
+[2020-09-21T18:10:12.498Z] [supervisor] auth: scheduling proactive refresh in 14087s
+[2020-09-21T18:10:12.500Z] [supervisor] workers=0
+[2020-09-21T18:10:12.507Z] [bg] bg: control socket bound at \\.\pipe\cc-daemon-*-control
+[2020-09-21T18:10:12.679Z] [bg] bg spawned 449de27a (shell)
+[2020-09-21T18:10:43.106Z] [bg] bg spawned 7667706c (shell)
+[2020-09-21T18:11:33.274Z] [bg] bg settled 7667706c (killed)
+[2020-09-21T18:46:00.528Z] [bg] bg spawned bc5645d5 (shell)
+[2020-09-21T18:46:32.359Z] [bg] bg settled 449de27a (killed)
+[2020-09-22T05:38:26.879Z] [supervisor] ─── daemon start ─── version=2.1.278 pid=7144 origin=transient
+[2020-09-22T05:38:27.033Z] [supervisor] auth: scheduling proactive refresh in 19275s
+[2020-09-22T05:38:27.034Z] [supervisor] auth: scheduling proactive refresh in 19275s
+[2020-09-22T05:38:27.035Z] [supervisor] workers=0
+[2020-09-22T05:38:27.050Z] [bg] bg: control socket bound at \\.\pipe\cc-daemon-*-control
+[2020-09-22T05:38:27.078Z] [bg] bg adopt: adopted=0 respawned=0 dead=1
+[2020-09-22T05:38:27.103Z] [bg] bg spawned ce4da569 (shell)
+[2020-09-22T05:38:36.011Z] [bg] bg settled ce4da569 (killed)
+[2020-09-22T05:38:36.132Z] [bg] bg spawned ce4da569 (fleet)
+[2020-09-22T05:38:48.729Z] [bg] bg spawned f4dc42fb (fleet)
+[2020-09-22T05:39:22.252Z] [bg] bg settled ce4da569 (killed)
+[2020-09-22T06:39:27.454Z] [bg] bg retire f4dc42fb: idle-prompt, idle 61m
+[2020-09-22T06:39:29.696Z] [bg] bg settled f4dc42fb (done)
+[2020-09-22T06:39:34.705Z] [supervisor] idle 5s with no clients — exiting
+[2020-09-22T06:39:34.712Z] [supervisor] shutting down (cause=idle_exit, uptime=3668s, leases=0, live_workers=0)
+[2020-09-22T14:27:55.548Z] [supervisor] ─── daemon start ─── version=2.1.278 pid=29872 origin=transient
+[2020-09-22T14:27:55.643Z] [supervisor] auth: scheduling proactive refresh in 16013s
+[2020-09-22T14:27:55.647Z] [supervisor] auth: scheduling proactive refresh in 16013s
+[2020-09-22T14:27:55.651Z] [supervisor] workers=0
+[2020-09-22T14:27:55.675Z] [bg] bg: control socket bound at \\.\pipe\cc-daemon-*-control
+[2020-09-22T14:27:55.848Z] [bg] bg spawned bc5645d5 (fleet)
+[2020-09-22T14:28:43.510Z] [bg] bg settled bc5645d5 (killed)
+[2020-09-22T14:28:48.512Z] [supervisor] idle 5s with no clients — exiting
+[2020-09-22T14:28:48.514Z] [supervisor] shutting down (cause=idle_exit, uptime=53s, leases=0, live_workers=0)
+[2020-09-22T15:35:53.140Z] [supervisor] ─── daemon start ─── version=2.1.278 pid=25300 origin=transient
+[2020-09-22T15:35:53.208Z] [supervisor] auth: scheduling proactive refresh in 11935s
+[2020-09-22T15:35:53.211Z] [supervisor] auth: scheduling proactive refresh in 11935s
+[2020-09-22T15:35:53.212Z] [supervisor] workers=0
+[2020-09-22T15:35:53.232Z] [bg] bg: control socket bound at \\.\pipe\cc-daemon-*-control
+[2020-09-22T15:35:53.384Z] [bg] bg spawned 2f2fe5c1 (shell)
+[2020-09-22T15:36:30.968Z] [bg] bg settled 2f2fe5c1 (killed)
+[2020-09-22T15:36:35.970Z] [supervisor] idle 5s with no clients — exiting
+[2020-09-22T15:36:35.972Z] [supervisor] shutting down (cause=idle_exit, uptime=43s, leases=0, live_workers=0)
+[2020-09-22T15:45:57.459Z] [supervisor] ─── daemon start ─── version=2.1.278 pid=1920 origin=transient
+[2020-09-22T15:45:57.558Z] [supervisor] auth: scheduling proactive refresh in 11331s
+[2020-09-22T15:45:57.561Z] [supervisor] auth: scheduling proactive refresh in 11331s
+[2020-09-22T15:45:57.564Z] [supervisor] workers=0
+[2020-09-22T15:45:57.576Z] [bg] bg: control socket bound at \\.\pipe\cc-daemon-*-control
+[2020-09-22T15:45:57.709Z] [bg] bg spawned d36a5725 (shell)
+[2020-09-22T15:46:23.721Z] [bg] bg spawned a5ccd5c0 (shell)
+[2020-09-22T15:46:49.600Z] [bg] bg settled a5ccd5c0 (killed)
+[2020-09-22T15:46:51.033Z] [bg] bg settled d36a5725 (killed)
+[2020-09-22T15:46:56.034Z] [supervisor] idle 5s with no clients — exiting
+[2020-09-22T15:46:56.036Z] [supervisor] shutting down (cause=idle_exit, uptime=58s, leases=0, live_workers=0)
+[2020-09-22T18:57:44.501Z] [supervisor] ─── daemon start ─── version=2.1.278 pid=15272 origin=transient
+[2020-09-22T18:57:44.560Z] [supervisor] auth: scheduling proactive refresh in 28326s
+[2020-09-22T18:57:44.562Z] [supervisor] auth: scheduling proactive refresh in 28326s
+[2020-09-22T18:57:44.565Z] [supervisor] workers=0
+[2020-09-22T18:57:44.584Z] [bg] bg: control socket bound at \\.\pipe\cc-daemon-*-control
+[2020-09-22T18:57:44.734Z] [bg] bg spawned 084da628 (shell)
+[2020-09-22T18:58:05.357Z] [bg] bg settled 084da628 (killed)
+[2020-09-22T18:58:10.360Z] [supervisor] idle 5s with no clients — exiting
+[2020-09-22T18:58:10.363Z] [supervisor] shutting down (cause=idle_exit, uptime=26s, leases=0, live_workers=0)
+[2020-09-22T18:58:40.618Z] [supervisor] ─── daemon start ─── version=2.1.278 pid=26748 origin=transient
+[2020-09-22T18:58:40.677Z] [supervisor] auth: scheduling proactive refresh in 28270s
+[2020-09-22T18:58:40.678Z] [supervisor] auth: scheduling proactive refresh in 28270s
+[2020-09-22T18:58:40.679Z] [supervisor] workers=0
+[2020-09-22T18:58:40.689Z] [bg] bg: control socket bound at \\.\pipe\cc-daemon-*-control
+[2020-09-22T18:58:40.834Z] [bg] bg spawned 961ffe5d (shell)
+[2020-09-22T18:59:11.083Z] [bg] bg settled 961ffe5d (killed)
+[2020-09-22T18:59:14.747Z] [bg] bg spawned 084da628 (fleet)
+[2020-09-22T18:59:53.773Z] [bg] bg settled 084da628 (killed)
+[2020-09-22T18:59:58.775Z] [supervisor] idle 5s with no clients — exiting
+[2020-09-22T18:59:58.781Z] [supervisor] shutting down (cause=idle_exit, uptime=78s, leases=0, live_workers=0)
+[2020-09-26T07:05:13.615Z] [supervisor] ─── daemon start ─── version=2.1.282 pid=9700 origin=transient
+[2020-09-26T07:05:13.674Z] [supervisor] auth: scheduling proactive refresh in 9640s
+[2020-09-26T07:05:13.676Z] [supervisor] auth: scheduling proactive refresh in 9640s
+[2020-09-26T07:05:13.677Z] [supervisor] workers=0
+[2020-09-26T07:05:13.696Z] [bg] bg: control socket bound at \\.\pipe\cc-daemon-*-control
+[2020-09-26T07:05:13.846Z] [bg] bg spawned b8aee58a (shell)
+[2020-09-26T07:06:32.102Z] [bg] bg settled b8aee58a (killed)
+[2020-09-26T07:06:37.114Z] [supervisor] idle 5s with no clients — exiting
+[2020-09-26T07:06:37.117Z] [supervisor] shutting down (cause=idle_exit, uptime=83s, leases=0, live_workers=0)

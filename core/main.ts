@@ -47,7 +47,7 @@ import { buildFeeds, type Feeds } from './feeds.ts';
 import { buildAsker, sessionSlice } from './verbs.ts';
 import { buildRouter, type RouterParts } from './routes.ts';
 import { projectSlice, type ProjectSlice } from './projects.ts';
-import { buildDetailReader, buildPreviewReader } from './reads.ts';
+import { buildDaemonReader, buildDetailReader, buildPreviewReader } from './reads.ts';
 import { stopCore } from './shutdown.ts';
 import { SystemClock } from './ports/clock.ts';
 import type { Logger } from './ports/logger.ts';
@@ -325,6 +325,7 @@ function buildHttp(parts: HttpParts): HttpSide {
         // P5a-T4. The one reader that spawns a process per request, which is why it is asked for
         // by its own route and its own click rather than riding the detail (`preview-route.ts`).
         preview: buildPreviewReader({ ...feeds, install, runner: parts.runner, clock, logger }),
+        daemons: buildDaemonReader({ install, clock }),
         // P6-T7. The third argument is the reconciler's memory of ended interactive
         // sessions — a sweep cannot see one, which is why it is held (`DeckQuery`).
         deck: new DeckQuery(parts.sessions, clock, feeds.reconciler),

@@ -32,6 +32,7 @@ function observed(shares: readonly ObservedShare[]): ObservedBehaviour {
     medianPeakContextTokens: 0,
     compactions: 0,
     scheduledFires: 0,
+    schedules: [],
     unknownLines: 0,
   };
 }
