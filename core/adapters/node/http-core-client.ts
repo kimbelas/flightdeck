@@ -24,7 +24,7 @@ import { err, ok, type Result } from '../../shared/result.ts';
 const DEFAULT_TIMEOUT_MS = 2000;
 
 /** Every path core answers to a GET. Closed, because `RequestRouter` matches literals only. */
-export type CoreGetPath = '/health' | '/sessions' | '/status';
+export type CoreGetPath = '/health' | '/sessions' | '/status' | '/telemetry';
 
 export interface CoreResponse {
   readonly status: number;
