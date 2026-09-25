@@ -89,6 +89,11 @@ for %%P in (4950 4949) do (
 node "%~dp0scripts\drop-token.ts" >nul 2>&1
 if exist "%LOCALAPPDATA%\flightdeck\token" (echo   -        token file could not be removed) else (echo   dropped  the core token)
 
+REM This stops the PROCESSES, never the logon tasks (P8-T1). Registered tasks start core and the
+REM deck again at the next logon; `npm run task:remove -- --apply` is what unregisters them.
+schtasks /query /tn "Flightdeck Core" >nul 2>&1 && echo   note     the logon tasks stay registered and start both again at the next logon
+schtasks /query /tn "Flightdeck Core" >nul 2>&1 && echo            npm run task:remove -- --apply unregisters them
+
 echo.
 
 

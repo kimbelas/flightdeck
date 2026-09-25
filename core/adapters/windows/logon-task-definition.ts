@@ -1,4 +1,9 @@
-// The Task Scheduler XML, as a pure function — SEC-OPS-3, D21 (P1-T12).
+// The Task Scheduler XML, as a pure function — SEC-OPS-3, D21 (P1-T12), and the deck's (P8-T1).
+//
+// **Two tasks, one shape.** Core and the deck differ in name, entry point and log file and in
+// nothing else: same principal, same least privilege, same settings, same node. So the definition
+// takes a role and everything below applies to both — a second copy of these settings is how one
+// of them would one day lose `ExecutionTimeLimit PT0S` and stop the deck after 72 hours.
 //
 // Separated from the adapter that registers it so the two SEC-OPS-3 promises are provable without
 // touching the machine's task store: **run only when the user is logged on** (`InteractiveToken`,
@@ -20,21 +25,106 @@
 /** One name, so `doctor`, the installer and anything an operator types agree (Task Scheduler). */
 export const LOGON_TASK_NAME = 'Flightdeck Core';
 
+/** The deck's task (P8-T1), named beside core's for the same reason. */
+export const DECK_LOGON_TASK_NAME = 'Flightdeck Deck';
+
+/**
+ * The two processes a logon starts. Core is D21; the deck is P8-T1, because "reachable whenever
+ * this machine is on" is not true of a deck only `flightdeck.cmd` ever starts.
+ */
+export const LOGON_ROLES = ['core', 'deck'] as const;
+
+export type LogonRole = (typeof LOGON_ROLES)[number];
+
+interface RoleShape {
+  readonly name: string;
+  readonly script: string;
+  readonly log: string;
+  readonly description: string;
+}
+
+/** What differs between the two tasks — the name, the entry point and the log. Nothing else does. */
+const ROLE_SHAPES: Readonly<Record<LogonRole, RoleShape>> = {
+  core: {
+    name: LOGON_TASK_NAME,
+    script: 'flightdeck-core.ts',
+    log: '.flightdeck-core.log',
+    description:
+      'Flightdeck core — the hook and statusLine receiver for every Claude Code session on this machine. Starts at logon so a session never posts to a dead receiver (DECISIONS.md D21).',
+  },
+  deck: {
+    name: DECK_LOGON_TASK_NAME,
+    script: 'flightdeck-deck.ts',
+    log: '.flightdeck-deck.log',
+    description:
+      'Flightdeck deck — serves the existing production build on 127.0.0.1:4949 at logon, so the deck is up whenever this machine is (ROADMAP P8-T1). It never builds.',
+  },
+};
+
+/**
+ * The whole definition for one role, from the three facts only the machine knows.
+ *
+ * One function for both callers — the installer registers what this returns and `doctor` asks
+ * Task Scheduler about the name it carries — so the two can never disagree about what a task is
+ * called or where its log goes. Windows separators throughout, because this is a Windows task.
+ */
+export function logonTaskParts(
+  role: LogonRole,
+  machine: { readonly account: string; readonly nodePath: string; readonly repo: string },
+): LogonTaskDefinitionParts {
+  const shape = ROLE_SHAPES[role];
+  const repo = machine.repo.replace(/[\\/]+$/, '');
+  return {
+    name: shape.name,
+    description: shape.description,
+    account: machine.account,
+    nodePath: machine.nodePath,
+    scriptPath: `${repo}\\scripts\\${shape.script}`,
+    workingDirectory: repo,
+    logPath: `${repo}\\${shape.log}`,
+  };
+}
+
 export interface LogonTaskDefinitionParts {
+  /** The Task Scheduler name — `LOGON_TASK_NAME` or `DECK_LOGON_TASK_NAME`. */
+  readonly name: string;
+  /** Shown in Task Scheduler's own property sheet, so it says why the task exists. */
+  readonly description: string;
   /** The current user, as `DOMAIN\account` — what the trigger and the principal both name. */
   readonly account: string;
   /** `process.execPath` — node by absolute path, because a task's PATH is not the shell's. */
   readonly nodePath: string;
-  /** The entry point, absolute: `…\scripts\flightdeck-core.ts`. */
+  /** The entry point, absolute: `…\scripts\flightdeck-core.ts` or `…\scripts\flightdeck-deck.ts`. */
   readonly scriptPath: string;
   /** The repo root. Also where the log lands, next to the one `flightdeck.cmd` writes. */
   readonly workingDirectory: string;
   readonly logPath: string;
 }
 
-/** The action's command string, exported so the installer can print the one line that matters. */
+/**
+ * The action's command string, exported so the installer can print the one line that matters.
+ *
+ * **The outer pair of quotes is load-bearing** (RESEARCH.md G.57). `cmd /c` given more than two
+ * quotes strips the FIRST and the LAST one and runs what is left, so the P1-T12 form
+ * `/c "node" "script" > "log"` ran `node.exe" "…script.ts" > "…log` — a command name that does
+ * not exist — and exited 1 before the redirect opened, so there was not even a log to say so.
+ * Wrapped once more, the stripped pair is the wrapper and the three inner pairs survive. Found by
+ * registering the task and running it; P1-T12 registered a probe and read it back, which proves
+ * the XML and nothing about the command.
+ */
 export function logonTaskCommand(parts: LogonTaskDefinitionParts): string {
-  return `/c "${parts.nodePath}" "${parts.scriptPath}" > "${parts.logPath}" 2>&1`;
+  return `/c ""${parts.nodePath}" "${parts.scriptPath}" > "${parts.logPath}" 2>&1"`;
+}
+
+/**
+ * Whether a registered definition carries the command form `cmd /c` can run — `/c ""…`.
+ *
+ * `doctor` asks, because a task registered by the P1-T12 installer is registered, least-privilege,
+ * interactive, pointing at a real node, and has never once started. Task Scheduler may hand the
+ * quotes back raw or as `&quot;`.
+ */
+export function startsUnderCmd(definition: string): boolean {
+  return definition.replaceAll('&quot;', '"').includes('<Arguments>/c ""');
 }
 
 /**
@@ -75,7 +165,7 @@ export function logonTaskDefinition(parts: LogonTaskDefinitionParts): string {
   return [
     '<?xml version="1.0" encoding="UTF-16"?>',
     '<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">',
-    whoAndWhen(escapeXml(parts.account)),
+    whoAndWhen(parts),
     SETTINGS,
     action(parts),
     '</Task>',
@@ -83,10 +173,11 @@ export function logonTaskDefinition(parts: LogonTaskDefinitionParts): string {
 }
 
 /** The registration, the logon trigger and the principal — the SEC-OPS-3 half. */
-function whoAndWhen(account: string): string {
+function whoAndWhen(parts: LogonTaskDefinitionParts): string {
+  const account = escapeXml(parts.account);
   return `  <RegistrationInfo>
-    <Description>Flightdeck core — the hook and statusLine receiver for every Claude Code session on this machine. Starts at logon so a session never posts to a dead receiver (DECISIONS.md D21).</Description>
-    <URI>\\${escapeXml(LOGON_TASK_NAME)}</URI>
+    <Description>${escapeXml(parts.description)}</Description>
+    <URI>\\${escapeXml(parts.name)}</URI>
   </RegistrationInfo>
   <Triggers>
     <LogonTrigger>

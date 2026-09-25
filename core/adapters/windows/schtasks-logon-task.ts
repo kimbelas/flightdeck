@@ -12,11 +12,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { LogonTask, LogonTaskState } from '../../ports/logon-task.ts';
-import {
-  logonTaskDefinition,
-  LOGON_TASK_NAME,
-  type LogonTaskDefinitionParts,
-} from './logon-task-definition.ts';
+import { logonTaskDefinition, type LogonTaskDefinitionParts } from './logon-task-definition.ts';
 
 const SCHTASKS = join(process.env['SystemRoot'] ?? 'C:/Windows', 'System32', 'schtasks.exe');
 
@@ -24,7 +20,8 @@ export class SchtasksLogonTask implements LogonTask {
   private readonly parts: LogonTaskDefinitionParts;
   private readonly name: string;
 
-  constructor(parts: LogonTaskDefinitionParts, name: string = LOGON_TASK_NAME) {
+  /** `name` overrides the definition's own only for a probe registration (RESEARCH.md G.17). */
+  constructor(parts: LogonTaskDefinitionParts, name: string = parts.name) {
     this.parts = parts;
     this.name = name;
   }

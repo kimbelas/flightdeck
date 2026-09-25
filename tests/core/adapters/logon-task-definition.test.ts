@@ -6,20 +6,23 @@
 // are pinned here rather than checked by eye.
 import { describe, expect, it } from 'vitest';
 import {
+  DECK_LOGON_TASK_NAME,
   ephemeralDirectory,
   logonTaskCommand,
   logonTaskDefinition,
+  logonTaskParts,
+  LOGON_ROLES,
   LOGON_TASK_NAME,
-  type LogonTaskDefinitionParts,
 } from '../../../core/adapters/windows/logon-task-definition.ts';
 
-const PARTS: LogonTaskDefinitionParts = {
+const MACHINE = {
   account: 'KIMPOY\\Kimpoy',
   nodePath: 'C:\\Program Files\\nodejs\\node.exe',
-  scriptPath: 'C:\\dev\\flightdeck\\scripts\\flightdeck-core.ts',
-  workingDirectory: 'C:\\dev\\flightdeck',
-  logPath: 'C:\\dev\\flightdeck\\.flightdeck-core.log',
+  repo: 'C:\\dev\\flightdeck',
 };
+
+const PARTS = logonTaskParts('core', MACHINE);
+const DECK = logonTaskParts('deck', MACHINE);
 
 describe('logonTaskDefinition — SEC-OPS-3', () => {
   it('runs as the owner with an interactive token, so no credential is stored', () => {
@@ -80,6 +83,32 @@ describe('logonTaskDefinition — the action', () => {
     expect(command).toContain('> "C:\\dev\\flightdeck\\.flightdeck-core.log" 2>&1');
   });
 
+  /**
+   * `cmd /?`'s own rule, modelled: after `/c`, a line that starts with a quote and holds more than
+   * two has its first and last quote removed. The P1-T12 form ran `node.exe" "…" > "…` as a
+   * command name and exited 1 with no log (RESEARCH.md G.57) — the second assertion is that bug.
+   */
+  function afterCmdStrips(command: string): string {
+    const line = command.replace(/^\/c /, '');
+    const quotes = line.split('"').length - 1;
+    if (!line.startsWith('"') || quotes <= 2) return line;
+    const last = line.lastIndexOf('"');
+    return line.slice(1, last) + line.slice(last + 1);
+  }
+
+  it('survives cmd /c stripping its first and last quote, and still names node quoted', () => {
+    const ran = afterCmdStrips(logonTaskCommand(PARTS));
+
+    expect(ran.startsWith('"C:\\Program Files\\nodejs\\node.exe" ')).toBe(true);
+    expect(ran).toContain('> "C:\\dev\\flightdeck\\.flightdeck-core.log" 2>&1');
+  });
+
+  it('would not have survived in the P1-T12 form, which is why the wrapper exists', () => {
+    const p1t12 = `/c "${PARTS.nodePath}" "${PARTS.scriptPath}" > "${PARTS.logPath}" 2>&1`;
+
+    expect(afterCmdStrips(p1t12).startsWith('C:\\Program Files\\nodejs\\node.exe" ')).toBe(true);
+  });
+
   it('quotes every path, because Program Files has a space in it', () => {
     expect(logonTaskCommand(PARTS)).not.toMatch(/[^"]C:\\Program Files/);
   });
@@ -112,6 +141,59 @@ describe('logonTaskDefinition — escaping', () => {
 
   it('carries the one task name every caller agrees on', () => {
     expect(logonTaskDefinition(PARTS)).toContain(LOGON_TASK_NAME);
+  });
+});
+
+/**
+ * P8-T1 — the deck's task is core's with a few strings changed.
+ *
+ * Pinned as "everything else is identical" rather than as a second copy of the SEC-OPS-3
+ * assertions: a second copy is exactly how one of the two would one day drift.
+ */
+describe('logonTaskParts — core and the deck', () => {
+  it('builds the paths core has always had, so the registered core task does not change', () => {
+    expect(PARTS).toMatchObject({
+      name: LOGON_TASK_NAME,
+      scriptPath: 'C:\\dev\\flightdeck\\scripts\\flightdeck-core.ts',
+      workingDirectory: 'C:\\dev\\flightdeck',
+      logPath: 'C:\\dev\\flightdeck\\.flightdeck-core.log',
+    });
+  });
+
+  it('points the deck at its own entry point and the log flightdeck.cmd writes', () => {
+    expect(DECK).toMatchObject({
+      name: DECK_LOGON_TASK_NAME,
+      scriptPath: 'C:\\dev\\flightdeck\\scripts\\flightdeck-deck.ts',
+      logPath: 'C:\\dev\\flightdeck\\.flightdeck-deck.log',
+    });
+  });
+
+  it('differs from core in name, description, script and log, and in nothing else', () => {
+    const strip = (xml: string): string =>
+      xml
+        .replaceAll(PARTS.name, 'NAME')
+        .replaceAll(DECK.name, 'NAME')
+        .replace(/<Description>.*<\/Description>/, '')
+        .replaceAll('flightdeck-core', 'ROLE')
+        .replaceAll('flightdeck-deck', 'ROLE');
+
+    expect(strip(logonTaskDefinition(DECK))).toBe(strip(logonTaskDefinition(PARTS)));
+  });
+
+  it('gives each role its own name, so installing one cannot replace the other', () => {
+    const names = LOGON_ROLES.map((role) => logonTaskParts(role, MACHINE).name);
+
+    expect(new Set(names).size).toBe(LOGON_ROLES.length);
+  });
+
+  it('does not double a separator when the repo path ends with one', () => {
+    expect(logonTaskParts('deck', { ...MACHINE, repo: 'C:\\dev\\flightdeck\\' }).logPath).toBe(
+      'C:\\dev\\flightdeck\\.flightdeck-deck.log',
+    );
+  });
+
+  it('says in the description that the deck task never builds', () => {
+    expect(logonTaskDefinition(DECK)).toMatch(/<Description>[^<]*never builds[^<]*<\/Description>/);
   });
 });
 

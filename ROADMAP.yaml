@@ -3791,9 +3791,47 @@ phases:
     tasks:
       - id: P8-T1
         title: Always on — register the core logon task, add one for the deck, and let doctor prove both
-        status: todo
+        status: done
+        done_on: 2026-09-25
         security: [SEC-OPS-3, SEC-NET-1]
+        deliverables:
+          [
+            core/adapters/windows/logon-task-definition.ts,
+            core/adapters/windows/schtasks-logon-task.ts,
+            scripts/deck-launch.ts,
+            scripts/flightdeck-deck.ts,
+            scripts/install-task-cli.ts,
+            scripts/doctor.ts,
+            scripts/doctor-cli.ts,
+            flightdeck-stop.cmd,
+            tests/core/adapters/logon-task-definition.test.ts,
+            tests/scripts/doctor-logon-task.test.ts,
+            tests/scripts/deck-launch.test.ts,
+            SECURITY.md SEC-OPS-1 SEC-OPS-3,
+            RESEARCH.md G.57,
+          ]
         notes: >-
+          **Done 2026-09-25. Running it found that the P1-T12 task had never been able to start
+          core** (RESEARCH.md G.57). `cmd /c` given more than two quotes strips the first and last
+          one, so the action ran `node.exe" "…` as a command name and exited 1 before its redirect
+          opened, which left no log to say so. Reading the registered XML back, which is all P1-T12
+          did, cannot show that; `schtasks /run` shows it in a second. The command is now wrapped in
+          one extra pair of quotes. A test models cmd's rule and shows the old form breaking, and
+          doctor fails a registered task still in the old form. **Both tasks come from one
+          definition** (`logonTaskParts(role)`): the name, description, entry point and log differ,
+          and a test pins that nothing else does. The deck task runs `scripts/flightdeck-deck.ts`,
+          which spawns Next's own bin with `start -H 127.0.0.1 -p 4949` and
+          `NEXT_TELEMETRY_DISABLED=1` and never builds. With no `.next/BUILD_ID` it writes one line
+          naming flightdeck.cmd and exits 1, and nothing restarts it. doctor now has sixteen checks:
+          both tasks with their node paths, the deck build (fail only when the deck task is
+          registered), and the deck port required once its task exists. flightdeck-stop.cmd says the
+          tasks stay registered. **Registered on this machine with `npm run task:install --
+          --apply`** (dry run first; `npm run task:remove -- --apply` is the inverse). Verified with
+          `schtasks /run` on both from free ports: `/health` ok, `/deck` 200, both bound 127.0.0.1
+          only, doctor all clear, flightdeck.cmd reported "already running" twice and opened the
+          window, and the stop script returned both tasks to Ready. **Not verified: a real log off
+          and log on**, which would end the session doing the measuring. That is the owner's to do.
+
           P1-T12 built the installer, proved the definition by registering it under a probe name
           and reading it back, and deliberately stopped short of registering it — "the owner's
           call". The owner has now called it. Two tasks, not one. **Core** as P1-T12 wrote it

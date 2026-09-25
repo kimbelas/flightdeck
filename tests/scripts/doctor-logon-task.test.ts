@@ -4,20 +4,23 @@
 // hands back a definition with the default values removed, and the first version of this check
 // asserted a positive that a correctly registered task does not carry (RESEARCH.md G.18).
 import { describe, expect, it } from 'vitest';
-import { logonTaskDefinition } from '../../core/adapters/windows/logon-task-definition.ts';
+import {
+  logonTaskDefinition,
+  logonTaskParts,
+} from '../../core/adapters/windows/logon-task-definition.ts';
 import type { LogonTaskState } from '../../core/ports/logon-task.ts';
-import { logonTaskCheck } from '../../scripts/doctor.ts';
+import { deckBuildCheck, logonTaskCheck, taskNodePath } from '../../scripts/doctor.ts';
 
 const ACCOUNT = 'KIMPOY\\Kimpoy';
 
 describe('logonTaskCheck — SEC-OPS-3', () => {
-  const definition = logonTaskDefinition({
-    account: ACCOUNT,
-    nodePath: 'C:\\nodejs\\node.exe',
-    scriptPath: 'C:\\dev\\flightdeck\\scripts\\flightdeck-core.ts',
-    workingDirectory: 'C:\\dev\\flightdeck',
-    logPath: 'C:\\dev\\flightdeck\\.flightdeck-core.log',
-  });
+  const definition = logonTaskDefinition(
+    logonTaskParts('core', {
+      account: ACCOUNT,
+      nodePath: 'C:\\nodejs\\node.exe',
+      repo: 'C:\\dev\\flightdeck',
+    }),
+  );
 
   /**
    * What `schtasks /query /xml` gives BACK for the definition above, which is not the definition
@@ -67,6 +70,19 @@ describe('logonTaskCheck — SEC-OPS-3', () => {
     expect(logonTaskCheck(state({ definition: stored })).detail).toContain('logged on');
   });
 
+  it('fails a task registered by the P1-T12 installer, whose cmd line never started node', () => {
+    // Everything else about it is right, which is why it went unnoticed (RESEARCH.md G.57).
+    const p1t12 = definition
+      .replace('<Arguments>/c &quot;&quot;', '<Arguments>/c &quot;')
+      .replace('2&gt;&amp;1&quot;</Arguments>', '2&gt;&amp;1</Arguments>');
+
+    const check = logonTaskCheck(state({ definition: p1t12 }));
+
+    expect(p1t12).not.toBe(definition);
+    expect(check.level).toBe('fail');
+    expect(check.detail).toContain('task:install');
+  });
+
   it('fails a task pointing at a node a version manager will delete', () => {
     // Registered and broken is worse than absent: "registered" reads as "the receiver is
     // guaranteed". This is the bug the installer's own dry run turned up.
@@ -79,5 +95,60 @@ describe('logonTaskCheck — SEC-OPS-3', () => {
 
     expect(check.level).toBe('fail');
     expect(check.detail).toContain('fnm_multishells');
+  });
+});
+
+/**
+ * P8-T1 — doctor reports each task's node, because it is version-pinned on purpose and a Node
+ * upgrade leaves both tasks on the old one until they are re-registered.
+ */
+describe('taskNodePath', () => {
+  it('reads the node out of a definition this project writes', () => {
+    const xml = logonTaskDefinition(
+      logonTaskParts('deck', {
+        account: ACCOUNT,
+        nodePath: 'C:\\Program Files\\nodejs\\node.exe',
+        repo: 'C:\\dev\\flightdeck',
+      }),
+    );
+
+    expect(taskNodePath(xml)).toBe('C:\\Program Files\\nodejs\\node.exe');
+  });
+
+  it('reads it when Task Scheduler hands the quotes back raw', () => {
+    const raw = '<Arguments>/c "C:\\n\\node.exe" "C:\\f\\scripts\\flightdeck-deck.ts"</Arguments>';
+
+    expect(taskNodePath(raw)).toBe('C:\\n\\node.exe');
+  });
+
+  it('names the node in the ok line, per task', () => {
+    const xml = logonTaskDefinition(
+      logonTaskParts('deck', { account: ACCOUNT, nodePath: 'C:\\n\\node.exe', repo: 'C:\\f' }),
+    );
+
+    const check = logonTaskCheck(
+      { name: 'Flightdeck Deck', installed: true, definition: xml },
+      'logon: deck',
+    );
+
+    expect(check).toMatchObject({ name: 'logon: deck', level: 'ok' });
+    expect(check.detail).toContain('C:\\n\\node.exe');
+  });
+});
+
+describe('deckBuildCheck — P8-T1', () => {
+  it('passes when there is a build to serve', () => {
+    expect(deckBuildCheck(true, true).level).toBe('ok');
+  });
+
+  it('fails a registered deck task with nothing to serve — it exits at every logon', () => {
+    const check = deckBuildCheck(false, true);
+
+    expect(check.level).toBe('fail');
+    expect(check.detail).toContain('flightdeck.cmd');
+  });
+
+  it('only warns without a task, because flightdeck.cmd builds before it starts', () => {
+    expect(deckBuildCheck(false, false).level).toBe('warn');
   });
 });
