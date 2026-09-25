@@ -78,6 +78,11 @@ export interface PresetLine {
   readonly agentMissing: boolean;
   /** `claude-isg-orch` pins `--agent orchestrator`, so no select is drawn (`pinsAgent`). */
   readonly pinsAgent: boolean;
+  /**
+   * `skill fix-review` for a draft a workflow-map row opened (P9-T2, `AssetPresets`), `undefined`
+   * for a preset core holds. A draft has no row to forget and is not saved until somebody saves it.
+   */
+  readonly origin?: string | undefined;
 }
 
 export class PresetsViewModel {

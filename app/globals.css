@@ -491,6 +491,17 @@ button.ghost {
   flex: 1 1 100%;
 }
 
+/* P9-T2. Right-aligned on the name's line, before the trigger text wraps under it. */
+.map-make {
+  margin-left: auto;
+  padding: 0 6px;
+  font-size: 0.85em;
+}
+
+.preset-draft {
+  color: var(--dim);
+}
+
 .map-badge {
   border: 1px solid var(--line);
   border-radius: 3px;

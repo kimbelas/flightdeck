@@ -15,19 +15,9 @@
 // Every decision this panel makes lives in `ProjectsViewModel` — the empty message, the sentence a
 // refusal turns into. What is left here is markup and two callbacks (CODING-STANDARDS §3).
 import { useState, type JSX, type SyntheticEvent } from 'react';
-import type { PresetDraft, PresetLaunch, PresetRef } from '../../contracts/launch-preset.ts';
 import { PROJECT_PATH_ID } from './deck-keyboard.ts';
-import { ObservedPanel } from './observed-panel.tsx';
-import { PresetsPanel } from './presets-panel.tsx';
+import { ProjectPanels, type PresetActions } from './project-panels.tsx';
 import type { ProjectLine, ProjectsViewModel } from './projects-view-model.ts';
-import { WorkflowMapPanel } from './workflow-map-panel.tsx';
-
-/** The three preset callbacks, as one prop: `max-params` applies to a component's props too. */
-export interface PresetActions {
-  readonly onLaunch: (request: PresetLaunch) => void;
-  readonly onSavePreset: (draft: PresetDraft) => void;
-  readonly onForgetPreset: (ref: PresetRef) => void;
-}
 
 interface ProjectsPanelProps {
   readonly model: ProjectsViewModel;
@@ -196,49 +186,6 @@ function ProjectRow({
       <ProjectGatesLine line={line} />
       <ProjectPanels line={line} disabled={disabled} onObserve={onObserve} presets={presets} />
     </li>
-  );
-}
-
-/**
- * The three things you open when the summary line is not enough — the presets, what Claude is
- * CONFIGURED to do here, and what it ACTUALLY did.
- *
- * One component because they are one idea, and because the third of them is what pushed
- * `ProjectRow` over its line limit. The order is the argument: SPEC §5.1(b)'s whole point is
- * the contrast between the map and the reading, so the two are adjacent.
- */
-function ProjectPanels({
-  line,
-  disabled,
-  onObserve,
-  presets,
-}: {
-  readonly line: ProjectLine;
-  readonly disabled: boolean;
-  readonly onObserve: (path: string) => void;
-  readonly presets: PresetActions;
-}): JSX.Element {
-  return (
-    <>
-      <PresetsPanel
-        model={line.presets}
-        projectPath={line.path}
-        projectName={line.name}
-        disabled={disabled}
-        onLaunch={presets.onLaunch}
-        onSave={presets.onSavePreset}
-        onForget={presets.onForgetPreset}
-      />
-      <WorkflowMapPanel model={line.map} project={line.name} drift={line.drift} />
-      <ObservedPanel
-        path={line.path}
-        name={line.name}
-        reading={line.observed}
-        asked={line.observedAsked}
-        disabled={disabled}
-        onRead={onObserve}
-      />
-    </>
   );
 }
 

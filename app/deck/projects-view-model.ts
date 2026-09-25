@@ -30,6 +30,7 @@ import { NO_ACTIVITY, type ProjectActivity } from './project-scope.ts';
 import type { ConfigDrift } from '../../contracts/config-snapshot.ts';
 import { ConfigDriftViewModel } from './config-drift-view-model.ts';
 import type { WorkflowMap } from '../../contracts/workflow-map.ts';
+import { AssetPresets } from './asset-presets.ts';
 import { PresetsViewModel } from './presets-view-model.ts';
 import { WorkflowMapViewModel } from './workflow-map-view-model.ts';
 
@@ -83,6 +84,8 @@ export interface ProjectLine {
    * (`PresetCatalogue`).
    */
   readonly presets: PresetsViewModel;
+  /** What each workflow-map row's `make a preset` would draft here — P9-T2. */
+  readonly assetPresets: AssetPresets;
   /**
    * The sessions in this project and its worktrees, across both subscriptions — P3-T6.
    *
@@ -241,6 +244,7 @@ export class ProjectsViewModel {
         progress: git?.progress,
         map: new WorkflowMapViewModel(this.maps[key]),
         presets: this.presetsFor(project.path, key),
+        assetPresets: this.assetPresetsFor(project.path, key),
         activity: this.activity[key] ?? NO_ACTIVITY,
         isCurrent: this.current === key,
         gates: this.maps[key]?.gates,
@@ -259,6 +263,12 @@ export class ProjectsViewModel {
   /** The refusal in English, or `undefined` when the last import was taken. */
   public get problem(): string | undefined {
     return this.refusal === undefined ? undefined : SENTENCES[this.refusal];
+  }
+
+  /** What the map's `make a preset` drafts in one project — its roster and its habit (P9-T2). */
+  private assetPresetsFor(root: string, key: string): AssetPresets {
+    const roster = agentRoster(this.maps[key]?.assets ?? []);
+    return new AssetPresets({ root, roster, observed: this.observed[key] });
   }
 
   /** One project's presets, with the agent roster its map carries (`agentRoster`, P9-T1). */
