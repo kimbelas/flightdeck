@@ -4,8 +4,8 @@
 //
 // In the left column under Ask, and always there rather than behind a button: the box is the whole
 // interface, and one that had to be opened first is a keystroke spent before the question. The
-// palette's "Search every transcript" focuses it. Results appear under it only once something is
-// typed, so an idle panel costs the session list one line — plus the index sentence while the
+// palette's "Search every transcript" focuses it. Filters and results appear under it only once
+// something is typed, so an idle panel costs the session list one line — plus the index sentence while the
 // backfill runs (`TranscriptSearchViewModel.indexLine`), which is the point of drawing it at all.
 //
 // Everything this draws comes off `TranscriptSearchViewModel`; the store is `TranscriptSearchStore`,
@@ -58,17 +58,23 @@ export function TranscriptSearchPanel(props: TranscriptSearchPanelProps): JSX.El
           store.type(event.target.value);
         }}
       />
-      <SearchFilters view={view} choice={state.choice} onChoose={choose} store={store} />
       {view.indexLine !== undefined && <p className="search-index">{view.indexLine}</p>}
-      {view.summary !== undefined && <p className="search-summary">{view.summary}</p>}
-      <SearchHits
-        hits={view.hits}
-        onOnly={(shortId) => {
-          choose({ session: shortId });
-        }}
-        onOpenPane={props.onOpenPane}
-        onResume={props.onResume}
-      />
+      {/* Filters and hits only once there is a question: four selects on an idle panel pushed a
+          crowded left column past its height, and the section overlapped the session rows. */}
+      {state.choice.query.trim() !== '' && (
+        <>
+          <SearchFilters view={view} choice={state.choice} onChoose={choose} store={store} />
+          {view.summary !== undefined && <p className="search-summary">{view.summary}</p>}
+          <SearchHits
+            hits={view.hits}
+            onOnly={(shortId) => {
+              choose({ session: shortId });
+            }}
+            onOpenPane={props.onOpenPane}
+            onResume={props.onResume}
+          />
+        </>
+      )}
     </section>
   );
 }

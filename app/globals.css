@@ -140,11 +140,19 @@ button.ghost {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  overflow-y: auto;
   border-right: 1px solid var(--line);
 }
 
+/* The panels above the list keep their height (P7-T2). Shrunk, their content overflowed onto the
+   session rows below, which then could not be clicked; now a crowded column scrolls instead. */
+.deck-left > :not(.rows) {
+  flex-shrink: 0;
+}
+
+/* Its own scroll while there is room, and never squeezed shut when there is not. */
 .rows {
-  flex: 1;
+  flex: 1 0 320px;
   overflow-y: auto;
 }
 
@@ -1160,6 +1168,7 @@ button.ghost {
 
 .transcript-search {
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: 6px;
   padding: 10px 12px;
@@ -1199,7 +1208,7 @@ button.ghost {
   margin: 0;
   padding: 0;
   list-style: none;
-  max-height: 420px;
+  max-height: min(420px, 40vh);
   overflow-y: auto;
 }
 

@@ -43,10 +43,16 @@ async function readyChecks(page, report, core) {
   report.check('the search box is on the deck', ready);
   if (!ready) return false;
   const index = page.locator('.search-index');
-  const said = await waitFor(async () => (await index.count()) === 1);
+  // On the text, not on the element: until the empty search's reply lands the line reads
+  // "progress unknown", so an element-count wait raced it and failed one run in two.
+  const said = await waitFor(async () =>
+    (await index.count()) === 1
+      ? clean(await index.textContent()).includes('300 MB of 800 MB read')
+      : false,
+  );
   report.check(
     'before anything is typed it says the index is still filling, and how far it has got',
-    said && clean(await index.textContent()).includes('300 MB of 800 MB read'),
+    said,
     clean(await index.textContent().catch(() => '')),
   );
   await page.locator('main.deck').click({ position: { x: 5, y: 5 } });

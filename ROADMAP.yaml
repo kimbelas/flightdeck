@@ -3729,8 +3729,84 @@ phases:
           run check` 226 files / 2 930 tests.
       - id: P7-T2
         title: Search UI with filters (project, subscription, date, tool, session)
-        status: todo
+        status: done
+        done_on: 2026-09-25
         depends_on: [P9]
+        security: [SEC-DATA-1, SEC-DATA-3, SEC-UI-2]
+        deliverables:
+          [
+            contracts/search-filters.ts,
+            contracts/search-reply.ts,
+            contracts/transcript-tools.ts,
+            contracts/deck-routes.ts,
+            core/ports/store.ts,
+            core/application/transcript-indexer.ts,
+            core/adapters/sqlite/schema.ts,
+            core/adapters/sqlite/search-statements.ts,
+            core/adapters/sqlite/sqlite-transcript-index.ts,
+            core/adapters/sqlite/sqlite-store.ts,
+            core/adapters/sqlite/rows.ts,
+            core/http/search-route.ts,
+            core/http/search-tools-route.ts,
+            core/routes.ts,
+            app/deck/transcript-search-store.ts,
+            app/deck/transcript-search-view-model.ts,
+            app/deck/transcript-search-panel.tsx,
+            app/deck/transcript-search-hits.tsx,
+            app/deck/deck-body.tsx,
+            app/deck/deck-commands.ts,
+            app/deck/deck-keyboard.ts,
+            app/globals.css,
+            tests/contracts/search-filters.test.ts,
+            tests/contracts/search-reply.test.ts,
+            tests/contracts/transcript-tools.test.ts,
+            tests/core/adapters/sqlite-search-filters.test.ts,
+            tests/core/adapters/sqlite-search.test.ts,
+            tests/core/application/transcript-indexer.test.ts,
+            tests/core/http/search-route.test.ts,
+            tests/core/http/search-tools-route.test.ts,
+            tests/fakes/fake-store.ts,
+            tests/app/transcript-search-store.test.ts,
+            tests/app/transcript-search-view-model.test.ts,
+            tests/e2e/fixture-search.mjs,
+            tests/e2e/fixture-core.mjs,
+            tests/e2e/smoke/search-checks.mjs,
+            tests/e2e/smoke.mjs,
+            SECURITY.md SEC-DATA-1,
+          ]
+        notes: >-
+          **Done 2026-09-25; the gate met live — 406 ms from keystroke to the Cloudflare Workers
+          hits, the 150 ms typing pause included.** SPEC 5.8's five filters are bound parameters in
+          the one grouped FTS5 statement, each `(:x IS NULL OR …)`, and they narrow the matching
+          LINES before the one-hit-per-session grouping, so a date range means a matching line
+          written in it. **The project filter is a transcript slug** (`transcriptSlug`: every
+          non-alphanumeric becomes `-`) and it matches the root and `<root>--claude-worktrees-*`,
+          not a namesake: `xpert` does not match `xpert-new`. `until` ignores undated lines. A
+          malformed filter is 400 `bad_filter`, because dropping it would give a wider answer that
+          looks like the narrow one; the query itself is still never a 400. **The index says how
+          far it has got.** Every `/search` reply carries `index` (last pass, transcripts, behind,
+          bytes total and indexed), read off the cursors after each pass; the panel says "index
+          still filling: X of Y read, N of M transcripts to go" (G.56). **The tool filter cost one
+          more backfill.** Migration 9 adds `transcript_tools` (names only, never inputs,
+          SEC-DATA-1) and drops every cursor so the corpus is re-read with its tool calls; a file
+          with no cursor is read as a restart, which replaces its session's excerpts rather than
+          duplicating them, and excerpts whose transcript cleanup deleted are kept. The live store
+          was backed up before core migrated it. `GET /search/tools` feeds the picker. **The
+          deck:** a box under Ask, reached from Ctrl+K "Search every transcript", searching as it
+          is typed with stale replies dropped. A hit names the imported project (or `project ·
+          tree`), the account, the age and who said it; a session still on the deck offers open
+          pane or resume, one it no longer lists offers `cd "<root>"; claude-365 --resume <uuid>`.
+          **Running the whole smoke found a layout bug the branch's own checks could not:** the
+          left column's panels shrank when it was full and their content overflowed onto the
+          session rows, so an adopt button could not be clicked. The panels now keep their height
+          (`flex-shrink: 0`), the list keeps at least 320 px and the column scrolls; the filters
+          and hits draw only once something is typed. And the "still filling" check raced the
+          first reply — the line reads "progress unknown" until it lands — so it waits on the text.
+          **Live, with flightdeck.cmd and every non-GET aborted:** `user_version` 9, the backfill
+          restarted at 413 of 424 transcripts, queries answered in 13–26 ms, the kept excerpts
+          already gave 9 sessions for the gate query and 3 with `isg`, a bad `since` was 400.
+          **Follow-up:** `observed-reader.ts`'s `projectSlug` is wrong for a folder with a dot or a
+          space (P7-T3 fixes it). Smoke grew 18 checks (508 in all).
       - id: P7-T3
         title: Cost and activity analytics from cost-state
         status: todo
