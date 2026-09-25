@@ -4610,8 +4610,9 @@ phases:
           assets stay out of the drift digest: they are the config dir's, and the first read after
           this build would have reported every user-scope skill as added in every project. And the
           frontmatter reader now joins `description: >` block text into one line, because
-          `bash-script-auditor`'s description had read as `>`. **Known gap: enablement is not read** —
-          a plugin installed but disabled in `enabledPlugins` still lists. The deck draws one
+          `bash-script-auditor`'s description had read as `>`. **Enablement was a known gap, closed in
+          fix/plugin-enablement**: `enabledPlugins` is merged key by key, local over project over
+          user, and a plugin no file mentions counts as enabled (plugins/loading, manifest-reference). The deck draws one
           `plugin <name>` heading per plugin below the project's own lists, also on a folder with no
           `.claude`, and adds `N plugin assets` to the closed line; `MakePreset` moved to
           `make-preset.tsx` for `max-lines`. **Live, with flightdeck.cmd and every non-GET aborted
