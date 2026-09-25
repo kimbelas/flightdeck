@@ -6,6 +6,7 @@
 // `claude-asset-reader.test.ts`.
 import { describe, expect, it } from 'vitest';
 import type { ClaudeAsset } from '../../../contracts/claude-assets.ts';
+import type { ProjectPluginSettings } from '../../../contracts/plugin-enablement.ts';
 import type { ProjectRecord } from '../../../contracts/project.ts';
 import { AgentRoster, type RosterRegistry } from '../../../core/application/agent-roster.ts';
 import { err, ok, type Result } from '../../../core/shared/result.ts';
@@ -41,7 +42,16 @@ class StubRegistry implements RosterRegistry {
   }
 }
 
-function roster(): { subject: AgentRoster; asked: string[] } {
+/** What a project that switches every plugin off in its `settings.local.json` hands over. */
+const ALL_OFF: ProjectPluginSettings = {
+  project: undefined,
+  local: { enabledPlugins: { 'shell-review@claude-kit': false } },
+};
+
+function roster(settings: ProjectPluginSettings = { project: undefined, local: undefined }): {
+  subject: AgentRoster;
+  asked: string[];
+} {
   const asked: string[] = [];
   const assets = {
     assets: (claudeDir: string): Promise<readonly ClaudeAsset[]> => {
@@ -57,9 +67,19 @@ function roster(): { subject: AgentRoster; asked: string[] } {
   };
   // P9-T5. One user-scope plugin agent everywhere, and one whose scoped name is too long to be
   // agent-shaped.
+  // The enablement rule itself is `plugin-asset-reader.test.ts`'s; this double only proves the
+  // roster hands over what `projectSettings` read, by answering nothing for `ALL_OFF`.
   const plugins = {
-    assets: (projectPaths: readonly string[]): Promise<readonly ClaudeAsset[]> => {
+    projectSettings: (claudeDir: string): Promise<ProjectPluginSettings> => {
+      asked.push(`settings:${claudeDir}`);
+      return Promise.resolve(settings);
+    },
+    assets: (
+      projectPaths: readonly string[],
+      project: ProjectPluginSettings,
+    ): Promise<readonly ClaudeAsset[]> => {
       asked.push(`plugins:${projectPaths.join('|')}`);
+      if (project === ALL_OFF) return Promise.resolve([]);
       return Promise.resolve([
         { ...asset('bash-script-auditor'), plugin: 'shell-review' },
         { ...asset('x'.repeat(65)), plugin: 'too-long' },
@@ -84,7 +104,11 @@ describe('AgentRoster.namesFor', () => {
 
     await subject.namesFor(APP_NEXT);
 
-    expect(asked).toEqual([`${APP_NEXT}\\.claude`, `plugins:${APP_NEXT}|${APP_NEXT}`]);
+    expect(asked).toEqual([
+      `${APP_NEXT}\\.claude`,
+      `settings:${APP_NEXT}\\.claude`,
+      `plugins:${APP_NEXT}|${APP_NEXT}`,
+    ]);
   });
 
   it('holds a plugin agent under its scoped name only (P9-T5)', async () => {
@@ -93,6 +117,13 @@ describe('AgentRoster.namesFor', () => {
     expect(await subject.allows(DOCS_TOOL, 'shell-review:bash-script-auditor')).toBe(true);
     // Claude Code would resolve the bare name too, but the roster is the scoped name the map offers.
     expect(await subject.allows(DOCS_TOOL, 'bash-script-auditor')).toBe(false);
+  });
+
+  it("leaves off an agent whose plugin the project's settings switch off", async () => {
+    const { subject } = roster(ALL_OFF);
+
+    expect(await subject.namesFor(APP_NEXT)).toEqual(['code-reviewer', 'reviewer']);
+    expect(await subject.allows(APP_NEXT, 'shell-review:bash-script-auditor')).toBe(false);
   });
 
   it('is empty for a folder nobody imported', async () => {
@@ -109,7 +140,11 @@ describe('AgentRoster.allows', () => {
     const { subject, asked } = roster();
 
     expect(await subject.allows(TREE, 'reviewer')).toBe(true);
-    expect(asked).toEqual([`${APP_NEXT}\\.claude`, `plugins:${APP_NEXT}|${APP_NEXT}`]);
+    expect(asked).toEqual([
+      `${APP_NEXT}\\.claude`,
+      `settings:${APP_NEXT}\\.claude`,
+      `plugins:${APP_NEXT}|${APP_NEXT}`,
+    ]);
   });
 
   it('refuses a name the roster does not hold', async () => {

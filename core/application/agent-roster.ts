@@ -22,6 +22,7 @@ import { AGENT_SHAPE, agentRoster } from '../../contracts/launch-preset.ts';
 import { projectKey, type ProjectRecord } from '../../contracts/project.ts';
 import { childPath, isUnder } from '../../contracts/windows-path.ts';
 import type { ClaudeAsset } from '../../contracts/claude-assets.ts';
+import type { ProjectPluginSettings } from '../../contracts/plugin-enablement.ts';
 import type { Result } from '../shared/result.ts';
 
 /** The three doors of the registry this needs, and nothing that writes. */
@@ -36,9 +37,17 @@ export interface RosterAssets {
   assets(claudeDir: string): Promise<readonly ClaudeAsset[]>;
 }
 
-/** `PluginAssetReader.assets`, narrowed the same way — P9-T5. */
+/**
+ * `PluginAssetReader`, narrowed the same way — P9-T5. `projectSettings` because the roster, unlike
+ * the map, has not parsed the project's settings for anything else, and a plugin the project
+ * switches off must not be startable under `--agent` either.
+ */
 export interface RosterPluginAssets {
-  assets(projectPaths: readonly string[]): Promise<readonly ClaudeAsset[]>;
+  assets(
+    projectPaths: readonly string[],
+    project: ProjectPluginSettings,
+  ): Promise<readonly ClaudeAsset[]>;
+  projectSettings(claudeDir: string): Promise<ProjectPluginSettings>;
 }
 
 export interface AgentRosterParts {
@@ -46,8 +55,9 @@ export interface AgentRosterParts {
   readonly assets: RosterAssets;
   /**
    * P9-T5. A plugin's agents are on the roster under their scoped name (`plugin:agent`), which is
-   * the name `--agent` takes for one. Read fresh as well, for the same reason: uninstalling a
-   * plugin between the save and the press must refuse the launch.
+   * the name `--agent` takes for one — an ENABLED plugin's only. Read fresh as well, for the same
+   * reason: uninstalling or disabling a plugin between the save and the press must refuse the
+   * launch.
    */
   readonly plugins: RosterPluginAssets;
 }
@@ -69,9 +79,12 @@ export class AgentRoster {
   public async namesFor(projectPath: string): Promise<readonly string[]> {
     const root = await this.parts.registry.resolveRoot(projectPath);
     if (!root.ok) return [];
+    const claudeDir = childPath(root.value, '.claude');
     const [own, plugins] = await Promise.all([
-      this.parts.assets.assets(childPath(root.value, '.claude')),
-      this.parts.plugins.assets([projectPath, root.value]),
+      this.parts.assets.assets(claudeDir),
+      this.parts.plugins
+        .projectSettings(claudeDir)
+        .then((project) => this.parts.plugins.assets([projectPath, root.value], project)),
     ]);
     return agentRoster([...own, ...plugins]);
   }
