@@ -27,7 +27,13 @@
 // would send a sentence beginning with a slash, not run a skill. The name is text from a file an
 // imported repository controls, and it only ever reaches a text box and an environment variable
 // (SEC-UI-2, SEC-PROC-1).
-import type { ClaudeAsset } from '../../contracts/claude-assets.ts';
+//
+// **A plugin's asset is addressed by its scoped name (P9-T5)**: `/superpowers:brainstorming ` for
+// a skill, `shell-review:bash-script-auditor` as the agent — Claude Code's own form for both
+// (`scopedAssetName`). The session is still named with the bare name, which is what the owner
+// would call it; the preset and the `where` line carry the scoped one, so two plugins' `review`
+// skills do not draft two presets with the same name.
+import { scopedAssetName, type ClaudeAsset } from '../../contracts/claude-assets.ts';
 import {
   MAX_PRESET_NAME_CHARS,
   MAX_SESSION_NAME_CHARS,
@@ -81,15 +87,16 @@ export class AssetPresets {
    * rather than keeping what was half-typed into the last one — the key is what resets the boxes.
    */
   public draftFor(asset: ClaudeAsset, press = 0): PresetLine | undefined {
-    const agent = asset.kind === 'agent' ? this.rosterName(asset.name) : undefined;
+    const scoped = scopedAssetName(asset);
+    const agent = asset.kind === 'agent' ? this.rosterName(scoped) : undefined;
     if (asset.kind === 'agent' && agent === undefined) return undefined;
-    if (asset.kind !== 'agent' && !SLASH_NAME.test(asset.name)) return undefined;
+    if (asset.kind !== 'agent' && !SLASH_NAME.test(scoped)) return undefined;
     const { root, roster } = this.input;
     const profileFn = this.profileFn;
     return {
-      key: `${projectKey(root)}|draft|${asset.kind}|${asset.name}|${String(press)}`,
-      id: asset.name,
-      name: asset.name.slice(0, MAX_PRESET_NAME_CHARS),
+      key: `${projectKey(root)}|draft|${asset.kind}|${scoped}|${String(press)}`,
+      id: scoped,
+      name: scoped.slice(0, MAX_PRESET_NAME_CHARS),
       profileFn,
       subscription: subscriptionOfProfileFunction(profileFn),
       builtIn: false,
@@ -99,14 +106,14 @@ export class AssetPresets {
       isRoot: true,
       sessionName: asset.name.slice(0, MAX_SESSION_NAME_CHARS),
       promptSource: 'literal',
-      prompt: agent === undefined ? `/${asset.name} ` : '',
+      prompt: agent === undefined ? `/${scoped} ` : '',
       namesItself: false,
       agent,
       agentChoices: roster,
       agentMissing: false,
       pinsAgent: false,
       ticketChoices: [],
-      origin: `${asset.kind} ${asset.name}`,
+      origin: `${asset.kind} ${scoped}`,
     };
   }
 

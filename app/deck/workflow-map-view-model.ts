@@ -20,6 +20,11 @@
 // group's commands in the order they are written, so re-ordering them would answer a different
 // question (contracts/hook-timeline.ts). Grouping by event is a heading over a run of rows that
 // were already adjacent, which changes nothing about the sequence.
+//
+// **A plugin's assets are drawn under their plugin (P9-T5)**, one heading per plugin, below the
+// project's own three. They are not the repository's config — they come from a config dir's
+// install — so the three kind lists and their counts stay the project's own, and the closed line
+// gains one `N plugin assets` rather than folding fifteen `superpowers` skills into `skills`.
 import type { ClaudeAsset } from '../../contracts/claude-assets.ts';
 import type { HookStep } from '../../contracts/hook-timeline.ts';
 import type { InstructionFile, InstructionSource } from '../../contracts/instruction-stack.ts';
@@ -51,6 +56,12 @@ export interface InstructionLine {
   readonly name: string;
   /** `3.4 kB`, or `undefined` for a file that is not there. */
   readonly size: string | undefined;
+}
+
+/** One installed plugin and what it carries, in core's order (agents, commands, skills). */
+export interface PluginGroup {
+  readonly plugin: string;
+  readonly assets: readonly ClaudeAsset[];
 }
 
 /** One heading and the steps under it, in the order they run. */
@@ -93,6 +104,7 @@ export class WorkflowMapViewModel {
       counted(this.kind('agent').length, 'agent', 'agents'),
       counted(this.kind('command').length, 'command', 'commands'),
       counted(this.kind('skill').length, 'skill', 'skills'),
+      counted(this.fromPlugins().length, 'plugin asset', 'plugin assets'),
       counted(map.hooks.length, 'hook', 'hooks'),
       counted(map.servers.length, 'MCP server', 'MCP servers'),
       counted(map.plugins.length, 'plugin', 'plugins'),
@@ -120,6 +132,22 @@ export class WorkflowMapViewModel {
 
   public get skills(): readonly ClaudeAsset[] {
     return this.kind('skill');
+  }
+
+  /**
+   * Each plugin's assets under its name, sorted by plugin — core already sends them that way, and
+   * grouping is a heading over a run that was adjacent (the hook timeline's rule).
+   */
+  public get pluginGroups(): readonly PluginGroup[] {
+    const groups: PluginGroup[] = [];
+    for (const asset of this.fromPlugins()) {
+      const plugin = asset.plugin ?? '';
+      const last = groups.at(-1);
+      if (last?.plugin === plugin)
+        groups[groups.length - 1] = { plugin, assets: [...last.assets, asset] };
+      else groups.push({ plugin, assets: [asset] });
+    }
+    return groups;
   }
 
   /** The timeline, grouped under its event headings and otherwise untouched. See the header. */
@@ -212,8 +240,15 @@ export class WorkflowMapViewModel {
       .map((folder) => `${folder.folder} ${String(folder.files)}`);
   }
 
+  /** The project's OWN assets of one kind — a plugin's are `pluginGroups`. */
   private kind(wanted: ClaudeAsset['kind']): readonly ClaudeAsset[] {
-    return (this.map?.assets ?? []).filter((asset) => asset.kind === wanted);
+    return (this.map?.assets ?? []).filter(
+      (asset) => asset.kind === wanted && asset.plugin === undefined,
+    );
+  }
+
+  private fromPlugins(): readonly ClaudeAsset[] {
+    return (this.map?.assets ?? []).filter((asset) => asset.plugin !== undefined);
   }
 }
 
