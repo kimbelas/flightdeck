@@ -237,6 +237,7 @@ export class SqliteStore implements Store {
       preset.promptSource,
       preset.prompt,
       preset.group ?? null,
+      preset.agent ?? null,
     );
     return toPreset(this.presetRows.selectOne.get(preset.projectKey, preset.id));
   }

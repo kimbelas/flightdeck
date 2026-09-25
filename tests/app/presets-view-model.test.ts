@@ -29,6 +29,7 @@ function preset(over: Partial<LaunchPreset> = {}): LaunchPreset {
     promptSource: 'ticket',
     prompt: '',
     group: undefined,
+    agent: undefined,
     builtIn: true,
     ...over,
   };
@@ -133,5 +134,38 @@ describe('draftPrompt', () => {
 
   it('answers what was typed for a literal preset', () => {
     expect(draftPrompt('literal', 'nightly', 'read CLAUDE.md')).toBe('read CLAUDE.md');
+  });
+});
+
+describe('PresetsViewModel — the agent select (P9-T1)', () => {
+  const withRoster = (
+    presets: readonly LaunchPreset[],
+    roster: readonly string[],
+  ): PresetsViewModel => new PresetsViewModel(presets, APP_NEXT, undefined, roster);
+
+  it('offers the roster on a function that does not pin an agent', () => {
+    const line = withRoster([preset()], ['code-reviewer', 'reviewer']).lines[0];
+
+    expect(line?.agentChoices).toEqual(['code-reviewer', 'reviewer']);
+    expect(line?.agent).toBeUndefined();
+    expect(line?.pinsAgent).toBe(false);
+  });
+
+  it('offers nothing on claude-isg-orch, which runs its own agent', () => {
+    const line = withRoster([preset({ profileFn: 'claude-isg-orch' })], ['reviewer']).lines[0];
+
+    expect(line?.agentChoices).toEqual([]);
+    expect(line?.pinsAgent).toBe(true);
+  });
+
+  it('keeps a saved agent the roster lost in the list, marked missing', () => {
+    const line = withRoster([preset({ builtIn: false, agent: 'gone' })], ['reviewer']).lines[0];
+
+    expect(line?.agentChoices).toEqual(['reviewer', 'gone']);
+    expect(line?.agentMissing).toBe(true);
+  });
+
+  it('offers nothing before the map has arrived', () => {
+    expect(model([preset()]).lines[0]?.agentChoices).toEqual([]);
   });
 });

@@ -128,6 +128,8 @@ export class GroupLauncher {
       prompt: presetPrompt(preset),
       name: preset.sessionName,
       cwd: preset.cwd,
+      // Checked against the roster by the launcher, for a group press exactly as for one (P9-T1).
+      agent: preset.agent,
     });
     return {
       presetId: preset.id,

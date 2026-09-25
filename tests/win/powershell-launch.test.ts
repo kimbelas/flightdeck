@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ExecFileProcessRunner } from '../../core/adapters/claude-cli/execfile-process-runner.ts';
 import {
+  AGENT_VARIABLE,
   NAME_VARIABLE,
   PROMPT_VARIABLE,
 } from '../../core/adapters/windows/powershell-launch-commands.ts';
@@ -45,8 +46,10 @@ afterAll(() => {
  * The shape of the script is the adapter's, one token at a time: the point is that reading a
  * variable in argument mode is a VALUE, and nothing about that changes with the callee.
  */
-async function argvFor(name: string, prompt: string): Promise<readonly string[]> {
-  const source = `node "${script}" --bg -n $env:${NAME_VARIABLE} $env:${PROMPT_VARIABLE}`;
+async function argvFor(name: string, prompt: string, agent?: string): Promise<readonly string[]> {
+  // P9-T1's agent line when an agent is given — the adapter's `AGENT_SCRIPTS` shape, token for token.
+  const flags = agent === undefined ? '' : ` --agent $env:${AGENT_VARIABLE}`;
+  const source = `node "${script}" --bg${flags} -n $env:${NAME_VARIABLE} $env:${PROMPT_VARIABLE}`;
   const encoded = Buffer.from(source, 'utf16le').toString('base64');
   const result = await new ExecFileProcessRunner().run({
     command: join(
@@ -57,7 +60,12 @@ async function argvFor(name: string, prompt: string): Promise<readonly string[]>
       'powershell.exe',
     ),
     args: ['-NoLogo', '-NonInteractive', '-EncodedCommand', encoded],
-    env: { ...process.env, [NAME_VARIABLE]: name, [PROMPT_VARIABLE]: prompt },
+    env: {
+      ...process.env,
+      [NAME_VARIABLE]: name,
+      [PROMPT_VARIABLE]: prompt,
+      ...(agent === undefined ? {} : { [AGENT_VARIABLE]: agent }),
+    },
     timeoutMs: TIMEOUT_MS,
   });
   const parsed: unknown = JSON.parse(result.stdout.trim());
@@ -111,6 +119,23 @@ describe('a prompt through -EncodedCommand', () => {
       const argv = await argvFor('n', String.raw`C:\a path\with spaces\file.txt`);
 
       expect(argv.at(-1)).toBe(String.raw`C:\a path\with spaces\file.txt`);
+    },
+    TIMEOUT_MS,
+  );
+
+  it.skipIf(!windows)(
+    'puts the agent in its own element, and leaves the prompt one element after it (P9-T1)',
+    async () => {
+      const prompt = "review 'this' and $(Get-Date)";
+
+      expect(await argvFor('review', prompt, 'code-reviewer')).toEqual([
+        '--bg',
+        '--agent',
+        'code-reviewer',
+        '-n',
+        'review',
+        prompt,
+      ]);
     },
     TIMEOUT_MS,
   );

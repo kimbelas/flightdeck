@@ -26,6 +26,7 @@ const PRESET: LaunchPreset = {
   promptSource: 'ticket',
   prompt: '',
   group: undefined,
+  agent: undefined,
   builtIn: true,
 };
 
@@ -41,6 +42,7 @@ const DRAFT = JSON.stringify({
   promptSource: 'ticket',
   prompt: '',
   group: undefined,
+  agent: undefined,
 });
 
 describe('PresetsRoute', () => {

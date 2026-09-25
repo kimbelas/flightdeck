@@ -32,6 +32,7 @@ const PRESET: LaunchPreset = {
   promptSource: 'ticket',
   prompt: '',
   group: undefined,
+  agent: undefined,
   builtIn: true,
 };
 
@@ -44,6 +45,7 @@ const DRAFT: PresetDraft = {
   promptSource: 'ticket',
   prompt: '',
   group: undefined,
+  agent: undefined,
 };
 
 /** The stream is not under test here, so the transport does nothing and is never connected. */
@@ -176,6 +178,7 @@ describe('DeckStore — starting a session from a preset', () => {
       prompt: 'plan ticket XWEB-2019',
       name: 'XWEB-2019',
       cwd: APP_NEXT,
+      agent: undefined,
     });
 
     expect(started).toBe('aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee');
@@ -187,6 +190,7 @@ describe('DeckStore — starting a session from a preset', () => {
         prompt: 'plan ticket XWEB-2019',
         name: 'XWEB-2019',
         cwd: APP_NEXT,
+        agent: undefined,
       },
     });
   });
@@ -200,6 +204,7 @@ describe('DeckStore — starting a session from a preset', () => {
       prompt: 'go',
       name: 'x',
       cwd: APP_NEXT,
+      agent: undefined,
     });
 
     expect(started).toBeUndefined();
@@ -210,7 +215,13 @@ describe('DeckStore — starting a session from a preset', () => {
     const { store, api } = rig();
     api.willAnswer(201, { sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' });
 
-    await store.launch({ profileFn: 'claude-365', prompt: 'hello', name: 'name', cwd: '' });
+    await store.launch({
+      profileFn: 'claude-365',
+      prompt: 'hello',
+      name: 'name',
+      cwd: '',
+      agent: undefined,
+    });
 
     // `''` is what core reads as "no cwd" (`optionalString`), so the form still starts a session
     // in core's own directory and nothing about it changed.
@@ -219,6 +230,7 @@ describe('DeckStore — starting a session from a preset', () => {
       prompt: 'hello',
       name: 'name',
       cwd: '',
+      agent: undefined,
     });
   });
 });

@@ -25,7 +25,7 @@ import { AskRunner, type AskPublisher } from './application/ask-runner.ts';
 import { InstallDoctor } from './application/install-doctor.ts';
 import { SessionRespawner } from './application/session-respawner.ts';
 import type { AuditLog } from './application/audit-log.ts';
-import { SessionLauncher } from './application/session-launcher.ts';
+import { SessionLauncher, type LaunchAgentRoster } from './application/session-launcher.ts';
 import { SessionRemover } from './application/session-remover.ts';
 import { SessionResumer } from './application/session-resumer.ts';
 import { SessionStopper } from './application/session-stopper.ts';
@@ -70,10 +70,13 @@ function powerShellPath(): string {
 
 export function sessionVerbs(
   parts: SessionVerbParts,
+  roster: LaunchAgentRoster,
 ): Pick<RouterParts, 'launcher' | 'resumer' | 'stopper' | 'remover' | 'respawner' | 'doctor'> {
   return {
     launcher: new SessionLauncher({
       commands: new PowerShellLaunchCommands(),
+      // P9-T1. The project slice's roster — the one a preset save already checked against.
+      roster,
       runner: parts.runner,
       audit: parts.audit,
       logger: parts.logger,
@@ -187,7 +190,7 @@ export function sessionSlice(
 > {
   const { install, logger } = parts;
   const sessionParts = { install, runner: parts.runner, audit: parts.audit, logger };
-  const verbs = sessionVerbs(sessionParts);
+  const verbs = sessionVerbs(sessionParts, parts.projects.roster);
   return {
     ...verbs,
     popper: buildPopper({ ...sessionParts, panes }),

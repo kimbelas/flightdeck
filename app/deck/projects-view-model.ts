@@ -16,7 +16,11 @@
 // naming: a repository with nothing in any of the four counts says so out loud rather than
 // rendering an empty space that reads as "not loaded yet".
 import type { GitStatus } from '../../contracts/git-status.ts';
-import type { LaunchPreset, PresetRefusal } from '../../contracts/launch-preset.ts';
+import {
+  agentRoster,
+  type LaunchPreset,
+  type PresetRefusal,
+} from '../../contracts/launch-preset.ts';
 import type { ProjectStatus, StackLabel } from '../../contracts/project-status.ts';
 import type { ImportRefusal, ProjectRecord } from '../../contracts/project.ts';
 import { projectKey } from '../../contracts/project.ts';
@@ -236,7 +240,7 @@ export class ProjectsViewModel {
         gitSummary: git === undefined ? undefined : summarise(git),
         progress: git?.progress,
         map: new WorkflowMapViewModel(this.maps[key]),
-        presets: new PresetsViewModel(this.presets, project.path, this.presetRefusal),
+        presets: this.presetsFor(project.path, key),
         activity: this.activity[key] ?? NO_ACTIVITY,
         isCurrent: this.current === key,
         gates: this.maps[key]?.gates,
@@ -255,6 +259,12 @@ export class ProjectsViewModel {
   /** The refusal in English, or `undefined` when the last import was taken. */
   public get problem(): string | undefined {
     return this.refusal === undefined ? undefined : SENTENCES[this.refusal];
+  }
+
+  /** One project's presets, with the agent roster its map carries (`agentRoster`, P9-T1). */
+  private presetsFor(path: string, key: string): PresetsViewModel {
+    const roster = agentRoster(this.maps[key]?.assets ?? []);
+    return new PresetsViewModel(this.presets, path, this.presetRefusal, roster);
   }
 }
 

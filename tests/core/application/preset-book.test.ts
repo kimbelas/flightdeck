@@ -50,7 +50,12 @@ function build(): Harness {
     clock,
     logger,
   });
-  return { book: new PresetBook({ registry, store, audit, logger }), registry, store };
+  // P9-T1. `app-next` has one agent on its roster; every other folder has none.
+  const roster = {
+    namesFor: (path: string): Promise<readonly string[]> =>
+      Promise.resolve(projectKey(path) === projectKey(APP_NEXT) ? ['code-reviewer'] : []),
+  };
+  return { book: new PresetBook({ registry, roster, store, audit, logger }), registry, store };
 }
 
 function draft(over: Partial<PresetDraft> = {}): PresetDraft {
@@ -63,6 +68,7 @@ function draft(over: Partial<PresetDraft> = {}): PresetDraft {
     promptSource: 'ticket',
     prompt: '',
     group: undefined,
+    agent: undefined,
     ...over,
   };
 }
@@ -125,6 +131,7 @@ describe('PresetBook — the list', () => {
       promptSource: 'literal',
       prompt: 'go',
       group: undefined,
+      agent: undefined,
       builtIn: false,
     });
 
@@ -252,5 +259,57 @@ describe('PresetBook — forgetting', () => {
 
     const rows = harness.store.allAudit.filter((held) => held.action === 'preset.forget');
     expect(rows.map((held) => held.outcome)).toEqual(['ok', 'failed']);
+  });
+});
+
+describe('PresetBook — an agent (P9-T1)', () => {
+  const agentDraft = (over: Partial<PresetDraft> = {}): PresetDraft =>
+    draft({
+      name: 'review',
+      profileFn: 'claude-365',
+      promptSource: 'literal',
+      prompt: 'review the diff',
+      agent: 'code-reviewer',
+      ...over,
+    });
+
+  it('saves an agent the project roster holds, and audits it beside the function', async () => {
+    const saved = await harness.book.save(agentDraft());
+
+    expect(saved.ok && saved.value.agent).toBe('code-reviewer');
+    expect(harness.book.list().find((held) => held.id === 'review')?.agent).toBe('code-reviewer');
+    const row = harness.store.allAudit.find((held) => held.action === 'preset.save');
+    expect(row?.args).toEqual(['claude-365', '--agent', 'code-reviewer']);
+  });
+
+  it('refuses an agent the roster does not hold, and stores nothing', async () => {
+    const saved = await harness.book.save(agentDraft({ agent: 'ghost' }));
+
+    expect(saved).toEqual({ ok: false, error: 'unknown_agent' });
+    expect(harness.store.savedPresets()).toEqual([]);
+  });
+
+  it('refuses any agent on the function that pins its own', async () => {
+    // `claude-isg-orch` passes `--agent orchestrator`; a second one is two on one command line.
+    const saved = await harness.book.save(agentDraft({ profileFn: 'claude-isg-orch' }));
+
+    expect(saved).toEqual({ ok: false, error: 'pins_agent' });
+    expect(harness.store.auditFailures().map((held) => held.reason)).toEqual(['pins_agent']);
+  });
+
+  it('checks the roster of the project the preset is filed under, not any project', async () => {
+    await harness.registry.import(DOCS_TOOL);
+
+    const saved = await harness.book.save(agentDraft({ projectPath: DOCS_TOOL }));
+
+    expect(saved).toEqual({ ok: false, error: 'unknown_agent' });
+  });
+
+  it('keeps an agent-less save exactly as it was', async () => {
+    const saved = await harness.book.save(agentDraft({ agent: undefined }));
+
+    expect(saved.ok && saved.value.agent).toBeUndefined();
+    const row = harness.store.allAudit.find((held) => held.action === 'preset.save');
+    expect(row?.args).toEqual(['claude-365']);
   });
 });

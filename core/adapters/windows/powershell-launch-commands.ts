@@ -24,6 +24,12 @@
 //
 // `claude-isg-orch` has no `-n`, because the function already passes `-n orchestrator`
 // (`pinsSessionName`): a second one would put two on a command line nobody has measured.
+//
+// **A second table, for a preset that names an agent (P9-T1)**, and it is three lines rather than
+// four for the same reason: `claude-isg-orch` pins `--agent orchestrator` (`pinsAgent`), so there is
+// no line that would give it a second one. `$env:FD_AGENT` is read in argument mode like the other
+// two — the name is a roster name screened by shape, and it is STILL not composed into the script,
+// because SEC-PROC-1 is a rule about the mechanism rather than about the value.
 import { join } from 'node:path';
 import type { ProfileFunction } from '../../../contracts/launch-preset.ts';
 import { pinsSessionName } from '../../../contracts/launch-preset.ts';
@@ -32,6 +38,8 @@ import type { LaunchCommand, LaunchCommands, LaunchText } from '../../ports/laun
 /** The two variables the scripts read. Named here so the table and the environment cannot drift. */
 export const PROMPT_VARIABLE = 'FD_PROMPT';
 export const NAME_VARIABLE = 'FD_NAME';
+/** `--agent`'s value (P9-T1). Set only when the preset names one. */
+export const AGENT_VARIABLE = 'FD_AGENT';
 
 /**
  * One line per profile function — the whole of what PowerShell is asked to do.
@@ -46,6 +54,22 @@ const SCRIPTS: Readonly<Record<ProfileFunction, string>> = {
   'claude-isg-ticket': 'claude-isg-ticket --bg -n $env:FD_NAME $env:FD_PROMPT',
   // No `-n`: the function pins `-n orchestrator` itself.
   'claude-isg-orch': 'claude-isg-orch --bg $env:FD_PROMPT',
+};
+
+/** The functions that do not pin an agent — the only ones a preset agent may reach (P9-T1). */
+type AgentlessFunction = Exclude<ProfileFunction, 'claude-isg-orch'>;
+
+/**
+ * The same three lines with `--agent` — chosen only when the launch carries one.
+ *
+ * The flag goes before `-n` and the prompt last, the order the docs' own example uses
+ * (`claude --agent <name> --bg "<prompt>"`); the prompt is the one positional, so it stays last.
+ */
+const AGENT_SCRIPTS: Readonly<Record<AgentlessFunction, string>> = {
+  'claude-365': 'claude-365 --bg --agent $env:FD_AGENT -n $env:FD_NAME $env:FD_PROMPT',
+  'claude-isg': 'claude-isg --bg --agent $env:FD_AGENT -n $env:FD_NAME $env:FD_PROMPT',
+  'claude-isg-ticket':
+    'claude-isg-ticket --bg --agent $env:FD_AGENT -n $env:FD_NAME $env:FD_PROMPT',
 };
 
 export class PowerShellLaunchCommands implements LaunchCommands {
@@ -83,12 +107,14 @@ export class PowerShellLaunchCommands implements LaunchCommands {
    * `-NonInteractive` so a prompt PowerShell would otherwise sit on becomes a failure rather than
    * a hang; `-NoLogo` because the banner would be the first thing a stdout parser read.
    *
-   * @returns `undefined` never, today: the script table is total over the union and the shell is
-   * resolved in the constructor. The signature keeps the port's promise so a future shell that
-   * cannot be found is a refused launch rather than a throw.
+   * @returns `undefined` only for an agent on the function that pins one — there is no line for it
+   * (`pinsAgent`), and the launcher refuses that case before it asks. The shell is resolved in the
+   * constructor, so a future shell that cannot be found is a refused launch rather than a throw.
    */
   public forProfile(profileFn: ProfileFunction, text: LaunchText): LaunchCommand | undefined {
-    const encoded = Buffer.from(SCRIPTS[profileFn], 'utf16le').toString('base64');
+    const script = scriptFor(profileFn, text.agent);
+    if (script === undefined) return undefined;
+    const encoded = Buffer.from(script, 'utf16le').toString('base64');
     return {
       command: this.shell,
       args: ['-NoLogo', '-NonInteractive', '-EncodedCommand', encoded],
@@ -98,7 +124,18 @@ export class PowerShellLaunchCommands implements LaunchCommands {
         // Absent for a function that names itself, so the audit row and the session agree about
         // what the session is called.
         ...(pinsSessionName(profileFn) ? {} : { [NAME_VARIABLE]: text.name }),
+        // Absent without an agent: only the agent line reads it, and that line is chosen by
+        // `text.agent` alone.
+        ...(text.agent === undefined ? {} : { [AGENT_VARIABLE]: text.agent }),
       },
     };
   }
+}
+
+/** The fixed line for this launch, or `undefined` for an agent on a function that pins one. */
+function scriptFor(profileFn: ProfileFunction, agent: string | undefined): string | undefined {
+  if (agent === undefined) return SCRIPTS[profileFn];
+  // `pinsAgent`'s one function, spelled as the literal so the compiler narrows to the three.
+  if (profileFn === 'claude-isg-orch') return undefined;
+  return AGENT_SCRIPTS[profileFn];
 }

@@ -23,6 +23,7 @@ function presetOf(over: Partial<LaunchPreset> = {}): LaunchPreset {
     promptSource: 'literal',
     prompt: 'go',
     group: 'morning',
+    agent: undefined,
     builtIn: false,
     ...over,
   };
@@ -225,6 +226,7 @@ describe('GroupLauncher — what it reports', () => {
 
     expect(launched.ok && launched.value).toEqual({
       group: 'morning',
+      agent: undefined,
       outcomes: [
         {
           presetId: 'ticket',

@@ -20,6 +20,11 @@
 // every control is one of its items, so a `<div>` introduced to satisfy a component boundary would
 // silently become the grid item instead and take the layout with it.
 //
+// **The agent is a select over the project's roster, never a text box (P9-T1).** `none` is first
+// and is what every built-in starts on; the rest is `agentRoster` over the workflow map, which is
+// the rule core checks a save and a launch with. No select is drawn where there is nothing to pick
+// or where the function pins its own agent (`claude-isg-orch`) — that is said on the `where` line.
+//
 // Every decision lives in `PresetsViewModel` — the refusal sentence, the folder phrase, what a
 // half-typed ticket id would actually send. What is left here is markup and four callbacks.
 import { useState, type JSX, type SyntheticEvent } from 'react';
@@ -37,11 +42,13 @@ export interface PresetsPanelProps {
   readonly onForget: (ref: PresetRef) => void;
 }
 
-/** What is currently in the three boxes. One object, so one setter threads through the fragments. */
+/** What is currently in the boxes. One object, so one setter threads through the fragments. */
 interface EditorDraft {
   readonly sessionName: string;
   readonly typed: string;
   readonly cwd: string;
+  /** `''` is `none`. A roster name otherwise (P9-T1). */
+  readonly agent: string;
 }
 
 export function PresetsPanel(props: PresetsPanelProps): JSX.Element | undefined {
@@ -93,6 +100,7 @@ function PresetEditor(props: PresetEditorProps): JSX.Element {
     sessionName: line.sessionName,
     typed: line.prompt,
     cwd: line.isRoot ? '' : line.cwd,
+    agent: line.agent ?? '',
   });
   const prompt = draftPrompt(line.promptSource, draft.sessionName, draft.typed);
   const change = (patch: Partial<EditorDraft>): void => {
@@ -108,6 +116,7 @@ function PresetEditor(props: PresetEditorProps): JSX.Element {
       <p className="preset-where">
         {`${line.profileFn} · ${line.subscription} · ${line.where}`}
         {line.namesItself && <span className="preset-pinned"> · names itself</span>}
+        {line.pinsAgent && <span className="preset-pinned"> · runs its own agent</span>}
       </p>
       <PresetStartRow
         line={line}
@@ -117,6 +126,7 @@ function PresetEditor(props: PresetEditorProps): JSX.Element {
         onChange={change}
       />
       <PresetTextBoxes line={line} draft={draft} prompt={prompt} onChange={change} />
+      <PresetAgentSelect line={line} draft={draft} prompt={prompt} onChange={change} />
       <PresetSaveRow {...props} draft={draft} />
     </form>
   );
@@ -180,6 +190,36 @@ function PresetTextBoxes({ line, draft, prompt, onChange }: FieldProps): JSX.Ele
         }}
       />
     </>
+  );
+}
+
+/**
+ * The agent the session starts under — `none`, or a name from the project's roster (P9-T1).
+ *
+ * Absent rather than disabled where there is nothing to choose, for `PresetForgetButton`'s reason.
+ * A saved agent the roster no longer holds is still listed, marked, so the select shows what the
+ * preset says; core refuses the press and the banner says why.
+ */
+function PresetAgentSelect({ line, draft, onChange }: FieldProps): JSX.Element | undefined {
+  if (line.agentChoices.length === 0) return undefined;
+  return (
+    <select
+      className="preset-agent"
+      value={draft.agent}
+      aria-label="agent"
+      onChange={(event) => {
+        onChange({ agent: event.target.value });
+      }}
+    >
+      <option value="">agent — none</option>
+      {line.agentChoices.map((name) => (
+        <option key={name} value={name}>
+          {line.agentMissing && name === line.agent
+            ? `${name} (no longer in .claude/agents)`
+            : name}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -264,6 +304,8 @@ function launchOf(props: PresetEditorProps, draft: EditorDraft, prompt: string):
     prompt,
     name: draft.sessionName,
     cwd: draft.cwd.trim() === '' ? props.projectPath : draft.cwd.trim(),
+    // `none` is the empty string in the select and `undefined` on the wire.
+    agent: draft.agent === '' ? undefined : draft.agent,
   };
 }
 
@@ -282,5 +324,6 @@ function draftOf(
     promptSource: props.line.promptSource,
     prompt: props.draft.typed,
     group: group.trim() === '' ? undefined : group.trim(),
+    agent: props.draft.agent === '' ? undefined : props.draft.agent,
   };
 }

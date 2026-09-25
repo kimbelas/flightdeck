@@ -28,6 +28,7 @@ export function describePresetStoreContract(name: string, make: () => Store): vo
         promptSource: 'ticket',
         prompt: '',
         group: undefined,
+        agent: undefined,
         builtIn: false,
         ...over,
       };
@@ -43,6 +44,16 @@ export function describePresetStoreContract(name: string, make: () => Store): vo
       store.savePreset(preset());
 
       expect(store.savedPresets()).toEqual([preset()]);
+    });
+
+    it('round-trips an agent, and replacing the row can take it away again (P9-T1)', () => {
+      const store = make();
+
+      store.savePreset(preset({ profileFn: 'claude-365', agent: 'code-reviewer' }));
+      expect(store.savedPresets()[0]?.agent).toBe('code-reviewer');
+
+      store.savePreset(preset({ profileFn: 'claude-365', agent: undefined }));
+      expect(store.savedPresets()[0]?.agent).toBeUndefined();
     });
 
     it('keys by (project, id), so saving the same name replaces rather than duplicates', () => {

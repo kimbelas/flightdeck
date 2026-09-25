@@ -21,6 +21,7 @@
 import {
   byProjectThenName,
   MAX_PRESETS_PER_PROJECT,
+  pinsAgent,
   presetId,
   type LaunchPreset,
   type PresetDraft,
@@ -36,8 +37,14 @@ import { err, ok, type Result } from '../shared/result.ts';
 import type { AuditLog } from './audit-log.ts';
 import type { ProjectRegistry } from './project-registry.ts';
 
+/** The one question a save asks of the roster (`AgentRoster.namesFor`) — P9-T1. */
+export interface PresetAgentRoster {
+  namesFor(projectPath: string): Promise<readonly string[]>;
+}
+
 export interface PresetBookParts {
   readonly registry: ProjectRegistry;
+  readonly roster: PresetAgentRoster;
   readonly store: Store;
   readonly audit: AuditLog;
   readonly logger: Logger;
@@ -82,8 +89,9 @@ export class PresetBook {
   /**
    * Saves one preset, or says why not.
    *
-   * The order of the checks is the order of their cost: the name is a string test, the project is
-   * one `realpath`, and the cwd is a second one. A draft nobody should act on never becomes a
+   * The order of the checks is the order of their cost: the name and `pins_agent` are string tests,
+   * the project is one `realpath`, the cwd is a second one, and the agent is a listing of the
+   * roster. A draft nobody should act on never becomes a
    * syscall, which is `ProjectRegistry.import`'s rule applied here.
    *
    * An empty `cwd` means the project root, which is what makes the common preset two fields — a
@@ -95,6 +103,10 @@ export class PresetBook {
   public async save(draft: PresetDraft): Promise<Result<LaunchPreset, PresetRefusal>> {
     const id = presetId(draft.name);
     if (id === '') return this.refuse(draft.projectPath, id, 'bad_name');
+    // A string test, so it is before the first syscall (P9-T1). See `pinsAgent`.
+    if (draft.agent !== undefined && pinsAgent(draft.profileFn)) {
+      return this.refuse(draft.projectPath, id, 'pins_agent');
+    }
 
     const root = await this.parts.registry.resolveRoot(draft.projectPath);
     if (!root.ok) return this.refuse(draft.projectPath, id, 'unknown_project');
@@ -102,6 +114,12 @@ export class PresetBook {
 
     const cwd = await this.resolveCwd(draft.cwd, root.value);
     if (cwd === undefined) return this.refuse(root.value, id, 'bad_cwd');
+
+    // The roster is read fresh, never from the map's cache — see `AgentRoster`'s header.
+    if (draft.agent !== undefined) {
+      const roster = await this.parts.roster.namesFor(root.value);
+      if (!roster.includes(draft.agent)) return this.refuse(root.value, id, 'unknown_agent');
+    }
 
     if (this.isFull(key, id)) return this.refuse(root.value, id, 'too_many');
 
@@ -115,13 +133,16 @@ export class PresetBook {
       promptSource: draft.promptSource,
       prompt: draft.prompt,
       group: draft.group,
+      agent: draft.agent,
       builtIn: false,
     });
     this.parts.audit.record({
       action: 'preset.save',
       target: target(root.value, id),
-      // The profile function, never the prompt or the name — see the header (SEC-DATA-2).
-      args: [draft.profileFn],
+      // The profile function and the agent, never the prompt or the name — see the header
+      // (SEC-DATA-2). An agent is a roster name, not the owner's prose.
+      args:
+        draft.agent === undefined ? [draft.profileFn] : [draft.profileFn, '--agent', draft.agent],
       outcome: 'ok',
     });
     return ok(stored);

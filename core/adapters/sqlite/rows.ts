@@ -9,6 +9,7 @@ import type { AuditOutcome, AuditRow } from '../../../contracts/audit-row.ts';
 import { parseConfigDigest, type ConfigDigest } from '../../../contracts/config-snapshot.ts';
 import { EVENT_SOURCES, type EventSource, type FdEvent } from '../../../contracts/fd-event.ts';
 import {
+  agentName,
   PROFILE_FUNCTIONS,
   PROMPT_SOURCES,
   type LaunchPreset,
@@ -103,7 +104,8 @@ export function toProject(row: unknown): ProjectRecord {
  *
  * A row whose `profile_fn` or `prompt_source` is not from this build reads as the safe end of each
  * union rather than being dropped: `claude-365` starts nothing destructive and `literal` sends the
- * text as written. Losing the row entirely would take a button off the deck with nothing said.
+ * text as written. An `agent` that is not agent-shaped reads as none (P9-T1). Losing the row
+ * entirely would take a button off the deck with nothing said.
  */
 export function toPreset(row: unknown): LaunchPreset {
   const fields = asRecord(row) ?? {};
@@ -118,6 +120,9 @@ export function toPreset(row: unknown): LaunchPreset {
     promptSource: promptSourceOf(stringAt(fields, 'prompt_source')),
     prompt: stringAt(fields, 'prompt'),
     group: typeof held === 'string' && held !== '' ? held : undefined,
+    // Screened on the way OUT as well as in: a row from a build that wrote something else reads as
+    // no agent, and the launch-time roster check is what stops a stale name from starting.
+    agent: agentName(fields['agent']),
     builtIn: false,
   };
 }

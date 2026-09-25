@@ -16,6 +16,7 @@
 // They are built HERE rather than handed the registry from `main.ts`, which is the same division
 // `reads.ts` made: a slice that owns a registry owns what is built on it, and `main.ts` has a line
 // limit it already reached once.
+import { AgentRoster } from './application/agent-roster.ts';
 import { PresetBook } from './application/preset-book.ts';
 import { ProjectRegistry } from './application/project-registry.ts';
 import { ClaudeAssetReader } from './application/claude-asset-reader.ts';
@@ -98,8 +99,14 @@ export function buildProjectRegistry(parts: ProjectParts): ProjectRegistry {
  */
 export function projectSlice(parts: ProjectParts): ProjectSlice {
   const registry = buildProjectRegistry(parts);
-  const presets = buildPresetBook(parts, registry);
-  return { routes: projectRoutes(parts, registry, presets), registry, presets };
+  // P9-T1. One roster for the save AND the launch, over the same registry, read through the same
+  // asset parser the map uses — so the select, the save check and the launch check agree.
+  const roster = new AgentRoster({
+    registry,
+    assets: new ClaudeAssetReader({ paths: registry, files: new FsProjectFiles() }),
+  });
+  const presets = buildPresetBook(parts, registry, roster);
+  return { routes: projectRoutes(parts, registry, presets), registry, presets, roster };
 }
 
 /** The routes, and the two things they share that the rest of core needs too. */
@@ -115,6 +122,11 @@ export interface ProjectSlice {
    * be a second merge of the built-ins with the saved ones.
    */
   readonly presets: PresetBook;
+  /**
+   * Which agents a folder may start under — P9-T1. Handed to the launcher for the book's reason:
+   * the roster a save checked and the roster a launch checks are one object.
+   */
+  readonly roster: AgentRoster;
 }
 
 /**
@@ -123,9 +135,14 @@ export interface ProjectSlice {
  * For the reason there is one registry: a preset names a folder to start a session in, and "which
  * folders may be started in" is not a question two objects may answer differently (P4-T1).
  */
-function buildPresetBook(parts: ProjectParts, registry: ProjectRegistry): PresetBook {
+function buildPresetBook(
+  parts: ProjectParts,
+  registry: ProjectRegistry,
+  roster: AgentRoster,
+): PresetBook {
   return new PresetBook({
     registry,
+    roster,
     store: parts.store,
     audit: parts.audit,
     logger: parts.logger,

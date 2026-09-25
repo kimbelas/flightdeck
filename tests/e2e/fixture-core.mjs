@@ -44,9 +44,12 @@ import { PresetCatalogue } from '../../core/domain/preset-catalogue.ts';
 import { ConfigHistorian } from '../../core/application/config-historian.ts';
 import { FakeStore } from '../fakes/fake-store.ts';
 import {
+  agentRoster,
   byProjectThenName,
+  optionalAgent,
   parsePresetDraft,
   parsePresetRef,
+  pinsAgent,
   pinsSessionName,
   presetId,
   PROFILE_FUNCTIONS,
@@ -590,6 +593,13 @@ export class FixtureCore {
     if (project === undefined) return [400, { error: 'unknown_project' }];
     const cwd = draft.cwd === '' ? project.path : draft.cwd;
     if (!projectKey(cwd).startsWith(key)) return [400, { error: 'bad_cwd' }];
+    // P9-T1, in core's order: the pinned function first, then the project's own roster.
+    if (draft.agent !== undefined && pinsAgent(draft.profileFn)) {
+      return [400, { error: 'pins_agent' }];
+    }
+    if (draft.agent !== undefined && !this.rosterOf(project).includes(draft.agent)) {
+      return [400, { error: 'unknown_agent' }];
+    }
     const preset = {
       projectKey: key,
       id,
@@ -600,10 +610,30 @@ export class FixtureCore {
       promptSource: draft.promptSource,
       prompt: draft.prompt,
       group: draft.group,
+      agent: draft.agent,
       builtIn: false,
     };
     this.presets.set(`${key}|${id}`, preset);
     return [201, { preset }];
+  }
+
+  /** The agent roster of one imported folder, from the same map `GET /projects/map` draws. */
+  rosterOf(project) {
+    return agentRoster(workflowMap(project).assets);
+  }
+
+  /**
+   * The launch-time roster check (P9-T1): the agent must be on the roster of the imported folder
+   * the session would start in. `undefined` when it is, or the refusal code core would answer.
+   */
+  refuseAgent(request, agent) {
+    if (pinsAgent(request.profileFn)) return 'pins_agent';
+    const cwdKey = typeof request.cwd === 'string' ? projectKey(request.cwd) : '';
+    const project = [...this.projects.values()].find((held) =>
+      cwdKey.startsWith(projectKey(held.path)),
+    );
+    if (project === undefined || !this.rosterOf(project).includes(agent)) return 'unknown_agent';
+    return undefined;
   }
 
   forgetPreset(raw) {
@@ -673,6 +703,10 @@ export class FixtureCore {
     }
     const named = typeof request.name === 'string' && request.name.trim() !== '';
     if (!named && !pinsSessionName(request.profileFn)) return [400, { error: 'bad_request' }];
+    const agent = optionalAgent(request.agent);
+    if (agent === false) return [400, { error: 'bad request' }];
+    const refusal = agent === undefined ? undefined : this.refuseAgent(request, agent);
+    if (refusal !== undefined) return [400, { error: refusal }];
     this.launches.push(request);
     return [201, { sessionId: randomUUID() }];
   }

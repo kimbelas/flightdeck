@@ -137,7 +137,8 @@ export function LaunchForm({ disabled, quota, now, onLaunch }: LaunchFormProps):
   const submit = (event: SyntheticEvent): void => {
     event.preventDefault();
     if (!ready) return;
-    onLaunch({ profileFn, prompt, name, cwd: '' });
+    // The global launch names no agent: there is no project, so there is no roster (P9-T1).
+    onLaunch({ profileFn, prompt, name, cwd: '', agent: undefined });
     setPrompt('');
   };
 

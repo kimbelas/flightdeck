@@ -37,7 +37,11 @@ export class FakeLaunchCommands implements LaunchCommands {
       args: ['-NoLogo', '-NonInteractive', '-EncodedCommand', `encoded:${profileFn}`],
       // The two variables the real scripts read, so a test can assert that neither the prompt nor
       // the name ever reaches `args`.
-      env: { FD_NAME: text.name, FD_PROMPT: text.prompt },
+      env: {
+        FD_NAME: text.name,
+        FD_PROMPT: text.prompt,
+        ...(text.agent === undefined ? {} : { FD_AGENT: text.agent }),
+      },
     };
   }
 }

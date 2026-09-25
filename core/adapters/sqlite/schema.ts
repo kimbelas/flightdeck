@@ -235,6 +235,19 @@ export const MIGRATIONS: readonly string[] = [
     indexed_at   INTEGER NOT NULL
   );
   `,
+  // 8 — the agent a preset starts under (P9-T1, DECISIONS.md D59).
+  //
+  // **Nullable, and NULL is the answer for every row that existed before it** — a preset saved
+  // before this build names no agent, which is exactly what it did. `ADD COLUMN` rather than a
+  // rebuilt table, because nothing about the key or the other columns moves, and SQLite adds a
+  // nullable column without touching a row.
+  //
+  // It is a name out of the project's own `.claude/agents` roster, screened by shape before it is
+  // written (`AGENT_SHAPE`) and checked against the roster again at launch — the column is a
+  // memory of what was chosen, never a permission to start what it says.
+  `
+  ALTER TABLE presets ADD COLUMN agent TEXT;
+  `,
 ];
 
 /**
