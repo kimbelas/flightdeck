@@ -37,7 +37,8 @@ export async function agentChecks(page, report, core, section) {
     .evaluateAll((all) => all.map((option) => option.value));
   report.check(
     'it offers none first, then exactly the roster',
-    options.join('|') === `|${AGENT}`,
+    // P9-T5: a plugin agent is on the roster under its scoped name.
+    options.join('|') === `|${AGENT}|shell-review:bash-script-auditor`,
     options.join('|'),
   );
   report.check(

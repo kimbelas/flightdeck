@@ -3971,7 +3971,7 @@ phases:
 
   - id: P9
     name: One press
-    status: todo
+    status: done
     goal: >-
       An agent, a skill or a ticket starts in the right project with one press and nothing typed
       but the ticket id.
@@ -4258,10 +4258,81 @@ phases:
           description, so the account it will land on is read before the press.
       - id: P9-T5
         title: Plugin skills and agents on the map, with their namespaced slash names
-        status: todo
+        status: done
+        done_on: 2026-09-25
         depends_on: [P9-T2]
         security: [SEC-FS-1, SEC-FS-2]
+        deliverables:
+          [
+            contracts/claude-assets.ts,
+            contracts/installed-plugins.ts,
+            contracts/launch-preset.ts,
+            contracts/config-snapshot.ts,
+            core/domain/read-policy.ts,
+            core/application/plugin-asset-reader.ts,
+            core/application/agent-roster.ts,
+            core/application/workflow-map-reader.ts,
+            core/projects.ts,
+            app/deck/asset-presets.ts,
+            app/deck/make-preset.tsx,
+            app/deck/workflow-map-panel.tsx,
+            app/deck/workflow-map-view-model.ts,
+            fixtures/plugins/installed-plugins.json,
+            tests/contracts/installed-plugins.test.ts,
+            tests/contracts/plugin-assets.test.ts,
+            tests/contracts/config-snapshot-plugins.test.ts,
+            tests/core/domain/read-policy-plugins.test.ts,
+            tests/core/application/plugin-asset-reader.test.ts,
+            tests/core/application/agent-roster.test.ts,
+            tests/core/application/workflow-map-reader.test.ts,
+            tests/app/asset-presets.test.ts,
+            tests/app/workflow-map-plugins.test.ts,
+            tests/e2e/fixture-core.mjs,
+            tests/e2e/smoke/map-preset-checks.mjs,
+            SECURITY.md SEC-FS-1,
+          ]
         notes: >-
+          **Done 2026-09-25. Verified against both real config dirs and in the running deck.** The
+          namespacing was checked before any preset used it, against code.claude.com/docs/en/plugins/components
+          (`skills/review/SKILL.md` in `my-plugin` is `/my-plugin:review`; `commands/about.md` is
+          `/my-plugin:about`; an agent is `my-plugin:<name>`) and code.claude.com/docs/en/sub-agents
+          (`claude --agent my-plugin:security-reviewer`). Read through the real `ReadPolicy` and
+          `FsPathCanonicaliser`, every imported project gets one plugin asset,
+          `shell-review:bash-script-auditor`, because `context-hygiene` ships only hooks and every
+          `claude-plugins-official` install is `project`-scoped to home-energy-intelligence-platform
+          — which is not imported and would get 24: superpowers 15, chrome-devtools-mcp 7,
+          frontend-design 1 and shell-review 1. Nothing was refused and nothing under
+          `plugins\marketplaces\` was touched. **SEC-FS-1 names one file and six patterns per config
+          dir**: `plugins\installed_plugins.json` (on both `ALLOWED_FILES` and `ALLOWED_JSON`), and
+          under `plugins\cache\*\*\*\` the `agents`, `commands` and `skills` directories,
+          `agents\*.md`, `commands\*.md` and `skills\*\SKILL.md`. A plugin is a whole repository, so
+          `src\`, `package.json` and `plugin.json` stay refused, and a test proves each refusal.
+          `PluginAssetReader` sends the index, each directory and each head through
+          `registry.resolve`, so an `installPath` outside the cache contributes nothing. Scope is
+          applied after the policy: `user` applies everywhere, `project` and `local` only where
+          `projectPath` matches the stored path or the root by `projectKey`. The plugin name is the
+          key's half before `@`, screened by `PLUGIN_SHAPE`; `plugin.json` is not read. Both config
+          dirs are unioned; a plugin installed on both is counted once, the first dir's copy wins.
+          **Each asset carries `plugin`**, and `scopedAssetName` is the one join. A skill drafts
+          `/<plugin>:<name> ` and the session keeps the bare name. **`AGENT_SHAPE` now takes one
+          `plugin:` prefix**, so a plugin agent is on the roster under its scoped name and reaches
+          `--agent` as written. The map's signature grew the two index mtimes, so installing a plugin
+          moves the map without waiting for the TTL. **Two decisions the plan did not make.** Plugin
+          assets stay out of the drift digest: they are the config dir's, and the first read after
+          this build would have reported every user-scope skill as added in every project. And the
+          frontmatter reader now joins `description: >` block text into one line, because
+          `bash-script-auditor`'s description had read as `>`. **Known gap: enablement is not read** —
+          a plugin installed but disabled in `enabledPlugins` still lists. The deck draws one
+          `plugin <name>` heading per plugin below the project's own lists, also on a folder with no
+          `.claude`, and adds `N plugin assets` to the closed line; `MakePreset` moved to
+          `make-preset.tsx` for `max-lines`. **Live, with flightdeck.cmd and every non-GET aborted
+          in the browser:** `GET /projects/map` from the real core carried the plugin agent on all
+          three imported projects, the panel drew `plugin shell-review` with the folded description,
+          and its press selected `shell-review:bash-script-auditor` in the presets editor with
+          nothing sent. The fixture map grew one plugin skill and one plugin agent; smoke grew 4
+          checks (477 in all).
+
+          *The task as planned:*
           The map lists plugin NAMES (`enabledPlugins`) and none of what they carry, and the skills
           the owner has in numbers are plugin skills: `superpowers` alone is fifteen. Sources:
           `$CFG/plugins/installed_plugins.json` (which plugin, which version, which scope — `user`,

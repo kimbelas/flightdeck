@@ -19,13 +19,14 @@ export async function mapPresetChecks(page, report, core, section) {
   await page.locator('.project-map > summary').click();
   await waitFor(() => page.locator('.map-make').first().isVisible());
   report.check(
-    'every agent, command and skill row offers make a preset',
-    (await page.locator('.map-make').count()) === 3,
+    'every agent, command and skill row offers make a preset, plugin rows too',
+    (await page.locator('.map-make').count()) === 5,
   );
 
   await skillChecks(page, report, core, section);
   await commandChecks(page, report, section);
   await agentDraftChecks(page, report, core, section);
+  await pluginChecks(page, report, core, section);
 
   await page.locator('.project-map > summary').click();
 }
@@ -126,4 +127,37 @@ async function agentDraftChecks(page, report, core, section) {
   await section.locator('.preset-forget').click();
   const back = await waitFor(async () => (await section.locator('.preset-chip').count()) === 4);
   report.check('forgetting it leaves the four built-ins', back && core.presets.size === 0);
+}
+
+/** P9-T5 — a plugin's assets sit under their plugin and press by their scoped names. */
+async function pluginChecks(page, report, core, section) {
+  const headings = await page.locator('.project-map h4').allTextContents();
+  report.check(
+    'each plugin gets its own heading',
+    headings.some((text) => text.includes('plugin superpowers')) &&
+      headings.some((text) => text.includes('plugin shell-review')),
+    headings.join(' | '),
+  );
+  const mark = core.requests.length;
+  await page.locator('[data-map-make="skill:superpowers:brainstorming"]').click();
+  const drafted = await waitFor(
+    async () => (await page.inputValue('.preset-prompt')) === '/superpowers:brainstorming ',
+  );
+  report.check(
+    'a plugin skill drafts its namespaced slash line, the session keeping the bare name',
+    drafted && (await page.inputValue('.preset-session-name')) === 'brainstorming',
+    await page.inputValue('.preset-prompt'),
+  );
+  await page.locator('[data-map-make="agent:shell-review:bash-script-auditor"]').click();
+  report.check(
+    'a plugin agent is selected by its scoped name',
+    await waitFor(
+      async () =>
+        (await section.locator('.preset-agent').inputValue()) ===
+        'shell-review:bash-script-auditor',
+    ),
+  );
+  report.check('neither press wrote or started anything', writesSince(core, mark) === 0);
+  await section.locator('.preset-chip').first().click();
+  await waitFor(async () => (await section.locator('.preset-draft').count()) === 0);
 }
