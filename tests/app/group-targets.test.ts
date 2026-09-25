@@ -18,6 +18,7 @@ function presetOf(over: Partial<LaunchPreset> = {}): LaunchPreset {
     promptSource: 'literal',
     prompt: 'go',
     group: 'morning',
+    agent: undefined,
     builtIn: false,
     ...over,
   };

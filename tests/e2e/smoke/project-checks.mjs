@@ -11,6 +11,7 @@
 // a bad one with a sentence rather than a code, and withdraw it again. Every hop is real — the
 // page's own `fetch`, the rewrite with its server-side bearer, core's parser.
 import { waitFor } from './report.mjs';
+import { agentChecks } from './agent-checks.mjs';
 
 export const PROJECT = 'C:\\Users\\belas\\Documents\\development\\app-next';
 const MISSING = 'C:\\nope\\not-here';
@@ -254,6 +255,8 @@ async function presetChecks(page, report, core) {
   await presetStartChecks(page, report, core, section);
   await presetSaveChecks(page, report, core, section);
   await presetGeometryChecks(page, report, section);
+  // P9-T1. Last, because it saves and forgets a preset of its own and leaves the four built-ins.
+  await agentChecks(page, report, core, section);
 }
 
 /** Pressing `ticket`, typing the id, and watching what actually leaves the page. */

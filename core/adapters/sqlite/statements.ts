@@ -67,12 +67,13 @@ export function preparePresetStatements(db: DatabaseSync): PresetStatements {
   return {
     upsert: db.prepare(
       `INSERT INTO presets
-         (project_key, id, name, profile_fn, cwd, session_name, prompt_source, prompt, preset_group)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         (project_key, id, name, profile_fn, cwd, session_name, prompt_source, prompt, preset_group,
+          agent)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(project_key, id) DO UPDATE SET
          name = excluded.name, profile_fn = excluded.profile_fn, cwd = excluded.cwd,
          session_name = excluded.session_name, prompt_source = excluded.prompt_source,
-         prompt = excluded.prompt, preset_group = excluded.preset_group`,
+         prompt = excluded.prompt, preset_group = excluded.preset_group, agent = excluded.agent`,
     ),
     selectAll: db.prepare(`SELECT * FROM presets ORDER BY project_key, name, id`),
     selectOne: db.prepare(`SELECT * FROM presets WHERE project_key = ? AND id = ?`),

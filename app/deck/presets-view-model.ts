@@ -12,6 +12,7 @@
 // function IS the config directory (`subscriptionOfProfileFunction`), so the badge on the row
 // cannot disagree with the command line.
 import {
+  pinsAgent,
   pinsSessionName,
   presetPrompt,
   subscriptionOfProfileFunction,
@@ -33,6 +34,10 @@ const SENTENCES: Readonly<Record<PresetRefusal, string>> = {
     'That folder is not inside this project. Name a worktree under it, or leave it blank for the project root.',
   unknown_project: 'That project is not imported any more. Import it again first.',
   too_many: 'This project already holds as many saved presets as it can. Forget one first.',
+  pins_agent:
+    'claude-isg-orch already runs the orchestrator agent, so it cannot take a second one. Pick none.',
+  unknown_agent:
+    'That agent is not in this project .claude/agents roster. Pick one from the list, or none.',
 };
 
 /** What the `where` field says when the preset starts in the project root itself. */
@@ -61,20 +66,41 @@ export interface PresetLine {
   readonly prompt: string;
   /** Whether the profile function already passes `-n` and the name field is not the launcher's. */
   readonly namesItself: boolean;
+  /** The saved `--agent`, or `undefined` for none (P9-T1). */
+  readonly agent: string | undefined;
+  /**
+   * What the agent select offers after `none`: the project's roster, plus the saved agent when the
+   * roster no longer holds it — so the select can show what the preset says, and core's launch-time
+   * check is what refuses it. Empty for a function that pins its own agent.
+   */
+  readonly agentChoices: readonly string[];
+  /** The saved agent is no longer on the roster, and a press will be refused. */
+  readonly agentMissing: boolean;
+  /** `claude-isg-orch` pins `--agent orchestrator`, so no select is drawn (`pinsAgent`). */
+  readonly pinsAgent: boolean;
 }
 
 export class PresetsViewModel {
   private readonly presets: readonly LaunchPreset[];
   private readonly root: string;
   private readonly refusal: PresetRefusal | undefined;
+  private readonly roster: readonly string[];
 
   /**
    * @param presets every preset the deck holds, for every project. Filtered here rather than by the
    * caller so that the key used to select them is the same one core filed them under.
    * @param projectPath the folder this section belongs to, as the registry spells it.
+   * @param roster the project's agent roster (`agentRoster` over its workflow map) — P9-T1. Empty
+   * before the map has arrived, which draws no select rather than a select with nothing in it.
    */
-  constructor(presets: readonly LaunchPreset[], projectPath: string, refusal?: PresetRefusal) {
+  constructor(
+    presets: readonly LaunchPreset[],
+    projectPath: string,
+    refusal?: PresetRefusal,
+    roster: readonly string[] = [],
+  ) {
     this.root = projectPath;
+    this.roster = roster;
     const key = projectKey(projectPath);
     this.presets = presets.filter((preset) => preset.projectKey === key);
     this.refusal = refusal;
@@ -97,6 +123,7 @@ export class PresetsViewModel {
       promptSource: preset.promptSource,
       prompt: presetPrompt(preset),
       namesItself: pinsSessionName(preset.profileFn),
+      ...this.agentFacts(preset),
     }));
   }
 
@@ -108,6 +135,21 @@ export class PresetsViewModel {
   /** The refusal in English, or `undefined` when the last save was taken. */
   public get problem(): string | undefined {
     return this.refusal === undefined ? undefined : SENTENCES[this.refusal];
+  }
+  /** The four agent fields of a line — see `PresetLine.agentChoices`. */
+  private agentFacts(
+    preset: LaunchPreset,
+  ): Pick<PresetLine, 'agent' | 'agentChoices' | 'agentMissing' | 'pinsAgent'> {
+    const pinned = pinsAgent(preset.profileFn);
+    const { agent } = preset;
+    const missing = agent !== undefined && !this.roster.includes(agent);
+    const extra = agent !== undefined && missing ? [agent] : [];
+    return {
+      agent: preset.agent,
+      agentChoices: pinned ? [] : [...this.roster, ...extra],
+      agentMissing: missing,
+      pinsAgent: pinned,
+    };
   }
 }
 

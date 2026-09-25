@@ -7,7 +7,7 @@
 // **`profileFn` replaced `subscription` in P4-T2.** The function is the account AND the model
 // (D44), so a body carrying both would be two opinions the command line could contradict, and the
 // one the CLI acts on is the function. Nothing outside SEC-PROC-2's four gets past the parser.
-import { PROFILE_FUNCTIONS } from '../../contracts/launch-preset.ts';
+import { optionalAgent, PROFILE_FUNCTIONS } from '../../contracts/launch-preset.ts';
 import type { Credential, RequestFacts } from './loopback-guard.ts';
 import type { LaunchRequest, SessionLauncher } from '../application/session-launcher.ts';
 import type { RouteLimit } from './limits.ts';
@@ -59,8 +59,12 @@ function parseLaunchBody(body: string): LaunchRequest | undefined {
   // Required as of P4-T2 — SPEC §5.7's forced naming. The launcher refuses an empty one too; this
   // is the shape check, and that one is the rule.
   if (typeof name !== 'string') return undefined;
+  // P9-T1. Shape here, roster in the launcher: a present value that is not agent-shaped is a bad
+  // request rather than a launch with the agent quietly dropped.
+  const agent = optionalAgent(fields['agent']);
+  if (agent === false) return undefined;
 
-  return { profileFn, prompt, name, cwd: optionalString(fields['cwd']) };
+  return { profileFn, prompt, name, cwd: optionalString(fields['cwd']), agent };
 }
 
 function optionalString(value: unknown): string | undefined {

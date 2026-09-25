@@ -20,10 +20,16 @@ export interface LaunchCommand {
   readonly env: Readonly<Record<string, string | undefined>>;
 }
 
-/** The two pieces of user text a launch carries. Neither ever reaches a command string. */
+/** The pieces of text a launch carries. None of them ever reaches a command string. */
 export interface LaunchText {
   readonly name: string;
   readonly prompt: string;
+  /**
+   * `--agent`'s value, or `undefined` for none — P9-T1. A roster name the launcher has already
+   * checked, and still carried as a variable rather than composed in: SEC-PROC-1 is about the
+   * mechanism, not about how safe today's value happens to be.
+   */
+  readonly agent: string | undefined;
 }
 
 export interface LaunchCommands {
@@ -33,6 +39,8 @@ export interface LaunchCommands {
    * @param profileFn one of SEC-PROC-2's four, already narrowed to the union by the route's parser
    * — nothing outside that set can reach this method, which is what makes the script table
    * exhaustive rather than defensive.
+   * @returns `undefined` too for an agent on a function that pins one (`pinsAgent`) — there is no
+   * line for that, and the launcher refuses it before asking.
    * @throws never.
    */
   forProfile(profileFn: ProfileFunction, text: LaunchText): LaunchCommand | undefined;

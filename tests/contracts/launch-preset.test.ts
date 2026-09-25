@@ -36,6 +36,7 @@ function preset(over: Partial<LaunchPreset> = {}): LaunchPreset {
     promptSource: 'ticket',
     prompt: '',
     group: undefined,
+    agent: undefined,
     builtIn: true,
     ...over,
   };
@@ -168,6 +169,7 @@ describe('parsePresetDraft', () => {
     promptSource: 'ticket',
     prompt: 'ignored',
     group: 'morning',
+    agent: undefined,
   });
 
   it('reads the fields the panel sends', () => {
@@ -182,6 +184,7 @@ describe('parsePresetDraft', () => {
       // stored one would be a value that can disagree with what is sent.
       prompt: '',
       group: 'morning',
+      agent: undefined,
     });
   });
 
@@ -195,6 +198,7 @@ describe('parsePresetDraft', () => {
       promptSource: 'literal',
       prompt: 'read CLAUDE.md',
       group: '',
+      agent: undefined,
     });
 
     expect(parsePresetDraft(literal)?.prompt).toBe('read CLAUDE.md');

@@ -21,12 +21,19 @@
 // spaces, apostrophes, `$`, `;`, `|` and a prompt that reads like flags (RESEARCH.md F.8.2). That
 // is SEC-PROC-1, and it is the port's promise rather than this class's.
 //
+// **An agent is checked HERE, at launch, as well as at save (P9-T1).** A preset remembers a name
+// from the project's `.claude/agents` roster; the file can be deleted between the save and the
+// press, and a launch that trusted the stored name would start an agent Claude Code will not find.
+// So a launch with an agent asks `AgentRoster` about the folder it is about to start in, and a name
+// that is not there is a refused launch with an audit row, not a session.
+//
 // **The cwd is honoured as of P4-T1, and was parsed and dropped before it.** The path reaching here
 // has been screened by `PresetBook`/`ProjectRegistry`; this class does not re-screen it, and must
 // never be given one that has not been.
 import type { AuditOutcome } from '../../contracts/audit-row.ts';
 import type { LaunchFailure } from '../../contracts/launch-reply.ts';
 import {
+  pinsAgent,
   pinsSessionName,
   subscriptionOfProfileFunction,
   type ProfileFunction,
@@ -47,6 +54,13 @@ export interface LaunchRequest {
   readonly prompt: string;
   readonly name: string;
   readonly cwd: string | undefined;
+  /** `--agent`, or `undefined` for none. Shaped by the route's parser, checked here (P9-T1). */
+  readonly agent: string | undefined;
+}
+
+/** The one question a launch asks of the roster (`AgentRoster.allows`) — P9-T1. */
+export interface LaunchAgentRoster {
+  allows(cwd: string, agent: string): Promise<boolean>;
 }
 
 /**
@@ -61,6 +75,7 @@ const MAX_NAME_CHARS = 80;
 
 export interface SessionLauncherParts {
   readonly commands: LaunchCommands;
+  readonly roster: LaunchAgentRoster;
   readonly runner: ProcessRunner;
   readonly audit: AuditLog;
   readonly logger: Logger;
@@ -68,12 +83,14 @@ export interface SessionLauncherParts {
 
 export class SessionLauncher {
   private readonly commands: LaunchCommands;
+  private readonly roster: LaunchAgentRoster;
   private readonly runner: ProcessRunner;
   private readonly audit: AuditLog;
   private readonly logger: Logger;
 
   constructor(parts: SessionLauncherParts) {
     this.commands = parts.commands;
+    this.roster = parts.roster;
     this.runner = parts.runner;
     this.audit = parts.audit;
     this.logger = parts.logger;
@@ -92,9 +109,12 @@ export class SessionLauncher {
    */
   public async launch(request: LaunchRequest): Promise<Result<string, LaunchFailure>> {
     if (!isSane(request)) return this.refuse(request, 'bad_request', 'prompt or name out of range');
+    const agentRefusal = await this.refuseAgent(request);
+    if (agentRefusal !== undefined) return agentRefusal;
     const command = this.commands.forProfile(request.profileFn, {
       name: request.name,
       prompt: request.prompt,
+      agent: request.agent,
     });
     if (command === undefined) return this.refuse(request, 'no_shell', 'powershell.exe not found');
 
@@ -134,6 +154,27 @@ export class SessionLauncher {
     return ok(id);
   }
 
+  /**
+   * The two agent refusals, or `undefined` when there is no agent or the roster holds it.
+   *
+   * `pins_agent` first, because it is a string test. A launch with an agent and no cwd is
+   * `unknown_agent`: there is no project to read a roster from, so there is no name it could be on.
+   */
+  private async refuseAgent(
+    request: LaunchRequest,
+  ): Promise<Result<string, LaunchFailure> | undefined> {
+    const { agent, cwd } = request;
+    if (agent === undefined) return undefined;
+    if (pinsAgent(request.profileFn)) {
+      return this.refuse(request, 'pins_agent', 'the function pins its own agent');
+    }
+    if (cwd === undefined || !(await this.roster.allows(cwd, agent))) {
+      this.logger.warn('launch_agent_refused', { profileFn: request.profileFn });
+      return this.refuse(request, 'unknown_agent', "not in the project's agent roster");
+    }
+    return undefined;
+  }
+
   private refuse(
     request: LaunchRequest,
     failure: LaunchFailure,
@@ -153,8 +194,12 @@ export class SessionLauncher {
     this.audit.record({
       action: 'launch',
       target: sessionId ?? subscriptionOfProfileFunction(request.profileFn),
-      // The profile function and the flag, never the prompt or the name — see `launch`.
-      args: [request.profileFn, '--bg'],
+      // The profile function and the flags, never the prompt or the name — see `launch`. The agent
+      // IS here (P9-T1): it is a roster name on the argv, not the owner's prose.
+      args:
+        request.agent === undefined
+          ? [request.profileFn, '--bg']
+          : [request.profileFn, '--bg', '--agent', request.agent],
       outcome,
       ...(reason === undefined ? {} : { reason }),
     });

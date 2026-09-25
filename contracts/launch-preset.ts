@@ -15,8 +15,15 @@
 // command line. P4-T3's quota routing therefore has exactly two functions it may swap between —
 // see `ROUTABLE_PROFILE_FUNCTIONS`.
 //
+// **`agent` came back in P9-T1, and it is the one of the three that is not routing** (D59). The
+// function chooses the account and the model; an agent chooses the system prompt and the tools, and
+// the docs compose the two (`claude --agent <name> --bg "<prompt>"`). It is allowlisted by the
+// project's own `.claude/agents` roster rather than typed, screened by shape here, and refused on
+// the one function that already pins an agent (`pinsAgent`). `model` and `effort` stay dropped.
+//
 // **Everything here is capped where it is parsed**, the rule `job-state.ts` set: a preset arrives
 // from a text box, goes into a database, and comes back out into a command line and onto a screen.
+import type { ClaudeAsset } from './claude-assets.ts';
 import type { SubscriptionId } from './session.ts';
 import { TicketPrompt } from './ticket-prompt.ts';
 
@@ -67,6 +74,49 @@ export function pinsSessionName(profileFn: ProfileFunction): boolean {
 }
 
 /**
+ * Whether the function already passes `--agent` and a preset may not name a second one — P9-T1.
+ *
+ * `claude-isg-orch` is `… --agent orchestrator -n orchestrator @args`, so a preset agent on it is
+ * two `--agent` flags on one command line. It is REFUSED at save time (`pins_agent`) and again at
+ * launch, the way `pinsSessionName` keeps a second `-n` off the command line — except that a name
+ * the function overrides is harmless to drop, and an agent silently dropped is a session that is
+ * not what the button said.
+ */
+export function pinsAgent(profileFn: ProfileFunction): boolean {
+  return profileFn === 'claude-isg-orch';
+}
+
+/**
+ * What an agent name may look like — P9-T1.
+ *
+ * Lower case, digits and hyphens, at most 64: the shape Claude Code's own agent names take, and a
+ * shape that is safe in every place this string goes — an argv element, a JSON body, a database
+ * column and a log line. A name in the roster that is not this shape is not offered at all rather
+ * than escaped, because the roster is the allowlist and a name that needs escaping is not on it.
+ */
+export const AGENT_SHAPE = /^[a-z0-9-]{1,64}$/u;
+
+/** The name if it is agent-shaped, `undefined` otherwise. Never coerced — see `AGENT_SHAPE`. */
+export function agentName(value: unknown): string | undefined {
+  return typeof value === 'string' && AGENT_SHAPE.test(value) ? value : undefined;
+}
+
+/**
+ * A project's agent roster out of its assets: the agent-shaped agent names, unique and sorted.
+ *
+ * The one rule both ends read — core's `AgentRoster` checks a save and a launch with it, and the
+ * presets panel draws its select from the workflow map with it — so a name the deck offers is a
+ * name core will accept, and one it hides is one core would refuse.
+ */
+export function agentRoster(assets: readonly ClaudeAsset[]): readonly string[] {
+  const names = assets
+    .filter((asset) => asset.kind === 'agent')
+    .map((asset) => agentName(asset.name))
+    .filter((name): name is string => name !== undefined);
+  return [...new Set(names)].sort((left, right) => (left < right ? -1 : 1));
+}
+
+/**
  * Where a preset's opening prompt comes from.
  *
  * Two values and no template engine. `ticket` means the prompt is COMPUTED from `sessionName` by
@@ -110,6 +160,14 @@ export interface LaunchPreset {
   /** `morning`, or `undefined`. Preset groups launch together in P6-T4. */
   readonly group: string | undefined;
   /**
+   * The agent the session starts under (`--agent`), or `undefined` for none — P9-T1.
+   *
+   * A name from the project's `.claude/agents` roster, checked at save AND at launch: a roster file
+   * deleted between the two refuses the launch rather than starting an agent Claude Code will not
+   * find. Always `undefined` on the four built-ins and on `claude-isg-orch` (`pinsAgent`).
+   */
+  readonly agent: string | undefined;
+  /**
    * Whether core computed this one rather than reading it out of the store.
    *
    * Built-ins are derived from the project and the four profile functions every time they are
@@ -148,10 +206,12 @@ export function presetId(name: string): string {
  * A closed union rather than a sentence, exactly as `ImportRefusal` is: core names the cause, the
  * deck writes the English, and nothing on screen was composed by core out of the request.
  *
- * Five, and every one of them is reachable — a union with a member nothing can produce is a
+ * Seven, and every one of them is reachable — a union with a member nothing can produce is a
  * sentence in the deck nobody will ever read. `empty` is the body that was not a draft at all,
  * which includes a `profileFn` or a `promptSource` this build does not know: `parsePresetDraft`
- * refuses those rather than coercing them, so they never reach a refusal of their own.
+ * refuses those rather than coercing them, so they never reach a refusal of their own. An agent that
+ * is not agent-shaped is the same case. `pins_agent` is an agent on `claude-isg-orch`, and
+ * `unknown_agent` a well-shaped name the project's roster does not hold (P9-T1).
  */
 export const PRESET_REFUSALS = [
   'empty',
@@ -159,6 +219,8 @@ export const PRESET_REFUSALS = [
   'bad_cwd',
   'unknown_project',
   'too_many',
+  'pins_agent',
+  'unknown_agent',
 ] as const;
 
 export type PresetRefusal = (typeof PRESET_REFUSALS)[number];
@@ -173,6 +235,8 @@ export interface PresetDraft {
   readonly promptSource: PromptSource;
   readonly prompt: string;
   readonly group: string | undefined;
+  /** A roster name, or `undefined` for none. Screened by shape in the parser, by roster in core. */
+  readonly agent: string | undefined;
 }
 
 /**
@@ -196,6 +260,11 @@ export interface PresetLaunch {
   /** Ignored by a function that names itself (`pinsSessionName`); required by every other. */
   readonly name: string;
   readonly cwd: string;
+  /**
+   * `--agent`, or `undefined` for none — P9-T1. Core checks it against the roster of the project
+   * `cwd` is in, at launch, whatever the deck believed when it drew the select.
+   */
+  readonly agent: string | undefined;
 }
 
 /** Which saved preset to remove — the project it is filed under, and its id. */
@@ -225,6 +294,7 @@ export function parseLaunchPreset(value: unknown): LaunchPreset | undefined {
     promptSource,
     prompt: text(fields['prompt'], MAX_PRESET_PROMPT_CHARS),
     group: group(fields['group']),
+    agent: agentName(fields['agent']),
     builtIn: fields['builtIn'] === true,
   };
 }
@@ -252,6 +322,8 @@ export function parsePresetDraft(body: string): PresetDraft | undefined {
   const promptSource = PROMPT_SOURCES.find((known) => known === fields['promptSource']);
   const projectPath = text(fields['projectPath'], MAX_PRESET_CWD_CHARS);
   if (profileFn === undefined || promptSource === undefined || projectPath === '') return undefined;
+  const agent = optionalAgent(fields['agent']);
+  if (agent === false) return undefined;
   return {
     projectPath,
     name: text(fields['name'], MAX_PRESET_NAME_CHARS),
@@ -262,6 +334,7 @@ export function parsePresetDraft(body: string): PresetDraft | undefined {
     // A `ticket` preset stores no prompt: it is computed from the name every time it is read.
     prompt: promptSource === 'ticket' ? '' : text(fields['prompt'], MAX_PRESET_PROMPT_CHARS),
     group: group(fields['group']),
+    agent,
   };
 }
 
@@ -285,6 +358,21 @@ export function byProjectThenName(left: LaunchPreset, right: LaunchPreset): numb
   if (left.projectKey !== right.projectKey) return left.projectKey < right.projectKey ? -1 : 1;
   if (left.name !== right.name) return left.name < right.name ? -1 : 1;
   return left.id < right.id ? -1 : 1;
+}
+
+/**
+ * An optional agent on a request: absent, `null` and `''` are none; a string must be agent-shaped.
+ *
+ * `false` for a value that is present and not a name, so the caller refuses the body rather than
+ * saving a preset with the agent quietly dropped — a button that starts something other than what
+ * it was saved as is the failure this field exists to avoid. Exported because `POST /sessions`
+ * reads the same field with the same rule.
+ *
+ * @throws never.
+ */
+export function optionalAgent(value: unknown): string | undefined | false {
+  if (value === undefined || value === null || value === '') return undefined;
+  return agentName(value) ?? false;
 }
 
 function asFields(value: unknown): Readonly<Record<string, unknown>> | undefined {

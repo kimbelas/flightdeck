@@ -49,13 +49,22 @@ export function parseLaunchAccepted(value: unknown): LaunchAccepted | undefined 
  * for an untrusted folder; F.8.3 measured that `--bg` does not hang there, so what is left is the
  * general case — any exit-0 run whose output this build cannot read.
  */
-export type LaunchFailure = 'no_shell' | 'bad_request' | 'launch_failed' | 'no_session_id';
+export type LaunchFailure =
+  'no_shell' | 'bad_request' | 'launch_failed' | 'no_session_id' | 'pins_agent' | 'unknown_agent';
 
+/**
+ * `pins_agent` and `unknown_agent` are P9-T1's, and are the launch-time halves of the two preset
+ * refusals of the same names: an agent on the function that pins one, and an agent the roster of
+ * the project the session would start in does not hold — a roster file deleted since the preset
+ * was saved is a refused launch, never an agent Claude Code will not find.
+ */
 export const LAUNCH_FAILURES: readonly LaunchFailure[] = [
   'no_shell',
   'bad_request',
   'launch_failed',
   'no_session_id',
+  'pins_agent',
+  'unknown_agent',
 ];
 
 /** The code off a refusal body, or `undefined` for a body that carries none. */

@@ -4008,9 +4008,52 @@ phases:
     tasks:
       - id: P9-T1
         title: An agent on a preset — allowlisted from the project's roster, passed as `--agent`, refused on the function that pins one
-        status: todo
+        status: done
+        done_on: 2026-09-25
         security: [SEC-PROC-1, SEC-PROC-2, SEC-PROC-3]
+        deliverables:
+          [
+            contracts/launch-preset.ts,
+            contracts/launch-reply.ts,
+            core/application/agent-roster.ts,
+            core/application/preset-book.ts,
+            core/application/session-launcher.ts,
+            core/adapters/windows/powershell-launch-commands.ts,
+            core/adapters/sqlite/schema.ts,
+            core/http/launch-route.ts,
+            app/deck/presets-panel.tsx,
+            app/deck/presets-view-model.ts,
+            tests/core/application/agent-roster.test.ts,
+            tests/core/application/session-launcher-agent.test.ts,
+            tests/core/http/launch-route.test.ts,
+            tests/contracts/launch-preset-agent.test.ts,
+            tests/win/powershell-launch.test.ts,
+            tests/e2e/smoke/agent-checks.mjs,
+            SECURITY.md SEC-PROC-2,
+          ]
         notes: >-
+          **Done 2026-09-25. Verified against the real core and a real session.** On xpert-new, whose
+          roster is german-ui-expert, niklas-reviewer and orchestrator, a preset saved with
+          niklas-reviewer round-trips. A `claude-365` launch under it started `59118e15`, and Claude
+          Code's own transcript records `"agentSetting":"niklas-reviewer"`. That is the proof that
+          `--agent` gets through the profile function, which the argv tests cannot give. The session
+          was then stopped and removed and the probe preset forgotten, so the owner still has zero
+          saved presets. Every refusal was also exercised on the real core: a ghost name, an agent on
+          `claude-isg-orch`, a name that is not agent-shaped, and an agent from another project's
+          roster. Each was refused at save time and at launch, and each left an audit row. **The
+          roster is one class for both checks** (`AgentRoster`), and the deck's select reads the
+          same rule (`agentRoster` over the map). It reads fresh on every question. The map's
+          five-minute cache is signed on `.claude`'s mtime, and deleting `agents/x.md` moves the
+          mtime of `agents/`, not of `.claude`. A worktree cwd is checked against the project ROOT's
+          roster. The live database migrated to user_version 8 (`presets.agent`, nullable).
+          `tests/win/powershell-launch.test.ts` grew the row the notes asked for: through a real
+          PowerShell, the agent arrives as its own argv element, and a prompt containing `$(Get-Date)`
+          still arrives unexpanded, one element after it. D59 already carries the reason `agent`
+          came back, so no new decision was written. The select is drawn only where there is
+          something to pick. A saved agent the roster has lost is still listed and marked, and the
+          press is refused with a sentence saying so.
+
+          *The task as planned:*
           **This reverses one third of D44, and the reason is written before the field is.** D44
           dropped `model`, `agent` and `effort` from the preset because the profile function is
           the routing and a second field could contradict it. `model` and `effort` stay dropped —

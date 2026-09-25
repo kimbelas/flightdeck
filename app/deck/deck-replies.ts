@@ -54,6 +54,13 @@ export function whyNotLaunched(reply: JsonReply | undefined): string {
   if (failure === 'no_session_id') {
     return 'Claude started but printed no session id — check `claude agents` before trying again.';
   }
+  // P9-T1. The two that name something the owner can fix from the presets panel.
+  if (failure === 'unknown_agent') {
+    return 'That agent is no longer in the project .claude/agents roster — pick another, or none.';
+  }
+  if (failure === 'pins_agent') {
+    return 'claude-isg-orch already runs the orchestrator agent — it cannot take a second one.';
+  }
   if (failure !== undefined) return 'Core would not start that session.';
   // A 201 that got this far carried something other than a session id.
   return reply.status === 201 ? UNREADABLE : describeStatus(reply.status);

@@ -376,7 +376,8 @@ button.ghost {
 }
 
 .preset-prompt,
-.preset-cwd {
+.preset-cwd,
+.preset-agent {
   grid-column: 1 / -1;
   min-width: 0;
 }

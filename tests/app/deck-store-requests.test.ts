@@ -172,6 +172,7 @@ const LAUNCH = {
   prompt: 'do the thing',
   name: 'fd-one',
   cwd: '',
+  agent: undefined,
 } as const;
 
 describe('DeckStore.remove', () => {
@@ -230,6 +231,7 @@ describe('DeckStore.launch', () => {
       prompt: 'do the thing',
       name: 'fd-one',
       cwd: '',
+      agent: undefined,
     });
 
     expect(api.requests).toEqual([

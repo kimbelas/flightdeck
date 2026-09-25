@@ -71,6 +71,9 @@ export class PresetCatalogue {
       promptSource: template.promptSource,
       prompt: '',
       group: undefined,
+      // The four stay agent-less (P9-T1): an agent is a choice from one project's roster, and a
+      // built-in is the same four for every project.
+      agent: undefined,
       builtIn: true,
     }));
   }
