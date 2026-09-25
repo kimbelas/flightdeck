@@ -12,16 +12,29 @@ import type { DraftEvent, FdEvent } from '../../contracts/fd-event.ts';
 import { byProjectThenName, type LaunchPreset } from '../../contracts/launch-preset.ts';
 import { projectKey, type ProjectRecord } from '../../contracts/project.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
+import type { SearchHit } from '../../contracts/transcript-search.ts';
+import type { TranscriptCursor } from '../../core/ports/transcript-file.ts';
 import type { DraftVitalsSnapshot, VitalsSnapshot } from '../../contracts/vitals-snapshot.ts';
 import {
   MAX_SESSION_MUTES,
   type ConfigSnapshot,
   type DraftConfigSnapshot,
   type MutedSession,
+  type TranscriptIndexBatch,
   type Store,
 } from '../../core/ports/store.ts';
 
 export class FakeStore implements Store {
+  /**
+   * The search index, in memory — P7-T1.
+   *
+   * Substring matching rather than a tokenizer, and that is the fake's honest limit: FTS5's
+   * grammar, its ranking and its snippet windows belong to SQLite and are tested against the real
+   * adapter (`sqlite-store-search.test.ts`). What every caller of this fake actually asks is
+   * "did the indexer store what it read, and did it store it once" — which needs a list, not a
+   * search engine. `searchTranscripts` here is enough to prove a route passes its query down.
+   */
+  public readonly indexed: TranscriptIndexBatch[] = [];
   private readonly events: FdEvent[] = [];
   private readonly audit: AuditRow[] = [];
   private readonly snapshots: VitalsSnapshot[] = [];
@@ -36,6 +49,9 @@ export class FakeStore implements Store {
   private readonly configHistory: ConfigSnapshot[] = [];
   /** Keyed `<subscription>|<sessionId>`, exactly as the sqlite table's composite key is. */
   private readonly mutes = new Map<string, MutedSession>();
+  /** P7-T1. Keyed by transcript path, which is what the cursor is keyed by in the real store. */
+  private readonly cursors = new Map<string, TranscriptCursor>();
+  private readonly excerpts = new Map<string, TranscriptIndexBatch>();
   private nextConfigId = 1;
   private writable = true;
 
@@ -203,6 +219,42 @@ export class FakeStore implements Store {
           muteSlot(right.subscription, right.sessionId),
         ),
     );
+  }
+
+  public transcriptCursor(path: string): TranscriptCursor | undefined {
+    return this.cursors.get(path);
+  }
+
+  public indexTranscript(batch: TranscriptIndexBatch): void {
+    if (!this.writable) throw new Error('store is not writable');
+    if (batch.restarted) {
+      for (const [path, held] of this.excerpts) {
+        if (held.subscription === batch.subscription && held.sessionId === batch.sessionId) {
+          this.excerpts.delete(path);
+        }
+      }
+    }
+    this.indexed.push(batch);
+    this.excerpts.set(batch.path, batch);
+    this.cursors.set(batch.path, batch.cursor);
+  }
+
+  public searchTranscripts(match: string, limit: number): readonly SearchHit[] {
+    const needle = match.replaceAll(/["*]/gu, '').toLowerCase();
+    const hits: SearchHit[] = [];
+    for (const batch of this.excerpts.values()) {
+      const found = batch.excerpts.find((prose) => prose.text.toLowerCase().includes(needle));
+      if (found === undefined) continue;
+      hits.push({
+        subscription: batch.subscription,
+        sessionId: batch.sessionId,
+        projectKey: batch.projectKey,
+        kind: found.kind,
+        at: found.at ?? 0,
+        snippet: found.text,
+      });
+    }
+    return hits.slice(0, limit);
   }
 }
 

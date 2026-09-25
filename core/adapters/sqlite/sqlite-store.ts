@@ -28,18 +28,22 @@ import {
   type DraftConfigSnapshot,
   type MutedSession,
   type Store,
+  type TranscriptIndexBatch,
 } from '../../ports/store.ts';
+import type { TranscriptCursor } from '../../ports/transcript-file.ts';
+import type { SearchHit } from '../../../contracts/transcript-search.ts';
 import {
-  asRecord,
   toAudit,
   toConfigSnapshot,
   toEvent,
   toMutedSession,
+  capped,
   toPreset,
   toProject,
   toSnapshot,
 } from './rows.ts';
-import { MIGRATIONS, PRAGMAS } from './schema.ts';
+import { migrate, versionOf, PRAGMAS } from './schema.ts';
+import { SqliteTranscriptIndex } from './sqlite-transcript-index.ts';
 import {
   prepareConfigStatements,
   prepareMuteStatements,
@@ -88,6 +92,8 @@ export class SqliteStore implements Store {
   /** The config history's three — P3-T7. */
   private readonly configRows: ConfigStatements;
   private readonly muteRows: MuteStatements;
+  /** The search index — P7-T1, the widening the port predicted. Its own class; see below. */
+  private readonly index: SqliteTranscriptIndex;
 
   /**
    * Opens (and creates) the store, applying any migrations it is behind on.
@@ -138,6 +144,7 @@ export class SqliteStore implements Store {
     this.presetRows = preparePresetStatements(this.db);
     this.configRows = prepareConfigStatements(this.db);
     this.muteRows = prepareMuteStatements(this.db);
+    this.index = new SqliteTranscriptIndex(this.db);
   }
 
   /** The schema version this file is at. `flightdeck-core status` prints it (P1-T12). */
@@ -271,48 +278,23 @@ export class SqliteStore implements Store {
     return this.muteRows.selectAll.all().map(toMutedSession);
   }
 
+  /** The search index's three, delegated — P7-T1. See `SqliteTranscriptIndex` for the split. */
+  public transcriptCursor(path: string): TranscriptCursor | undefined {
+    return this.index.transcriptCursor(path);
+  }
+
+  public indexTranscript(batch: TranscriptIndexBatch): void {
+    this.index.indexTranscript(batch);
+  }
+
+  public searchTranscripts(match: string, limit: number): readonly SearchHit[] {
+    return this.index.searchTranscripts(match, limit);
+  }
+
   /** Closes the handle. Idempotent, because shutdown is (main.ts `stopCore`). */
   public close(): void {
     if (this.db.isOpen) this.db.close();
   }
-}
-
-/**
- * Brings the file up to `MIGRATIONS.length`, one transaction per step.
- *
- * A database ahead of this build is left alone rather than downgraded: an older core opening a
- * newer file is a mistake to report, not to fix by deleting columns.
- */
-function migrate(db: DatabaseSync): void {
-  const from = versionOf(db);
-  if (from >= MIGRATIONS.length) return;
-  for (let version = from; version < MIGRATIONS.length; version += 1) {
-    const step = MIGRATIONS[version];
-    if (step === undefined) continue;
-    db.exec('BEGIN');
-    try {
-      db.exec(step);
-      // Not a parameter: PRAGMA does not take one, and `version` is a loop counter over an array
-      // in this file, never anything from outside it (SEC-DATA-3 is about untrusted values).
-      db.exec(`PRAGMA user_version = ${String(version + 1)}`);
-      db.exec('COMMIT');
-    } catch (cause) {
-      db.exec('ROLLBACK');
-      throw new Error(`migration ${String(version + 1)} failed`, { cause });
-    }
-  }
-}
-
-function versionOf(db: DatabaseSync): number {
-  const row: unknown = db.prepare('PRAGMA user_version').get();
-  const value = asRecord(row)?.['user_version'];
-  return typeof value === 'number' ? value : 0;
-}
-
-/** A negative or absurd `limit` becomes a sane one rather than a SQL error or the whole table. */
-function capped(limit: number): number {
-  if (!Number.isFinite(limit) || limit <= 0) return 0;
-  return Math.min(Math.floor(limit), 10_000);
 }
 
 /**

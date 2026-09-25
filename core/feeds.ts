@@ -14,6 +14,7 @@ import { QuotaReport } from './application/quota-report.ts';
 import { Reconciler } from './application/reconciler.ts';
 import { StatuslineQueue } from './application/statusline-queue.ts';
 import { ToastAnnouncer } from './application/toast-announcer.ts';
+import { TranscriptIndexer } from './application/transcript-indexer.ts';
 import { TranscriptReader } from './application/transcript-reader.ts';
 import { VitalsRegistry } from './application/vitals-registry.ts';
 import { type ClaudeCliSessionSource } from './adapters/claude-cli/claude-cli-session-source.ts';
@@ -21,6 +22,7 @@ import { type ClaudeInstall } from './adapters/claude-cli/claude-install.ts';
 import { FanOutEventSink } from './adapters/fan-out-event-sink.ts';
 import { LoggingEventSink } from './adapters/logging-event-sink.ts';
 import { FsDirectoryWatcher } from './adapters/node/fs-directory-watcher.ts';
+import { FsTranscriptCatalogue } from './adapters/node/fs-transcript-catalogue.ts';
 import { FsTranscriptFile } from './adapters/node/fs-transcript-file.ts';
 import { NodeScheduler } from './adapters/node/node-scheduler.ts';
 import { StoringEventSink } from './adapters/storing-event-sink.ts';
@@ -47,6 +49,16 @@ export interface Feeds {
   /** The Windows toasts, and the set of sessions that has been told to stop raising them (P6-T3). */
   readonly toasts: ToastAnnouncer;
   readonly mutes: MuteBook;
+  /**
+   * The transcript search index — P7-T1.
+   *
+   * **Not a feed in D3's sense**, and its own header says so: it owns no liveness, raises no
+   * alert, nudges no sweep and publishes nothing. It is constructed and started here because this
+   * file is where the long-running things that share the one scheduler are built, and because it
+   * needs the same install, store, clock and `ReadPolicy` the feeds above it already have. A
+   * second scheduler for it would be the timer nobody cancels that `buildFeeds` warns about.
+   */
+  readonly indexer: TranscriptIndexer;
 }
 
 export interface FeedParts {
@@ -92,6 +104,7 @@ export function buildFeeds(parts: FeedParts): Feeds {
     ...buildToasts(hub, store, clock, logger),
     reconciler,
     ask,
+    indexer: buildIndexer({ install, store, scheduler, clock, logger }),
     // The stream replays two things on connect and they come from different places: the session
     // table from the reconciler's map, the quota gauges from the vitals registry (P2-T3). Neither
     // costs a sweep.
@@ -146,6 +159,36 @@ function buildToasts(
       logger,
     }),
   };
+}
+
+/**
+ * The search index — P7-T1, and the one reader here that WALKS.
+ *
+ * Feed 4 below is told which transcripts are live and reads only those; this one goes looking,
+ * because "where did I do that" is a question about work that finished weeks ago in a session
+ * nobody has posted a hook about since. The byte cursors in the store are what make the walk cheap
+ * after the first pass (`TranscriptIndexer`).
+ *
+ * The SAME `ReadPolicy` shape as feed 4's, built from the same two config directories: one reader
+ * of transcripts is allowed to open exactly what the other is (SEC-FS-2).
+ */
+function buildIndexer(parts: {
+  readonly install: ClaudeInstall;
+  readonly store: Store;
+  readonly scheduler: NodeScheduler;
+  readonly clock: SystemClock;
+  readonly logger: Logger;
+}): TranscriptIndexer {
+  const { install } = parts;
+  return new TranscriptIndexer({
+    catalogue: new FsTranscriptCatalogue(install),
+    files: new FsTranscriptFile(),
+    store: parts.store,
+    policy: new ReadPolicy(SUBSCRIPTION_IDS.map((id) => install.configDirFor(id))),
+    scheduler: parts.scheduler,
+    clock: parts.clock,
+    logger: parts.logger,
+  });
 }
 
 /**

@@ -19,6 +19,7 @@ import { ConnectPlanRoute, ConnectWriteRoute } from './http/connect-routes.ts';
 import { DoctorRoute, RespawnRoute, UpdateRoute } from './http/install-routes.ts';
 import { GroupLaunchRoute, type GroupStarter } from './http/group-route.ts';
 import { AdoptRoute, type SessionAdopterPort } from './http/adopt-route.ts';
+import { SearchRoute, type TranscriptSearch } from './http/search-route.ts';
 import { HandoffRoute, type SessionForker } from './http/handoff-route.ts';
 import { LaunchRoute } from './http/launch-route.ts';
 import { MutesReadRoute, MutesWriteRoute } from './http/mutes-route.ts';
@@ -63,6 +64,13 @@ export interface RouterParts {
   readonly detail: DetailSource;
   readonly preview: PreviewSource;
   readonly deck: DeckQuery;
+  /**
+   * The transcript index, asked a question — P7-T1, SPEC §5.8.
+   *
+   * The `Store` narrowed to one method, for `SessionForker`'s reason: a route that took the whole
+   * store could write to the event log, and this one only ever reads.
+   */
+  readonly search: TranscriptSearch;
   readonly launcher: SessionLauncher;
   readonly resumer: SessionResumer;
   readonly stopper: SessionStopper;
@@ -124,6 +132,8 @@ export function buildRouter(parts: RouterParts, extra: readonly Route[]): Reques
     new SessionDetailRoute(parts.detail),
     // Its own route and not a field on the detail: a preview spawns `claude.exe` (P5a-T4).
     new PreviewRoute(parts.preview),
+    // P7-T1. A read of the index and nothing else — the filters SPEC §5.8 lists are P7-T2's.
+    new SearchRoute(parts.search),
     new StatusRoute(parts.report),
     ...sessionRoutes(parts),
     // P4-T5. The read is a GET and writes no audit row; the two writes are POSTs and do.

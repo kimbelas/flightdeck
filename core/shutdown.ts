@@ -19,6 +19,7 @@ import type { Reconciler } from './application/reconciler.ts';
 import type { ToastAnnouncer } from './application/toast-announcer.ts';
 import type { TicketOffice } from './application/ticket-office.ts';
 import type { TokenIssuer } from './application/token-issuer.ts';
+import type { TranscriptIndexer } from './application/transcript-indexer.ts';
 import type { TranscriptReader } from './application/transcript-reader.ts';
 import type { SqliteStore } from './adapters/sqlite/sqlite-store.ts';
 import type { CoreServer } from './http/core-server.ts';
@@ -30,6 +31,8 @@ import type { Logger } from './ports/logger.ts';
 export interface Running {
   readonly reconciler: Reconciler;
   readonly transcripts: TranscriptReader;
+  /** P7-T1's five-minute walk. A timer, so it is here for the reason everything here is. */
+  readonly indexer: TranscriptIndexer;
   readonly toasts: ToastAnnouncer;
   readonly store: SqliteStore;
   readonly stream: SessionStreamRoute;
@@ -58,6 +61,9 @@ export function startCore(running: StartableCore): void {
   // an announcer nobody started is a feature that silently does not exist. That is the P1-T7 shape
   // exactly: nothing throws, nothing looks wrong, and no toast is ever raised.
   running.toasts.start();
+  // P7-T1's five-minute walk, plus one pass now — which is what makes a fresh store searchable
+  // without waiting for the first tick.
+  running.indexer.start();
 }
 
 /** A thing with a timer to start. Structural, so a test can supply a counter and not a Reconciler. */
@@ -77,6 +83,7 @@ export interface StartableCore {
   readonly reconciler: Startable;
   readonly transcripts: Startable;
   readonly toasts: Startable;
+  readonly indexer: Startable;
 }
 
 /** Stops core. Idempotent, because every step below is. */
@@ -90,6 +97,9 @@ export async function stopCore(running: Running): Promise<void> {
   // announcer left listening is a `subscriberCount` that never comes back down, and a closed
   // stream that is still counted is the leak `EventHub` exists to make visible.
   running.toasts.stop();
+  // The third timer NodeScheduler does not unref, and the one that would hold the loop open with
+  // a walk of 374 files in flight.
+  running.indexer.stop();
   // Second, and BEFORE the server, which is not interchangeable: `server.close()` waits for open
   // connections to end and an SSE response never does on its own, so a single deck tab would hold
   // core open through Ctrl+C. Closing the streams afterwards would not rescue it either —

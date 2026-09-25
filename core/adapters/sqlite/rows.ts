@@ -18,7 +18,10 @@ import {
 import { projectName, type ProjectRecord } from '../../../contracts/project.ts';
 import type { SubscriptionId } from '../../../contracts/session.ts';
 import type { VitalsSnapshot } from '../../../contracts/vitals-snapshot.ts';
+import { PROSE_KINDS } from '../../../contracts/transcript-prose.ts';
+import type { SearchHit } from '../../../contracts/transcript-search.ts';
 import type { ConfigSnapshot, MutedSession } from '../../ports/store.ts';
+import type { TranscriptCursor } from '../../ports/transcript-file.ts';
 
 /** A stored payload back to a value. A column that will not parse reads as absent, never throws. */
 function decodePayload(value: unknown): unknown {
@@ -173,6 +176,35 @@ export function toMutedSession(row: unknown): MutedSession {
   };
 }
 
+/**
+ * Where the indexer got to in one transcript — P7-T1.
+ *
+ * `undefined` for a file it has never read, which is the ordinary state on a first pass and is a
+ * different answer from "offset 0": the second would claim a cursor exists. A row missing its
+ * identity reads as a new transcript rather than as the same one, which costs a re-index of a file
+ * and never returns text from a transcript that is no longer there.
+ */
+export function toTranscriptCursor(row: unknown): TranscriptCursor | undefined {
+  const fields = asRecord(row);
+  if (fields === undefined) return undefined;
+  const identity = stringAt(fields, 'identity');
+  if (identity === '') return undefined;
+  return { offset: numberAt(fields, 'offset_bytes'), identity };
+}
+
+/** One search hit. `snippet` is model- or user-written text and is displayed, never interpreted. */
+export function toSearchHit(row: unknown): SearchHit {
+  const fields = asRecord(row) ?? {};
+  return {
+    subscription: subscriptionOf(stringAt(fields, 'subscription')),
+    sessionId: stringAt(fields, 'session_id'),
+    projectKey: stringAt(fields, 'project_key'),
+    kind: PROSE_KINDS.find((known) => known === fields['kind']) ?? 'you',
+    at: numberAt(fields, 'at'),
+    snippet: stringAt(fields, 'snippet'),
+  };
+}
+
 /** What a row this build cannot read at all comes back as. Compares unequal to every real one. */
 const EMPTY_DIGEST: ConfigDigest = {
   instructions: [],
@@ -241,4 +273,16 @@ function argsOf(value: unknown): readonly string[] {
   return Array.isArray(parsed)
     ? parsed.filter((item): item is string => typeof item === 'string')
     : [];
+}
+
+/**
+ * A negative or absurd `limit` becomes a sane one rather than a SQL error or the whole table.
+ *
+ * Here rather than beside one of its callers because both adapters over this database need it, and
+ * two copies of "what is a sane limit" is exactly the sort of pair that drifts by one order of
+ * magnitude and is noticed by nobody.
+ */
+export function capped(limit: number): number {
+  if (!Number.isFinite(limit) || limit <= 0) return 0;
+  return Math.min(Math.floor(limit), 10_000);
 }

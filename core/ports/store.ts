@@ -17,8 +17,11 @@
 // because the burn-rate and sparkline readings are questions no registry of "now" can answer
 // (contracts/vitals-snapshot.ts, SPEC §5.4/§5.5).
 //
-// This is what P1 needs. The FTS5 index and transcript excerpts are P7 and widen this interface
-// then, against a task that knows what it is searching for.
+// **The FTS5 index and the transcript excerpts are the P7 widening this file predicted** (P7-T1).
+// They are observations too — "this was said, at this instant, in this session" — and they are the
+// one thing in here that holds the owner's prose, which is what SEC-DATA-1 is about. The three
+// methods at the bottom are all of it: where the indexer got to in one file, what it read, and the
+// query. Nothing else in core may write to that table.
 // **The project registry is the one thing in here that is not an observation** (P3-T1). Everything
 // above is append-only: what happened, in the order it happened. A project row is a standing
 // permission — it is what widens `ReadPolicy`'s allowlist — so it is keyed, it is replaceable and
@@ -31,7 +34,10 @@ import type { LaunchPreset } from '../../contracts/launch-preset.ts';
 import type { DraftEvent, FdEvent } from '../../contracts/fd-event.ts';
 import type { ProjectRecord } from '../../contracts/project.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
+import type { TranscriptProse } from '../../contracts/transcript-prose.ts';
+import type { SearchHit } from '../../contracts/transcript-search.ts';
 import type { DraftVitalsSnapshot, VitalsSnapshot } from '../../contracts/vitals-snapshot.ts';
+import type { TranscriptCursor } from './transcript-file.ts';
 
 export interface Store {
   /**
@@ -179,6 +185,59 @@ export interface Store {
 
   /** Every muted session, newest mute first. Empty until the owner mutes one. */
   mutedSessions(): readonly MutedSession[];
+
+  /**
+   * Where the indexer got to in one transcript, or `undefined` for one it has never read — P7-T1.
+   *
+   * A `TranscriptCursor`, not a number, and for the reason `core/ports/transcript-file.ts` gives:
+   * a transcript is deleted after thirty days and a resumed session writes a fresh file at the
+   * same path, so "the file is 40 KB and I have read 60 KB" and "the file is 80 KB and it is a
+   * different file" are both real and only the second is invisible to arithmetic.
+   */
+  transcriptCursor(path: string): TranscriptCursor | undefined;
+
+  /**
+   * Records what was read out of one transcript, and where reading stopped.
+   *
+   * **One transaction, because half of it is a lie.** Excerpts written without their cursor are
+   * indexed twice on the next pass; a cursor written without its excerpts is text that is never
+   * searchable and never read again.
+   *
+   * @param restarted the file was replaced or shrank, so everything already indexed from it is
+   * about a transcript that no longer exists. The store DELETES those rows before inserting —
+   * the alternative is a search that returns a conversation from a session the owner resumed
+   * away from, which reads as a bug in the search rather than in the index.
+   * @throws if the store cannot be written. An index that silently stopped growing is a search
+   * that silently stops finding.
+   */
+  indexTranscript(batch: TranscriptIndexBatch): void;
+
+  /**
+   * The sessions whose transcripts match `match`, best first, at most `limit`.
+   *
+   * @param match an FTS5 MATCH expression built by `toMatchExpression`, never a raw typed query:
+   * FTS5 has a grammar, and a `"` somebody typed is a syntax error rather than a search
+   * (contracts/transcript-search.ts).
+   * @returns at most one hit per session — the gate asks "where did I do that", and the answer is
+   * a conversation to go back to rather than forty lines from inside one.
+   */
+  searchTranscripts(match: string, limit: number): readonly SearchHit[];
+}
+
+/** What one pass over one transcript read — P7-T1. See `Store.indexTranscript`. */
+export interface TranscriptIndexBatch {
+  /** The transcript's full path. The key of the cursor row, and never displayed (SEC-DATA-2). */
+  readonly path: string;
+  readonly subscription: SubscriptionId;
+  /** The session the transcript belongs to — its filename, which is the session's uuid. */
+  readonly sessionId: string;
+  /** The slug folder the transcript sits in. P7-T2's project filter, without a second read. */
+  readonly projectKey: string;
+  /** Where reading stopped. Always a record boundary — see the migration for why. */
+  readonly cursor: TranscriptCursor;
+  readonly at: number;
+  readonly restarted: boolean;
+  readonly excerpts: readonly TranscriptProse[];
 }
 
 /**
