@@ -34,6 +34,7 @@ import { parseHookSteps, type HookStep } from './hook-timeline.ts';
 import { parseInstructionStack, type InstructionFile } from './instruction-stack.ts';
 import { MAX_PROJECT_PATH_CHARS } from './project.ts';
 import { parseProjectGatesReply, type ProjectGates } from './project-gates.ts';
+import { parseTicketList } from './project-tickets.ts';
 import { parseWorktrees, type Worktree } from './worktree.ts';
 
 /**
@@ -78,6 +79,14 @@ export interface WorkflowMap {
   readonly permissions: PermissionRules;
   /** All six, always, so a repository that keeps none of them says so. */
   readonly conventions: readonly ConventionCount[];
+  /**
+   * The ticket ids under `specs/` and `state/`, newest first, at most 200 — P9-T3.
+   *
+   * Names screened against `TICKET_SHAPE` and nothing else: never a file's contents, never a
+   * name that is not an id (`project-tickets.ts`). The `ticket` preset offers them as a datalist;
+   * an id that is not here is still accepted, because its spec may be about to be written.
+   */
+  readonly tickets: readonly string[];
   /**
    * Every checkout of this repository, main first — P3-T4, `worktree.ts`.
    *
@@ -129,6 +138,7 @@ export function parseWorkflowMap(value: unknown): WorkflowMap | undefined {
     marketplaces: parseNameList(fields['marketplaces']),
     permissions: parsePermissionRules(fields['permissions']),
     conventions: conventionList(fields['conventions']),
+    tickets: parseTicketList(fields['tickets']),
     worktrees: parseWorktrees(fields['worktrees']),
     gates: parseProjectGatesReply(fields['gates']),
     configured: fields['configured'] === true,

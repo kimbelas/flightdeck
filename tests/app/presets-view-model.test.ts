@@ -141,7 +141,7 @@ describe('PresetsViewModel — the agent select (P9-T1)', () => {
   const withRoster = (
     presets: readonly LaunchPreset[],
     roster: readonly string[],
-  ): PresetsViewModel => new PresetsViewModel(presets, APP_NEXT, undefined, roster);
+  ): PresetsViewModel => new PresetsViewModel(presets, APP_NEXT, undefined, { roster });
 
   it('offers the roster on a function that does not pin an agent', () => {
     const line = withRoster([preset()], ['code-reviewer', 'reviewer']).lines[0];
@@ -167,5 +167,30 @@ describe('PresetsViewModel — the agent select (P9-T1)', () => {
 
   it('offers nothing before the map has arrived', () => {
     expect(model([preset()]).lines[0]?.agentChoices).toEqual([]);
+  });
+});
+
+describe('PresetsViewModel — the ticket datalist (P9-T3)', () => {
+  const TICKETS = ['XWEB-2126', 'XWEB-2113', 'XWEB-1830'];
+  const withTickets = (presets: readonly LaunchPreset[]): PresetsViewModel =>
+    new PresetsViewModel(presets, APP_NEXT, undefined, { tickets: TICKETS });
+
+  it('offers the map ids, in its order, on a ticket preset', () => {
+    expect(withTickets([preset()]).lines[0]?.ticketChoices).toEqual(TICKETS);
+  });
+
+  it('offers nothing on a literal preset, whose name box is a session name', () => {
+    const line = withTickets([preset({ id: 'plain', promptSource: 'literal' })]).lines[0];
+
+    expect(line?.ticketChoices).toEqual([]);
+  });
+
+  it('offers nothing before the map has arrived, or for a project with no specs', () => {
+    expect(model([preset()]).lines[0]?.ticketChoices).toEqual([]);
+  });
+
+  it('still sends a typed id that is not on the list — the spec may be about to be written', () => {
+    expect(withTickets([preset()]).lines[0]?.ticketChoices).not.toContain('XWEB-9999');
+    expect(draftPrompt('ticket', 'xweb-9999', '')).toContain('.claude/specs/XWEB-9999/');
   });
 });

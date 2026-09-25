@@ -75,6 +75,7 @@ describe('AssetPresets — what an agent drafts', () => {
       prompt: '',
       agentChoices: ROSTER,
       agentMissing: false,
+      ticketChoices: [],
       pinsAgent: false,
       origin: 'agent niklas-reviewer',
     });

@@ -62,6 +62,7 @@ function mapOf(over: Partial<WorkflowMap> = {}): WorkflowMap {
       { folder: 'rules', files: 6 },
       { folder: 'specs', files: 0 },
     ],
+    tickets: [],
     worktrees: [],
     gates: undefined,
     configured: true,

@@ -32,8 +32,11 @@
  * generalised here rather than the prefix copied: Flightdeck presets are per project and the next
  * project's tracker will not spell it `XWEB`. Everything that does not match is used exactly as
  * the owner typed it.
+ *
+ * Exported for P9-T3: the ticket picker lists `.claude/specs/` and `.claude/state/` and keeps only
+ * the names this accepts, so a picked id and a typed id are screened by one rule.
  */
-const TICKET_SHAPE = /^[a-z]{2,12}-\d+$/i;
+export const TICKET_SHAPE = /^[a-z]{2,12}-\d+$/i;
 
 export class TicketPrompt {
   private readonly ticket: string;

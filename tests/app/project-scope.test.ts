@@ -47,6 +47,7 @@ function mapWith(path: string, worktrees: readonly string[]): WorkflowMap {
     marketplaces: [],
     permissions: { allow: [], deny: [], ask: [], defaultMode: undefined },
     conventions: [],
+    tickets: [],
     worktrees: worktrees.map(tree),
     gates: undefined,
     configured: true,
