@@ -3737,9 +3737,80 @@ phases:
         depends_on: [P9]
       - id: P7-T4
         title: Daemon visibility (roster, retire events) and scheduled-task visibility
-        status: todo
+        status: done
+        done_on: 2026-09-25
         depends_on: [P9]
+        security: [SEC-FS-1, SEC-FS-2, SEC-DATA-1]
+        deliverables:
+          [
+            contracts/daemon-log.ts,
+            contracts/daemon-report.ts,
+            contracts/transcript-record.ts,
+            contracts/observed-behaviour.ts,
+            contracts/deck-routes.ts,
+            core/ports/daemon-log-source.ts,
+            core/adapters/node/fs-daemon-log-source.ts,
+            core/domain/daemon-history.ts,
+            core/domain/schedule-tally.ts,
+            core/domain/observed-tally.ts,
+            core/application/daemon-reader.ts,
+            core/http/daemon-route.ts,
+            core/reads.ts,
+            core/routes.ts,
+            core/main.ts,
+            app/deck/daemon-view-model.ts,
+            app/deck/daemon-panel-model.ts,
+            app/deck/daemon-panel.tsx,
+            app/deck/deck-install.tsx,
+            app/deck/observed-panel.tsx,
+            scripts/capture-log.mjs,
+            scripts/capture-fixtures.mjs,
+            fixtures/daemon/daemon-isg.log,
+            fixtures/daemon/daemon-365.log,
+            fixtures/transcript/scheduled-fires.jsonl,
+            .gitignore,
+            .claude/skills/capture/SKILL.md,
+            tests/e2e/smoke/daemon-checks.mjs,
+            tests/e2e/smoke/daemon-fixture.mjs,
+            tests/fixtures/daemon-log.test.ts,
+            tests/fixtures/scheduled-fires.test.ts,
+            DECISIONS.md D60,
+            RESEARCH.md G.57,
+          ]
         notes: >-
+          **Done 2026-09-25.** The daemon.log fixture is OWNED (D28), and the "same non-JSON
+          scrubber path P5a-T4 needs" turned out not to exist: D42's frame rule never reads the
+          words, and the words are what this parser reads. So `.log` gets its own path (D60), an
+          allowlist of fourteen whole-line templates whose literal words pass and whose slots — a
+          short id, a path — are rewritten; a line no template describes FAILS the capture and
+          names its line number. `GET /daemon` joins three witnesses in a fixed order of trust:
+          the log's "that supervisor shut down" (or "was replaced by a later start") beats the
+          probe's "that pid exists", and the probe beats the roster's claim. So a roster naming a
+          dead supervisor reads `stale` — F.2.16's signature — with the sentence that says stop, rm
+          and logs fail until a --bg launch. It lives in the installation panel behind a button,
+          beside respawn. Each recent ending is named from the log (stopped / finished / retired +
+          reason), which is the EndReason the listing cannot give (F.2.3), and `idle-prompt` is
+          drawn as an unanswered request, not a completion. **Two things were found by reading the
+          real logs, not by guessing.** A second supervisor that starts and is REFUSED must be
+          dropped, or the real one reads as replaced and its shutdown lands on the wrong pid — the
+          first fold did exactly that and the fixture test caught it. And every `(done)` in both
+          logs follows a retirement: no background session here ever finished on its own.
+          Scheduled tasks: `scheduled_task_fire` now carries kind and cron (never the prompt), and
+          the observed reading lists fires PER KIND, because a `/loop` wake-up is a one-shot with a
+          fresh task id each time (G.57). **Live, with flightdeck.cmd:** `GET /daemon` answered in
+          138 ms, 401 without the token; both subscriptions read `stale` — isg's roster names
+          27708, which the log saw idle-exit four days earlier, and 365's roster (rewritten that
+          morning after being absent at capture time) names 9700, idle-exited four hours before;
+          `tasklist` confirmed 27708 gone. The panel fetched nothing until "read the daemons" was
+          pressed, then drew both in red with 1 and 3 retirements waiting for an answer; xpert-new's
+          observed reading listed `loop` × 18 fires over 6 sessions, last cron `10 16 * * *`. The
+          committed fixtures carry no account name or path and `capture-fixtures --check` is clean.
+          Not done, on purpose: rows still read EndReason `unknown`, so an idle retirement still
+          raises the "finished" toast (D58) — putting the log's endings on the row is a reconciler
+          change. `npm run check` 246 files / 3 139 tests on the branch; smoke grew 13 checks
+          (490 in all).
+
+          *The task as planned:*
           Owns the daemon.log fixture (DECISIONS.md D28). The lifecycle lines and the retirement
           reason words settled / idle-prompt / empty-idle are quoted in RESEARCH.md B.3 and F.2.7
           but captured nowhere; capture them here, with the same non-JSON scrubber path P5a-T4

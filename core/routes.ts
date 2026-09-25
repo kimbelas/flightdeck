@@ -160,6 +160,19 @@ export function buildRouter(parts: RouterParts, extra: readonly Route[]): Reques
     new MutesReadRoute(parts.feeds.mutes),
     new MutesWriteRoute(parts.feeds.mutes),
     ...extra,
+    ...ingestRoutes(parts),
+  ]);
+}
+
+/**
+ * What Claude Code itself posts — hooks, the statusline and, when it is on, OTLP (P7-T5).
+ *
+ * Lifted out of `buildRouter` when the daemon read (P7-T4) pushed it over its line limit. These
+ * are the coherent piece: every one is fed by a session rather than by the deck, and the ingest
+ * key reaches no route outside this list (SEC-HTTP-7).
+ */
+function ingestRoutes(parts: RouterParts): readonly Route[] {
+  return [
     new HooksRoute({
       queue: parts.feeds.hooks,
       paths: subscriptionPaths(parts.install),
@@ -177,7 +190,7 @@ export function buildRouter(parts: RouterParts, extra: readonly Route[]): Reques
       limiter: parts.limiter,
       logger: parts.logger,
     }),
-  ]);
+  ];
 }
 
 /**
