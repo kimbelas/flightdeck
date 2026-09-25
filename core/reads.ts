@@ -15,7 +15,6 @@ import { PreviewReader } from './application/preview-reader.ts';
 import { SessionDetailReader } from './application/session-detail-reader.ts';
 import type { TranscriptReader } from './application/transcript-reader.ts';
 import type { VitalsRegistry } from './application/vitals-registry.ts';
-import { FsDaemonLogSource } from './adapters/node/fs-daemon-log-source.ts';
 import { FsJobFiles } from './adapters/node/fs-job-files.ts';
 import { FsRosterSource } from './adapters/node/fs-roster-source.ts';
 import { FsTranscriptFile } from './adapters/node/fs-transcript-file.ts';
@@ -24,6 +23,7 @@ import { HeadlessScreenReader } from './adapters/xterm/headless-screen-reader.ts
 import type { ClaudeInstall } from './adapters/claude-cli/claude-install.ts';
 import { ReadPolicy } from './domain/read-policy.ts';
 import type { Clock } from './ports/clock.ts';
+import type { DaemonLogSource } from './ports/daemon-log-source.ts';
 import type { Logger } from './ports/logger.ts';
 import type { ProcessRunner } from './ports/process-runner.ts';
 
@@ -101,10 +101,13 @@ export function buildPreviewReader(parts: PreviewParts): PreviewReader {
  * `kill(pid, 0)` per pid it names. Its own roster source for `buildPreviewReader`'s reason — the
  * answer is only worth having FRESH.
  */
-export function buildDaemonReader(parts: Pick<ReadParts, 'install' | 'clock'>): DaemonReader {
+export function buildDaemonReader(
+  parts: Pick<ReadParts, 'install' | 'clock'> & { readonly log: DaemonLogSource },
+): DaemonReader {
   return new DaemonReader({
     roster: new FsRosterSource(parts.install),
-    log: new FsDaemonLogSource(parts.install),
+    // The reconciler's own source (`buildFeeds`), so one adapter reads `daemon.log` for both (D62).
+    log: parts.log,
     probe: new SignalProcessProbe(),
     clock: parts.clock,
   });

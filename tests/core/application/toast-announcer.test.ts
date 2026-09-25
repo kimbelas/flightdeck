@@ -31,6 +31,8 @@ function rowOf(over: Partial<SessionRow> = {}): SessionRow {
     status: 'busy',
     attachable: true,
     notAttachableBecause: undefined,
+    endReason: 'unknown',
+    retireReason: undefined,
     ...over,
   };
 }
@@ -80,9 +82,22 @@ describe('ToastAnnouncer — the three kinds', () => {
     const { hub, notifier } = build();
 
     hub.publish(eventOf('seen', rowOf()));
-    hub.publish(eventOf('changed', rowOf({ live: false, runState: 'done' })));
+    hub.publish(
+      eventOf('changed', rowOf({ live: false, runState: 'done', endReason: 'finished' })),
+    );
 
     expect(notifier.last?.title).toBe('Session finished');
+  });
+
+  // D62: "finished" is a claim only `daemon.log` can make (F.2.3). Without it the true word is
+  // the one that does not choose between a finish, a stop and a retirement.
+  it('says a session ended, not finished, when nothing has said how', () => {
+    const { hub, notifier } = build();
+
+    hub.publish(eventOf('seen', rowOf()));
+    hub.publish(eventOf('changed', rowOf({ live: false, runState: 'done' })));
+
+    expect(notifier.last?.title).toBe('Session ended');
   });
 
   it('toasts when a session fails, and calls it failed rather than finished', () => {

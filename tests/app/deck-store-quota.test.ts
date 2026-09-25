@@ -26,6 +26,8 @@ const ROW: SessionRow = {
   status: undefined,
   attachable: true,
   notAttachableBecause: undefined,
+  endReason: 'unknown',
+  retireReason: undefined,
 };
 
 /** One connection, reduced to "what did the store subscribe to, and what can be handed to it". */

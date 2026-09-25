@@ -188,5 +188,7 @@ function liveRow(): SessionRow {
     status: 'busy',
     attachable: true,
     notAttachableBecause: undefined,
+    endReason: 'unknown',
+    retireReason: undefined,
   };
 }

@@ -329,7 +329,7 @@ function buildHttp(parts: HttpParts): HttpSide {
         // P5a-T4. The one reader that spawns a process per request, which is why it is asked for
         // by its own route and its own click rather than riding the detail (`preview-route.ts`).
         preview: buildPreviewReader({ ...feeds, install, runner: parts.runner, clock, logger }),
-        daemons: buildDaemonReader({ install, clock }),
+        daemons: buildDaemonReader({ install, clock, log: feeds.daemonLog }),
         // P6-T7. The third argument is the reconciler's memory of ended interactive
         // sessions — a sweep cannot see one, which is why it is held (`DeckQuery`).
         deck: new DeckQuery(parts.sessions, clock, feeds.reconciler),

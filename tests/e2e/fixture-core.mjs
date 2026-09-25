@@ -42,6 +42,7 @@ import { ConnectPlanner } from '../../core/application/connect-planner.ts';
 import { StatuslinePatcher } from '../../core/adapters/statusline/statusline-patcher.ts';
 import { PresetCatalogue } from '../../core/domain/preset-catalogue.ts';
 import { ConfigHistorian } from '../../core/application/config-historian.ts';
+import { EndingBook } from '../../core/application/ending-book.ts';
 import { SpendReport } from '../../core/application/spend-report.ts';
 import { NOTHING_SPENT } from '../../core/domain/spend-fold.ts';
 import { weekStartOf } from '../../contracts/spend-summary.ts';
@@ -415,6 +416,26 @@ export class FixtureCore {
     for (const stream of this.streams) {
       stream.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
     }
+  }
+
+  /**
+   * The fixture's snapshot with one row's ending read off a `daemon.log` — D62.
+   *
+   * Through core's OWN `EndingBook` rather than a hand-written `endReason`, for the daemon
+   * fixture's reason (D35): what the deck is handed is what core would conclude from those lines,
+   * so the smoke covers the log's words reaching the row, not only the row's words reaching the page.
+   */
+  async snapshotEndedBy(name, log) {
+    const book = new EndingBook({ tail: () => Promise.resolve(log) });
+    const { rows } = this.fixture.snapshot;
+    await book.learn(
+      rows.filter((row) => row.name === name),
+      0,
+    );
+    return {
+      ...this.fixture.snapshot,
+      rows: rows.map((row) => (row.name === name ? book.explain(row) : row)),
+    };
   }
 
   async route(request, response) {

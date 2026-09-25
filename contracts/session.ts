@@ -45,9 +45,9 @@ export const ACTIVITY_STATUSES: readonly ActivityStatus[] = ['busy', 'waiting', 
 /**
  * Why a session stopped running — the half of `done` the listing cannot tell you.
  *
- * `unknown` is the honest default and stays the answer for most of P1: only `daemon.log` separates
- * the causes (F.2.3), and reading it is deferred to P7-T4. Flightdeck's own audit row supplies
- * `stopped` for actions Flightdeck itself took (SEC-PROC-3, P4-T2).
+ * `unknown` is the honest default: only `daemon.log` separates the causes (F.2.3), so it stays
+ * the answer for an interactive session, for one still running, and for a background one whose
+ * ending the log's tail does not hold. The reconciler reads the log's ending onto the row (D62).
  *
  * `retired` is the daemon's idle retirement — a NORMAL resting state with a one-click resume
  * (D7), not a failure, which is why it is a reason and not a run state.
@@ -60,6 +60,15 @@ export const END_REASONS: readonly EndReason[] = [
   'failed',
   'unknown',
 ];
+
+/**
+ * The daemon's own word for why its idle timer took a session — F.2.15, and the session's STATE at
+ * that moment rather than three thresholds: `settled` had finished its work, `idle-prompt` was
+ * blocked waiting for the owner, `empty-idle` never ran a turn. Only meaningful beside
+ * `EndReason: 'retired'`.
+ */
+export type RetireReason = 'settled' | 'idle-prompt' | 'empty-idle';
+export const RETIRE_REASONS: readonly RetireReason[] = ['settled', 'idle-prompt', 'empty-idle'];
 
 /**
  * Flags Flightdeck derives; Claude Code has no opinion about any of them (D7).

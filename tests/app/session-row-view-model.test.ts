@@ -19,6 +19,8 @@ const BASE: SessionRow = {
   status: 'busy',
   attachable: true,
   notAttachableBecause: undefined,
+  endReason: 'unknown',
+  retireReason: undefined,
 };
 
 function view(overrides: Partial<SessionRow> = {}): SessionRowViewModel {

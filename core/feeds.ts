@@ -8,6 +8,7 @@
 import { otlpReceiverEnabled } from '../contracts/otlp-receiver.ts';
 import { SUBSCRIPTION_IDS } from '../contracts/session.ts';
 import { AskBroadcast } from './application/ask-broadcast.ts';
+import { EndingBook } from './application/ending-book.ts';
 import { EventHub } from './application/event-hub.ts';
 import { HookQueue } from './application/hook-queue.ts';
 import { MuteBook } from './application/mute-book.ts';
@@ -25,6 +26,7 @@ import { type ClaudeCliSessionSource } from './adapters/claude-cli/claude-cli-se
 import { type ClaudeInstall } from './adapters/claude-cli/claude-install.ts';
 import { FanOutEventSink } from './adapters/fan-out-event-sink.ts';
 import { LoggingEventSink } from './adapters/logging-event-sink.ts';
+import { FsDaemonLogSource } from './adapters/node/fs-daemon-log-source.ts';
 import { FsDirectoryWatcher } from './adapters/node/fs-directory-watcher.ts';
 import { FsTranscriptCatalogue } from './adapters/node/fs-transcript-catalogue.ts';
 import { FsTranscriptFile } from './adapters/node/fs-transcript-file.ts';
@@ -34,6 +36,7 @@ import { WindowsToastNotifier } from './adapters/windows/windows-toast-notifier.
 import { ReadPolicy } from './domain/read-policy.ts';
 import { SessionStreamRoute } from './http/session-stream-route.ts';
 import { type SystemClock } from './ports/clock.ts';
+import type { DaemonLogSource } from './ports/daemon-log-source.ts';
 import type { Logger } from './ports/logger.ts';
 import type { SpendStore } from './ports/spend-store.ts';
 import type { Store } from './ports/store.ts';
@@ -81,6 +84,12 @@ export interface Feeds {
   readonly ledger: SpendLedger;
   /** What `GET /analytics/spend` answers with, over the ledger's tables. */
   readonly spend: SpendReport;
+  /**
+   * The one reader of `daemon.log`'s tail. The reconciler names each ending from it (D62) and
+   * `GET /daemon` draws the panel from it (P7-T4) — one adapter, so the two cannot disagree about
+   * which file or how much of it.
+   */
+  readonly daemonLog: DaemonLogSource;
 }
 
 export interface FeedParts {
@@ -105,7 +114,7 @@ export interface FeedParts {
  * what the browser saw, and the browser is not there an hour later (P1-T9).
  */
 export function buildFeeds(parts: FeedParts): Feeds {
-  const { install, sessions, store, clock, logger } = parts;
+  const { install, store, clock, logger } = parts;
   const scheduler = new NodeScheduler();
   const hub = new EventHub(logger);
   const transcripts = buildTranscripts(install, scheduler, logger);
@@ -115,16 +124,10 @@ export function buildFeeds(parts: FeedParts): Feeds {
   const storing = new StoringEventSink(store, logger);
   const sink = new FanOutEventSink([new LoggingEventSink(logger), hub, storing, transcripts]);
   const vitals = new VitalsRegistry();
-  const reconciler = new Reconciler({
-    source: sessions,
-    sink,
-    scheduler,
-    watcher: new FsDirectoryWatcher(install.watchTargets(), scheduler, logger),
-    clock,
-    logger,
-  });
+  const { reconciler, daemonLog } = buildReconciler({ ...parts, sink, scheduler });
   const ask = new AskBroadcast();
   return {
+    daemonLog,
     ...buildToasts(hub, store, clock, logger),
     reconciler,
     ask,
@@ -154,6 +157,32 @@ export function buildFeeds(parts: FeedParts): Feeds {
     // Read from core's own environment, once, at boot — the switch is core's, never a session's.
     telemetry: new TelemetryTally({ enabled: otlpReceiverEnabled(process.env), clock }),
   };
+}
+
+/**
+ * The sweep, and the one reader of `daemon.log`'s tail that it shares with `GET /daemon` (D62).
+ *
+ * The log source is built here because the reconciler is its first reader: the sweep names each
+ * background session's ending from it, and the panel is handed the same adapter afterwards.
+ */
+function buildReconciler(
+  parts: Pick<FeedParts, 'install' | 'sessions' | 'clock' | 'logger'> & {
+    readonly sink: FanOutEventSink;
+    readonly scheduler: NodeScheduler;
+  },
+): Pick<Feeds, 'reconciler' | 'daemonLog'> {
+  const { install, scheduler, logger } = parts;
+  const daemonLog = new FsDaemonLogSource(install);
+  const reconciler = new Reconciler({
+    source: parts.sessions,
+    sink: parts.sink,
+    scheduler,
+    watcher: new FsDirectoryWatcher(install.watchTargets(), scheduler, logger),
+    clock: parts.clock,
+    logger,
+    endings: new EndingBook(daemonLog),
+  });
+  return { reconciler, daemonLog };
 }
 
 /**

@@ -23,6 +23,8 @@ const ROW: SessionRow = {
   status: 'busy',
   attachable: true,
   notAttachableBecause: undefined,
+  endReason: 'unknown',
+  retireReason: undefined,
 };
 
 function row(overrides: Partial<SessionRow> = {}): SessionRow {
@@ -98,6 +100,23 @@ describe('parseSessionRow', () => {
 
     expect(parsed?.runState).toBeUndefined();
     expect(parsed?.status).toBeUndefined();
+  });
+
+  // D62. A row from a core older than the ending carries neither field, and that is `unknown`.
+  it('carries how a session ended, and reads a missing or unknown one as unknown', () => {
+    const retired = { ...ROW, live: false, endReason: 'retired', retireReason: 'idle-prompt' };
+
+    expect(parseSessionRow(retired)).toMatchObject({
+      endReason: 'retired',
+      retireReason: 'idle-prompt',
+    });
+    const older = Object.fromEntries(
+      Object.entries(ROW).filter(([key]) => key !== 'endReason' && key !== 'retireReason'),
+    );
+    expect(parseSessionRow(older)).toMatchObject({ endReason: 'unknown' });
+    expect(parseSessionRow({ ...ROW, endReason: 'exploded', retireReason: 'bored' })).toMatchObject(
+      { endReason: 'unknown', retireReason: undefined },
+    );
   });
 
   it('refuses a row with no identity', () => {

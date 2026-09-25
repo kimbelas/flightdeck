@@ -21,6 +21,8 @@ function rowOf(over: Partial<SessionRow> = {}): SessionRow {
     status: 'busy',
     attachable: true,
     notAttachableBecause: undefined,
+    endReason: 'unknown',
+    retireReason: undefined,
     ...over,
   };
 }

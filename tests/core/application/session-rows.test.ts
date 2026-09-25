@@ -3,7 +3,7 @@
 // session that started needing you looks unchanged.
 import { describe, expect, it } from 'vitest';
 import type { SubscriptionId } from '../../../contracts/session.ts';
-import { sameRow, toSessionRow } from '../../../core/application/session-rows.ts';
+import { sameRow, toSessionRow, withEnding } from '../../../core/application/session-rows.ts';
 import { Session } from '../../../core/domain/session.ts';
 import { SessionId } from '../../../core/domain/session-id.ts';
 
@@ -79,5 +79,48 @@ describe('sameRow', () => {
 
   it('ignores startedAt, which cannot change and is not worth an event', () => {
     expect(sameRow(rowOf({ startedAt: 1000 }), rowOf({ startedAt: 1000 }))).toBe(true);
+  });
+
+  // D62: a reason read a sweep late is news — it is what turns "done" into "retired" on the deck.
+  it('notices the ending being learned, and the retirement word changing', () => {
+    const stopped = rowOf({ live: false, runState: 'done' });
+
+    expect(sameRow(stopped, { ...stopped, endReason: 'retired' })).toBe(false);
+    expect(
+      sameRow(
+        { ...stopped, endReason: 'retired', retireReason: 'settled' },
+        { ...stopped, endReason: 'retired', retireReason: 'idle-prompt' },
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('withEnding', () => {
+  const stopped = rowOf({ live: false, runState: 'blocked' });
+
+  it('names a retirement with the daemon’s word for it', () => {
+    const row = withEnding(stopped, {
+      shortId: 'aaaaaaaa',
+      at: 1,
+      reason: 'retired',
+      retireReason: 'idle-prompt',
+      idleMinutes: 60,
+      lowMemory: false,
+    });
+
+    expect(row).toEqual({ ...stopped, endReason: 'retired', retireReason: 'idle-prompt' });
+  });
+
+  it('carries no retirement word beside a stop or a finish', () => {
+    const row = withEnding(
+      { ...stopped, retireReason: 'settled' },
+      { shortId: 'aaaaaaaa', at: 1, reason: 'stopped' },
+    );
+
+    expect(row).toMatchObject({ endReason: 'stopped', retireReason: undefined });
+  });
+
+  it('starts every row it builds from the listing as unknown', () => {
+    expect(stopped).toMatchObject({ endReason: 'unknown', retireReason: undefined });
   });
 });

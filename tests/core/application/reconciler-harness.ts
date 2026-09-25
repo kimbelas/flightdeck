@@ -5,8 +5,10 @@
 // filesystem, no `claude.exe`.
 import { setImmediate } from 'node:timers';
 import type { SubscriptionId } from '../../../contracts/session.ts';
+import { EndingBook } from '../../../core/application/ending-book.ts';
 import { Reconciler } from '../../../core/application/reconciler.ts';
 import { Session } from '../../../core/domain/session.ts';
+import type { DaemonLogSource } from '../../../core/ports/daemon-log-source.ts';
 import { SessionId } from '../../../core/domain/session-id.ts';
 import { FakeClock } from '../../fakes/fake-clock.ts';
 import { FakeDirectoryWatcher } from '../../fakes/fake-directory-watcher.ts';
@@ -19,7 +21,7 @@ export interface Spec {
   readonly id: string;
   readonly kind?: 'interactive' | 'background';
   readonly live?: boolean;
-  readonly runState?: 'working' | 'blocked' | 'done';
+  readonly runState?: 'working' | 'blocked' | 'done' | 'failed';
   readonly name?: string;
   /** Where it was running. P6-T7 asserts on it — an adoption runs in the folder core remembers. */
   readonly cwd?: string;
@@ -51,14 +53,24 @@ export interface Rig {
   readonly logger: FakeLogger;
 }
 
-export function rig(): Rig {
+/** @param log a `daemon.log` for the endings (D62); without one every ending reads `unknown`. */
+export function rig(log?: DaemonLogSource): Rig {
   const source = new FakeSessionSource();
   const sink = new FakeEventSink();
   const scheduler = new FakeScheduler();
   const watcher = new FakeDirectoryWatcher();
   const clock = new FakeClock();
   const logger = new FakeLogger();
-  const reconciler = new Reconciler({ source, sink, scheduler, watcher, clock, logger });
+  const endings = log === undefined ? {} : { endings: new EndingBook(log) };
+  const reconciler = new Reconciler({
+    source,
+    sink,
+    scheduler,
+    watcher,
+    clock,
+    logger,
+    ...endings,
+  });
   return { reconciler, source, sink, scheduler, watcher, clock, logger };
 }
 

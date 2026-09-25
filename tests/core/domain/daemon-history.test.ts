@@ -166,3 +166,61 @@ describe('DaemonHistory — endings', () => {
     expect(endings[0]?.at).toBe(MAX_ENDINGS + 4);
   });
 });
+
+// D62 — the reconciler's question, which is about ONE session rather than the newest twenty.
+describe('DaemonHistory — the newest ending for one session', () => {
+  it('names how a session ended, and nothing for one the window does not mention', () => {
+    const history = DaemonHistory.of([spawned(1, 'aaaa0001'), settled(2, 'aaaa0001', 'killed')]);
+
+    expect(history.latestEndingFor('aaaa0001')).toEqual({
+      shortId: 'aaaa0001',
+      at: 2,
+      reason: 'stopped',
+    });
+    expect(history.latestEndingFor('bbbb0002')).toBeUndefined();
+  });
+
+  it('takes the later of two endings for an id that ran twice', () => {
+    const history = DaemonHistory.of([
+      settled(1, 'aaaa0001', 'killed'),
+      retired(5, 'aaaa0001', 'settled'),
+      settled(6, 'aaaa0001', 'done'),
+    ]);
+
+    expect(history.latestEndingFor('aaaa0001')).toMatchObject({
+      at: 6,
+      reason: 'retired',
+      retireReason: 'settled',
+    });
+  });
+
+  // F.2.15: the reason is only in the `bg retire` line, and its `bg settled` is ~1.1 s behind it.
+  it('counts a retirement whose settle line has not been written yet, dated by the retire', () => {
+    const history = DaemonHistory.of([
+      settled(1, 'aaaa0001', 'done'),
+      retired(4, 'aaaa0001', 'idle-prompt'),
+    ]);
+
+    expect(history.latestEndingFor('aaaa0001')).toEqual({
+      shortId: 'aaaa0001',
+      at: 4,
+      reason: 'retired',
+      retireReason: 'idle-prompt',
+      idleMinutes: 32,
+      lowMemory: true,
+    });
+    // The panel lists endings that HAPPENED, and this one has not finished happening.
+    expect(history.endings.map((ending) => ending.at)).toEqual([1]);
+  });
+
+  // `MAX_ENDINGS` is the panel's budget, not a fact about the log.
+  it('finds an ending older than the newest twenty', () => {
+    const busy = Array.from({ length: MAX_ENDINGS + 5 }, (unused, index) =>
+      settled(10 + index, `cccc${String(index).padStart(4, '0')}`, 'done'),
+    );
+    const history = DaemonHistory.of([settled(1, 'aaaa0001', 'killed'), ...busy]);
+
+    expect(history.endings.some((ending) => ending.shortId === 'aaaa0001')).toBe(false);
+    expect(history.latestEndingFor('aaaa0001')?.reason).toBe('stopped');
+  });
+});

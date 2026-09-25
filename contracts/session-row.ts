@@ -9,10 +9,14 @@
 // is computed once, here, rather than re-derived by each caller from `kind`.
 import {
   ACTIVITY_STATUSES,
+  END_REASONS,
+  RETIRE_REASONS,
   RUN_STATES,
   SESSION_KINDS,
   SUBSCRIPTION_IDS,
   type ActivityStatus,
+  type EndReason,
+  type RetireReason,
   type RunState,
   type SessionKind,
   type SubscriptionId,
@@ -32,6 +36,15 @@ export interface SessionRow {
   /** Whether a pane can be opened on it, and if not, the reason the deck should show. */
   readonly attachable: boolean;
   readonly notAttachableBecause: string | undefined;
+  /**
+   * Why a background session that has stopped running stopped — D62. The listing reads
+   * `state: done` for a stop, a finish and a retirement alike (F.2.3), so this comes from
+   * `daemon.log`'s ending for the row's short id, and it is `unknown` while the session runs, on
+   * every interactive row, and whenever the log's tail does not say.
+   */
+  readonly endReason: EndReason;
+  /** The daemon's word beside `endReason: 'retired'`, and `undefined` beside anything else. */
+  readonly retireReason: RetireReason | undefined;
 }
 
 export interface DeckSnapshot {
@@ -142,6 +155,9 @@ export function parseSessionRow(value: unknown): SessionRow | undefined {
     status: oneOf(ACTIVITY_STATUSES, row['status']),
     attachable: row['attachable'] === true,
     notAttachableBecause: stringAt(row, 'notAttachableBecause'),
+    // Absent is `unknown`, not a reject: a row from a core older than D62 carries neither field.
+    endReason: oneOf(END_REASONS, row['endReason']) ?? 'unknown',
+    retireReason: oneOf(RETIRE_REASONS, row['retireReason']),
   };
 }
 

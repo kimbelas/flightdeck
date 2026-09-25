@@ -4,12 +4,14 @@
 // definitions of `attachable`, and the one thing contracts/session-row.ts exists to prevent is a
 // second opinion about that: `claude attach` takes background sessions only (SPEC §5.2), so a row
 // that said otherwise would offer a pane that cannot open.
+import type { DaemonEnding } from '../../contracts/daemon-report.ts';
 import {
   ENDED_ADOPTABLE,
   INTERACTIVE_NOT_ATTACHABLE,
   NOT_LIVE,
   type SessionRow,
 } from '../../contracts/session-row.ts';
+import { RETIRE_REASONS } from '../../contracts/session.ts';
 import type { Session } from '../domain/session.ts';
 
 /** The DTO for one session. Pure — no clock, no IO, same answer every time for the same session. */
@@ -28,6 +30,27 @@ export function toSessionRow(session: Session): SessionRow {
     status: session.state.status,
     attachable,
     notAttachableBecause: reasonFor(session, attachable),
+    endReason: session.state.endReason,
+    retireReason: undefined,
+  };
+}
+
+/**
+ * The same row, with how `daemon.log` says it ended — D62.
+ *
+ * Whether the ending BELONGS to this row is `EndingBook`'s question, not this function's: it only
+ * says what the row reads once one does. A retirement word the vocabulary does not know is dropped
+ * to `undefined` rather than carried, for `parseSessionRow`'s closed-union rule — the row still
+ * says `retired`, which is the half that is certain.
+ */
+export function withEnding(row: SessionRow, ending: DaemonEnding): SessionRow {
+  return {
+    ...row,
+    endReason: ending.reason,
+    retireReason:
+      ending.reason === 'retired'
+        ? RETIRE_REASONS.find((word) => word === ending.retireReason)
+        : undefined,
   };
 }
 
@@ -73,7 +96,9 @@ export function sameRow(left: SessionRow, right: SessionRow): boolean {
     left.status === right.status &&
     left.name === right.name &&
     left.cwd === right.cwd &&
-    left.attachable === right.attachable
+    left.attachable === right.attachable &&
+    left.endReason === right.endReason &&
+    left.retireReason === right.retireReason
   );
 }
 
