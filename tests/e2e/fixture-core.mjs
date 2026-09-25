@@ -1419,6 +1419,10 @@ function workflowMap(project, driftedAt = 0) {
       { kind: 'agent', name: 'german-ui-expert', description: 'German label to source string.' },
       { kind: 'command', name: 'design-check' },
       { kind: 'skill', name: 'fix-review', tools: ['Bash', 'Read'] },
+      // P9-T5. One plugin skill and one plugin agent, drawn under their plugin and pressed by
+      // their scoped names — `/superpowers:brainstorming`, `--agent shell-review:bash-script-auditor`.
+      { kind: 'skill', name: 'brainstorming', plugin: 'superpowers' },
+      { kind: 'agent', name: 'bash-script-auditor', plugin: 'shell-review' },
     ],
     hooks: [
       { event: 'PostToolUse', matcher: 'Edit|Write', command: 'node fast-lint.mjs', async: true },

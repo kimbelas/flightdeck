@@ -122,3 +122,41 @@ describe('AssetPresets — the draft key', () => {
     expect(presets().draftFor(skill, 0)?.key).not.toBe(presets().draftFor(skill, 1)?.key);
   });
 });
+
+describe('AssetPresets — a plugin asset (P9-T5)', () => {
+  const plugin = (kind: ClaudeAsset['kind'], name: string, from: string): ClaudeAsset => ({
+    ...asset(kind, name),
+    plugin: from,
+  });
+
+  it('drafts a plugin skill as its namespaced slash line, named with the bare name', () => {
+    const line = presets().draftFor(plugin('skill', 'brainstorming', 'superpowers'));
+    expect(line).toMatchObject({
+      name: 'superpowers:brainstorming',
+      sessionName: 'brainstorming',
+      prompt: '/superpowers:brainstorming ',
+      origin: 'skill superpowers:brainstorming',
+    });
+  });
+
+  it('drafts a plugin agent under its scoped name when the roster holds that name', () => {
+    const scoped = 'shell-review:bash-script-auditor';
+    const withPlugin = new AssetPresets({ root: XPERT, roster: [scoped], observed: undefined });
+    expect(withPlugin.draftFor(plugin('agent', 'bash-script-auditor', 'shell-review'))?.agent).toBe(
+      scoped,
+    );
+    // The bare name on the roster is not the same agent — core checks the scoped one.
+    const bare = new AssetPresets({
+      root: XPERT,
+      roster: ['bash-script-auditor'],
+      observed: undefined,
+    });
+    expect(bare.pressable(plugin('agent', 'bash-script-auditor', 'shell-review'))).toBe(false);
+  });
+
+  it('keys a plugin skill apart from a project skill of the same name', () => {
+    const own = presets().draftFor(asset('skill', 'review'));
+    const theirs = presets().draftFor(plugin('skill', 'review', 'superpowers'));
+    expect(own?.key).not.toBe(theirs?.key);
+  });
+});

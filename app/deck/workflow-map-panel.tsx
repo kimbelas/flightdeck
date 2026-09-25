@@ -17,14 +17,19 @@
 // press writes nothing; the button is drawn only where `AssetPresets` says the draft is one core
 // would accept.
 //
+// **A plugin's assets are drawn under their plugin (P9-T5)**, a heading per plugin, each row named
+// as Claude Code names it — `superpowers:brainstorming` — and badged with its kind, because one
+// plugin's heading mixes agents and skills. Outside `Configured`, like the worktrees: a user-scope
+// plugin reaches a folder that has no `.claude` at all.
+//
 // **The three strings that came off disk are rendered as text**: an asset's name, its description
 // and a hook's command. React escapes them, there is no `dangerouslySetInnerHTML` anywhere in this
 // repo (§11), and the file they came out of belongs to a repository the owner imported themselves.
 import type { JSX } from 'react';
-import type { ClaudeAsset } from '../../contracts/claude-assets.ts';
+import { scopedAssetName, type ClaudeAsset } from '../../contracts/claude-assets.ts';
 import type { HookStep } from '../../contracts/hook-timeline.ts';
-import type { AssetPresets } from './asset-presets.ts';
 import type { ConfigDriftViewModel } from './config-drift-view-model.ts';
+import { MakePreset, type AssetPress } from './make-preset.tsx';
 import type { WorkflowMapViewModel } from './workflow-map-view-model.ts';
 
 interface WorkflowMapPanelProps {
@@ -42,12 +47,6 @@ interface WorkflowMapPanelProps {
   readonly drift: ConfigDriftViewModel;
   /** What a row's `make a preset` would draft, and where the press goes (P9-T2). */
   readonly press?: AssetPress | undefined;
-}
-
-/** The rule and the callback behind `make a preset`, as one prop. */
-export interface AssetPress {
-  readonly presets: AssetPresets;
-  readonly onMake: (asset: ClaudeAsset) => void;
 }
 
 export function WorkflowMapPanel({
@@ -82,6 +81,14 @@ export function WorkflowMapPanel({
       */}
       <Names title="worktrees" names={model.worktrees} />
       {model.isConfigured ? <Configured model={model} press={press} /> : null}
+      {model.pluginGroups.map((group) => (
+        <Assets
+          key={group.plugin}
+          title={`plugin ${group.plugin}`}
+          assets={group.assets}
+          press={press}
+        />
+      ))}
     </details>
   );
 }
@@ -191,8 +198,9 @@ function Assets({ title, assets, press }: AssetsProps): JSX.Element | null {
     <Section title={title}>
       <ul className="map-assets">
         {assets.map((asset) => (
-          <li key={asset.name}>
-            <span className="map-asset-name">{asset.name}</span>
+          <li key={`${asset.kind}:${scopedAssetName(asset)}`}>
+            <span className="map-asset-name">{scopedAssetName(asset)}</span>
+            {asset.plugin !== undefined && <span className="map-badge">{asset.kind}</span>}
             {asset.model !== undefined && <span className="map-badge">{asset.model}</span>}
             {asset.tools.length > 0 && <span className="map-badge">{asset.tools.join(', ')}</span>}
             <MakePreset asset={asset} press={press} />
@@ -203,30 +211,6 @@ function Assets({ title, assets, press }: AssetsProps): JSX.Element | null {
         ))}
       </ul>
     </Section>
-  );
-}
-
-/** `make a preset` — drawn only for an asset whose draft core would accept (`AssetPresets`). */
-function MakePreset({
-  asset,
-  press,
-}: {
-  readonly asset: ClaudeAsset;
-  readonly press: AssetPress | undefined;
-}): JSX.Element | undefined {
-  if (press?.presets.pressable(asset) !== true) return undefined;
-  return (
-    <button
-      type="button"
-      className="ghost map-make"
-      aria-label={`make a preset from the ${asset.kind} ${asset.name}`}
-      data-map-make={`${asset.kind}:${asset.name}`}
-      onClick={() => {
-        press.onMake(asset);
-      }}
-    >
-      make a preset
-    </button>
   );
 }
 

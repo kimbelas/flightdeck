@@ -34,6 +34,7 @@ import {
 import { readHookTimeline, MAX_SETTINGS_BYTES } from '../../contracts/hook-timeline.ts';
 import { INSTRUCTION_SOURCES } from '../../contracts/instruction-stack.ts';
 import { parseProjectGates } from '../../contracts/project-gates.ts';
+import type { ClaudeAsset } from '../../contracts/claude-assets.ts';
 import { TICKET_FOLDERS } from '../../contracts/project-tickets.ts';
 import { projectKey, type ProjectRecord } from '../../contracts/project.ts';
 import { childPath } from '../../contracts/windows-path.ts';
@@ -44,6 +45,7 @@ import type { FileFacts, ProjectFiles } from '../ports/project-files.ts';
 import type { ClaudeAssetReader } from './claude-asset-reader.ts';
 import type { ProjectPaths } from './git-directory-locator.ts';
 import type { InstructionStackReader } from './instruction-stack-reader.ts';
+import type { PluginAssetReader } from './plugin-asset-reader.ts';
 import type { ProjectTicketReader } from './project-ticket-reader.ts';
 import type { ProjectSource } from './project-status-reader.ts';
 import { SignatureCache } from './signature-cache.ts';
@@ -68,6 +70,11 @@ export interface WorkflowMapParts {
   readonly paths: ProjectPaths;
   readonly instructions: InstructionStackReader;
   readonly assets: ClaudeAssetReader;
+  /**
+   * P9-T5. What the project's installed plugins carry, from the config dirs' `plugins\cache\` —
+   * drawn in the same list as the project's own, each asset marked with its plugin.
+   */
+  readonly plugins: Pick<PluginAssetReader, 'assets' | 'signature'>;
   /** P3-T4. The one reading in the map that is about git rather than about `.claude`. */
   readonly worktrees: WorktreeReader;
   /** P9-T3. The ticket ids named by `specs/` and `state/` — names only. */
@@ -135,7 +142,7 @@ export class WorkflowMapReader {
       configured,
     ] = await Promise.all([
       this.parts.instructions.read(root),
-      this.parts.assets.assets(claudeDir),
+      this.assets(claudeDir, [path, root]),
       this.parts.assets.conventions(claudeDir),
       this.parts.tickets.tickets(claudeDir),
       this.json(childPath(claudeDir, SETTINGS_FILE), MAX_SETTINGS_BYTES),
@@ -167,6 +174,18 @@ export class WorkflowMapReader {
     };
   }
 
+  /** The project's own assets, then its plugins' (P9-T5) — the order the panel draws them in. */
+  private async assets(
+    claudeDir: string,
+    projectPaths: readonly string[],
+  ): Promise<readonly ClaudeAsset[]> {
+    const [own, plugins] = await Promise.all([
+      this.parts.assets.assets(claudeDir),
+      this.parts.plugins.assets(projectPaths),
+    ]);
+    return [...own, ...plugins];
+  }
+
   /**
    * The two mtimes that prove the map has not moved — see the header.
    *
@@ -176,20 +195,23 @@ export class WorkflowMapReader {
    * signature stops being empty.
    */
   private async signature(claudeDir: string, projectPath: string): Promise<string> {
-    const [directory, settings, worktrees, ...tickets] = await Promise.all([
+    const [directory, settings, worktrees, plugins, ...tickets] = await Promise.all([
       this.facts(claudeDir),
       this.facts(childPath(claudeDir, SETTINGS_FILE)),
       // P3-T4's third stat, and it is a third stat rather than a third cache: the trees are part
       // of the same map and a `SignatureCache` of their own would recompute them on a clock the
       // panel never sees. `WorktreeReader` says what it observes and why that is the cheap thing.
       this.parts.worktrees.signature(projectPath),
+      // P9-T5. Installing or removing a plugin rewrites a config dir's `installed_plugins.json`,
+      // which moves nothing under the project.
+      this.parts.plugins.signature(),
       // P9-T3. A spec written for a new ticket moves `specs/`'s mtime and not `.claude`'s, and the
       // picker should offer it on the next read rather than five minutes later.
       ...TICKET_FOLDERS.map(({ folder }) => this.facts(childPath(claudeDir, folder))),
     ]);
     if (directory === undefined && settings === undefined && worktrees === '') return '';
     const folders = tickets.map((facts) => String(facts?.modifiedAt ?? 0)).join(':');
-    return `${String(directory?.modifiedAt ?? 0)}:${String(settings?.modifiedAt ?? 0)}:${String(settings?.sizeBytes ?? 0)}:${worktrees}:${folders}`;
+    return `${String(directory?.modifiedAt ?? 0)}:${String(settings?.modifiedAt ?? 0)}:${String(settings?.sizeBytes ?? 0)}:${worktrees}:${folders}:${plugins}`;
   }
 
   /**

@@ -140,7 +140,7 @@ async function mapChecks(page, report, core) {
   report.check(
     'the closed summary is the shape of the config, in counts',
     counts.join(' · ') ===
-      '1 agent · 1 command · 1 skill · 3 hooks · 1 MCP server · 1 plugin · 2 allow rules · 1 deny rule',
+      '1 agent · 1 command · 1 skill · 2 plugin assets · 3 hooks · 1 MCP server · 1 plugin · 2 allow rules · 1 deny rule',
     counts.join(' · '),
   );
 

@@ -42,6 +42,13 @@ const MAX_FIELD_CHARS = 400;
 /** A name is a filename-shaped label, never a sentence. */
 const MAX_NAME_CHARS = 120;
 
+/**
+ * `description: >` followed by indented lines — the one multi-line form measured, in a plugin's
+ * agent (`shell-review`'s `bash-script-auditor`, P9-T5). Read as a line it was the description
+ * `>`; folded, it is the paragraph the author wrote. Anything richer is still ignored.
+ */
+const BLOCK_SCALAR = /^[>|][+-]?$/u;
+
 /** An agent lists a handful. A file claiming two hundred tools is not one this panel will draw. */
 const MAX_TOOLS = 32;
 
@@ -62,6 +69,33 @@ export interface ClaudeAsset {
   readonly model: string | undefined;
   /** `tools` for an agent, `allowed-tools` for a command or a skill. Empty means unrestricted. */
   readonly tools: readonly string[];
+  /**
+   * The plugin that ships it, or absent for the project's own `.claude` — P9-T5.
+   *
+   * Absent rather than `undefined` so every asset that predates plugins keeps exactly its shape.
+   * Claude Code addresses a plugin's asset by its SCOPED name, `<plugin>:<name>` — the skill
+   * `skills/review/SKILL.md` in `my-plugin` runs as `/my-plugin:review`, and its agent
+   * `agents/reviewer.md` is `my-plugin:reviewer` (code.claude.com/docs/en/plugins/components).
+   * `scopedAssetName` is the one place that joins the two.
+   */
+  readonly plugin?: string;
+}
+
+/**
+ * What a plugin name may look like — P9-T5.
+ *
+ * Kebab case, which is what Claude Code's manifest asks of a plugin name ("kebab-case, no
+ * spaces"). It is the prefix of a slash line and of an `--agent` value, so a name that needs
+ * escaping in either is dropped where it is read rather than escaped where it is used.
+ */
+export const PLUGIN_SHAPE = /^[a-z0-9][a-z0-9-]{0,63}$/u;
+
+/**
+ * The name Claude Code knows the asset by: `name` for the project's own, `<plugin>:<name>` for a
+ * plugin's. The slash line a skill runs as is `/` and this; an agent's `--agent` value is this.
+ */
+export function scopedAssetName(asset: ClaudeAsset): string {
+  return asset.plugin === undefined ? asset.name : `${asset.plugin}:${asset.name}`;
 }
 
 /**
@@ -106,13 +140,19 @@ export function parseClaudeAsset(value: unknown): ClaudeAsset | undefined {
   // is dropped rather than drawn under a heading that does not exist (§11 rule 1).
   const kind = ASSET_KINDS.find((known) => known === raw);
   if (kind === undefined) return undefined;
-  return {
+  const plugin = fields['plugin'];
+  const asset: ClaudeAsset = {
     kind,
     name: name.slice(0, MAX_NAME_CHARS),
     description: text(fields['description']),
     model: text(fields['model']),
     tools: wireTools(fields['tools']),
   };
+  // A plugin name that is not `PLUGIN_SHAPE` drops the ASSET, not just the field: kept without it,
+  // a plugin's skill would be drawn as the project's own and press as a slash line that runs
+  // nothing.
+  if (plugin === undefined) return asset;
+  return typeof plugin === 'string' && PLUGIN_SHAPE.test(plugin) ? { ...asset, plugin } : undefined;
 }
 
 /**
@@ -130,15 +170,28 @@ function frontmatter(head: string): Map<string, string> | undefined {
   const lines = head.split(/\r?\n/);
   if (lines[0]?.trim() !== '---') return undefined;
   const fields = new Map<string, string>();
-  for (const line of lines.slice(1)) {
-    if (line.trim() === '---') break;
+  const body = lines.slice(1);
+  const end = body.findIndex((line) => line.trim() === '---');
+  const block = end === -1 ? body : body.slice(0, end);
+  block.forEach((line, index) => {
     const separator = line.indexOf(':');
-    if (separator <= 0 || /^\s/.test(line)) continue;
+    if (separator <= 0 || /^\s/.test(line)) return;
     const key = line.slice(0, separator).trim().toLowerCase();
-    const value = unquote(line.slice(separator + 1).trim());
+    const raw = line.slice(separator + 1).trim();
+    const value = BLOCK_SCALAR.test(raw) ? folded(block, index + 1) : unquote(raw);
     if (key !== '' && value !== '') fields.set(key, value);
-  }
+  });
   return fields;
+}
+
+/** The indented lines after `start`, trimmed and joined with spaces — YAML's folding, roughly. */
+function folded(block: readonly string[], start: number): string {
+  const parts: string[] = [];
+  for (const line of block.slice(start)) {
+    if (!/^\s/.test(line) && line.trim() !== '') break;
+    if (line.trim() !== '') parts.push(line.trim());
+  }
+  return parts.join(' ');
 }
 
 /** `"<route> [--ref=…]"` and `'…'` both appear in the measured files. Neither quote is content. */

@@ -22,6 +22,7 @@ import { ProjectRegistry } from './application/project-registry.ts';
 import { ClaudeAssetReader } from './application/claude-asset-reader.ts';
 import { GitDirectoryLocator } from './application/git-directory-locator.ts';
 import { InstructionStackReader } from './application/instruction-stack-reader.ts';
+import { PluginAssetReader } from './application/plugin-asset-reader.ts';
 import { ProjectGitReader } from './application/project-git-reader.ts';
 import { ProjectStatusReader } from './application/project-status-reader.ts';
 import { ProjectTicketReader } from './application/project-ticket-reader.ts';
@@ -102,9 +103,12 @@ export function projectSlice(parts: ProjectParts): ProjectSlice {
   const registry = buildProjectRegistry(parts);
   // P9-T1. One roster for the save AND the launch, over the same registry, read through the same
   // asset parser the map uses — so the select, the save check and the launch check agree.
+  const files = new FsProjectFiles();
+  const assets = new ClaudeAssetReader({ paths: registry, files });
   const roster = new AgentRoster({
     registry,
-    assets: new ClaudeAssetReader({ paths: registry, files: new FsProjectFiles() }),
+    assets,
+    plugins: buildPluginReader(parts, registry, files),
   });
   const presets = buildPresetBook(parts, registry, roster);
   return { routes: projectRoutes(parts, registry, presets), registry, presets, roster };
@@ -271,6 +275,7 @@ function buildMapReader(
       },
     }),
     assets: new ClaudeAssetReader({ paths: registry, files }),
+    plugins: buildPluginReader(parts, registry, files),
     tickets: new ProjectTicketReader({ paths: registry, files }),
     // Both doors of the same registry: `resolve` for a tree inside a project, `resolveRoot` for
     // one that IS a project — which a main checkout usually is (P3-T4, G.28).
@@ -284,5 +289,25 @@ function buildMapReader(
     files,
     clock: parts.clock,
     logger: parts.logger,
+  });
+}
+
+/**
+ * What the installed plugins carry — P9-T5, for the map and the roster alike.
+ *
+ * Through the same registry, whose `resolve` screens a config-directory path by the config
+ * directory's rules: the index and six patterns under `plugins\cache\` are named there and nothing
+ * else under `plugins\` is (SEC-FS-1). Both config dirs, in `SUBSCRIPTION_IDS` order.
+ */
+function buildPluginReader(
+  parts: ProjectParts,
+  registry: ProjectRegistry,
+  files: FsProjectFiles,
+): PluginAssetReader {
+  return new PluginAssetReader({
+    paths: registry,
+    files,
+    assets: new ClaudeAssetReader({ paths: registry, files }),
+    configDirs: SUBSCRIPTION_IDS.map((id) => parts.install.configDirFor(id)),
   });
 }
