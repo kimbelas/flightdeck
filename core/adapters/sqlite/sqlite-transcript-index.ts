@@ -9,10 +9,11 @@
 // WAL readers and, worse, two migration runners; `SqliteStore` opens and migrates, and hands this
 // the `DatabaseSync` it already has.
 import type { DatabaseSync } from 'node:sqlite';
+import { worktreeSlugPrefix } from '../../../contracts/search-filters.ts';
 import { snippetAround, type SearchHit } from '../../../contracts/transcript-search.ts';
-import type { TranscriptIndexBatch } from '../../ports/store.ts';
+import type { TranscriptIndexBatch, TranscriptQuery } from '../../ports/store.ts';
 import type { TranscriptCursor } from '../../ports/transcript-file.ts';
-import { capped, toSearchHit, toTranscriptCursor } from './rows.ts';
+import { capped, toSearchHit, toToolName, toTranscriptCursor } from './rows.ts';
 import { prepareSearchStatements, type SearchStatements } from './search-statements.ts';
 
 export class SqliteTranscriptIndex {
@@ -40,6 +41,10 @@ export class SqliteTranscriptIndex {
     try {
       if (batch.restarted) {
         this.rows.deleteForSession.run(batch.subscription, batch.sessionId);
+        this.rows.deleteToolsForSession.run(batch.subscription, batch.sessionId);
+      }
+      for (const tool of batch.tools) {
+        this.rows.insertTool.run(batch.subscription, batch.sessionId, tool);
       }
       for (const prose of batch.excerpts) {
         this.rows.insertExcerpt.run(
@@ -69,14 +74,36 @@ export class SqliteTranscriptIndex {
     }
   }
 
-  public searchTranscripts(match: string, limit: number): readonly SearchHit[] {
+  public searchTranscripts(query: TranscriptQuery): readonly SearchHit[] {
+    const { match, filters } = query;
+    // Named rather than positional: seven filters, two of them read twice, is a statement one
+    // reordered line would silently mis-bind. `null` is what `IS NULL` reads as absent.
+    const parameters = {
+      match,
+      subscription: filters.subscription ?? null,
+      project: filters.project ?? null,
+      worktrees: filters.project === undefined ? null : `${worktreeSlugPrefix(filters.project)}%`,
+      since: filters.since ?? null,
+      until: filters.until ?? null,
+      session: filters.session === undefined ? null : `${filters.session}%`,
+      tool: filters.tool ?? null,
+      limit: capped(query.limit),
+    };
     return (
       this.rows.search
-        .all(match, capped(limit))
+        .all(parameters)
         .map(toSearchHit)
         // The row carries the whole excerpt, up to 8 KB. The window is cut here rather than by
         // FTS5's `snippet()`, which cannot run in the aggregate query above — see the statement.
         .map((hit) => ({ ...hit, snippet: snippetAround(hit.snippet, match) }))
     );
+  }
+
+  /** The picker's list — see the port. Most sessions first, then by name so the order is stable. */
+  public transcriptTools(limit: number): readonly string[] {
+    return this.rows.selectTools
+      .all(capped(limit))
+      .map(toToolName)
+      .filter((tool) => tool !== '');
   }
 }

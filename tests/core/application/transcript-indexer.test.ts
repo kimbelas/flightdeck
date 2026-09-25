@@ -34,8 +34,85 @@ describe('TranscriptIndexer — what it stores', () => {
       sessionId: SESSION,
       projectKey: 'C--work',
       path: PATH,
-      restarted: false,
     });
+  });
+
+  // P7-T2. A file with no cursor replaces whatever its session already has in the store, which on
+  // a new transcript is nothing — and after migration 9 dropped every cursor, is what keeps the
+  // re-read from indexing every excerpt twice.
+  it('reads a file with no cursor as a restart, and one with a cursor as a continuation', async () => {
+    const { indexer, store, files } = build();
+    files.holds(`${line('hello')}\n`);
+    await indexer.index();
+    files.holds(`${line('hello')}\n${line('again')}\n`);
+
+    await indexer.index();
+
+    expect(store.indexed.map((batch) => batch.restarted)).toEqual([true, false]);
+  });
+
+  // P7-T2's tool filter. The NAMES, each once per slice — never a tool's input.
+  it('records every tool an assistant turn called, and not what it called them with', async () => {
+    const { indexer, store, files } = build();
+    const turn = (names: readonly string[]): string =>
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: names.map((name) => ({ type: 'tool_use', name, input: { command: 'secret' } })),
+        },
+      });
+    files.holds(`${turn(['Read', 'Bash'])}\n${turn(['Bash', 'mcp__github__create_pr'])}\n`);
+
+    await indexer.index();
+
+    expect(store.indexed[0]?.tools).toEqual(['Read', 'Bash', 'mcp__github__create_pr']);
+    expect(JSON.stringify(store.indexed[0])).not.toContain('secret');
+  });
+});
+
+describe('TranscriptIndexer — how far it has got', () => {
+  it('reports nothing indexed before the first pass has finished', () => {
+    const { indexer } = build();
+
+    expect(indexer.progress().passedAt).toBeUndefined();
+  });
+
+  // RESEARCH.md G.56: the cold start is hours. The report is what lets the deck say so.
+  it('reports the bytes and files still behind when the budget ran out', async () => {
+    // The walk says a megabyte; the file has handed over one line of it so far.
+    const { indexer, files } = build();
+    files.holds(`${line('hello')}\n`);
+
+    await indexer.index();
+
+    const progress = indexer.progress();
+    expect(progress).toMatchObject({ transcripts: 1, bytesTotal: ENTRY.bytes });
+    expect(progress.passedAt).toBeTypeOf('number');
+    expect(progress.bytesIndexed).toBeGreaterThan(0);
+    expect(progress.bytesIndexed).toBeLessThan(ENTRY.bytes);
+    expect(progress.behind).toBe(1);
+  });
+
+  it('reports caught up once every cursor has reached its file', async () => {
+    const content = `${line('hello')}\n`;
+    const { indexer, files } = build([{ ...ENTRY, bytes: content.length }]);
+    files.holds(content);
+
+    await indexer.index();
+
+    expect(indexer.progress()).toMatchObject({
+      transcripts: 1,
+      behind: 0,
+      bytesIndexed: content.length,
+    });
+  });
+
+  it('leaves a refused path out of the corpus it reports on', async () => {
+    const { indexer } = build([{ ...ENTRY, path: 'C:\\Windows\\System32\\x.jsonl' }]);
+
+    await indexer.index();
+
+    expect(indexer.progress()).toMatchObject({ transcripts: 0, bytesTotal: 0, behind: 0 });
   });
 });
 

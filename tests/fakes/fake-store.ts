@@ -21,6 +21,7 @@ import {
   type DraftConfigSnapshot,
   type MutedSession,
   type TranscriptIndexBatch,
+  type TranscriptQuery,
   type Store,
 } from '../../core/ports/store.ts';
 
@@ -35,6 +36,8 @@ export class FakeStore implements Store {
    * search engine. `searchTranscripts` here is enough to prove a route passes its query down.
    */
   public readonly indexed: TranscriptIndexBatch[] = [];
+  /** Every search asked of it, filters and all — P7-T2. */
+  public readonly searches: TranscriptQuery[] = [];
   private readonly events: FdEvent[] = [];
   private readonly audit: AuditRow[] = [];
   private readonly snapshots: VitalsSnapshot[] = [];
@@ -239,10 +242,19 @@ export class FakeStore implements Store {
     this.cursors.set(batch.path, batch.cursor);
   }
 
-  public searchTranscripts(match: string, limit: number): readonly SearchHit[] {
+  /**
+   * Substring matching, narrowed by subscription only — P7-T2's other filters are SQL and are
+   * tested against the real adapter (`sqlite-search-filters.test.ts`). Every query is recorded.
+   */
+  public searchTranscripts(query: TranscriptQuery): readonly SearchHit[] {
+    this.searches.push(query);
+    const { match, limit, filters } = query;
     const needle = match.replaceAll(/["*]/gu, '').toLowerCase();
     const hits: SearchHit[] = [];
     for (const batch of this.excerpts.values()) {
+      if (filters.subscription !== undefined && batch.subscription !== filters.subscription) {
+        continue;
+      }
       const found = batch.excerpts.find((prose) => prose.text.toLowerCase().includes(needle));
       if (found === undefined) continue;
       hits.push({
@@ -255,6 +267,13 @@ export class FakeStore implements Store {
       });
     }
     return hits.slice(0, limit);
+  }
+
+  /** Every tool any held batch named, first seen first — the real store orders by use. */
+  public transcriptTools(limit: number): readonly string[] {
+    const tools = new Set<string>();
+    for (const batch of this.excerpts.values()) for (const tool of batch.tools) tools.add(tool);
+    return [...tools].slice(0, limit);
   }
 }
 

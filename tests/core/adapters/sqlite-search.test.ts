@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SqliteStore } from '../../../core/adapters/sqlite/sqlite-store.ts';
+import { NO_FILTERS } from '../../../contracts/search-filters.ts';
 import { toMatchExpression } from '../../../contracts/transcript-search.ts';
 import type { TranscriptProse } from '../../../contracts/transcript-prose.ts';
 import type { TranscriptIndexBatch } from '../../../core/ports/store.ts';
@@ -54,6 +55,7 @@ function batch(over: Partial<TranscriptIndexBatch> = {}): TranscriptIndexBatch {
     at: 2000,
     restarted: false,
     excerpts: [],
+    tools: [],
     ...over,
   };
 }
@@ -64,7 +66,11 @@ function search(
   query: string,
   limit = 20,
 ): ReturnType<SqliteStore['searchTranscripts']> {
-  return store.searchTranscripts(toMatchExpression(query) ?? '""', limit);
+  return store.searchTranscripts({
+    match: toMatchExpression(query) ?? '""',
+    limit,
+    filters: NO_FILTERS,
+  });
 }
 
 describe('the FTS5 index — finding things', () => {
