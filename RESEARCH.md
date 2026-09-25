@@ -3913,3 +3913,37 @@ cursor before a trailing partial line so the line is read whole next pass — an
 its 1 MB slice has no newline in it at all, so the cursor never moves past the line's first byte.
 P1-T7 found a 3.2 MB line. The ledger steps over a partial line once it is longer than 128 KB, which
 no `cost-state` is (the longest is 1.3 KB). The indexer's copy of the rule is P7-T1's to revisit.
+
+### G.60 Ending an idle interactive session and adopting it (P6-T8, 2026-09-25)
+
+Measured on this machine, 2.1.281, against throwaway sessions started in `%TEMP%\fd-takeover-probe`
+under node-pty with one Haiku prompt ("reply with just: ok"), and nothing else touched.
+
+**The listing's pid is `claude.exe` itself.** Four live interactive sessions, every `pid` resolving
+to `claude.exe` whose parent is `cmd.exe`. `sessions/<pid>.json` also carries `procStart`, which
+equals the process's creation FILETIME exactly — a pid-reuse check if one is ever needed beyond the
+image filter.
+
+**Idle sessions still have children.** `cmd.exe`; `cmd.exe, bash.exe, powershell.exe`; `node.exe` (a
+stdio MCP server); and none — across four idle-or-busy sessions. Hence `/T`.
+
+**The sequence:**
+
+```
+listing          {"pid":5300,"kind":"interactive","status":"idle","sessionId":"e3cd988e-…"}
+end pid 5300     exited within 1.4 s (the poll interval — `{"exitCode":1}` at the pty)
+listing          no record for the session at all — G.55's "forgotten at once"
+--bg --resume    backgrounded · e3cd988e (idle — send a prompt to start)     (cwd = the session's)
+listing          same id, kind background
+```
+
+**taskkill's filter is silent about refusing.** Against a non-`claude.exe` pid,
+`taskkill /PID <n> /FI "IMAGENAME eq claude.exe" /T /F` printed "No tasks running with the specified
+criteria" and exited **0**, with the process still alive; with the matching image name it ended the
+tree and also exited 0. The exit code cannot tell the two apart, so `TaskkillProcessEnder` reads the
+answer off `ProcessProbe`.
+
+**A trap in measuring this from inside a session.** A `claude` started from a Claude Code shell
+inherits `CLAUDE_CODE_CHILD_SESSION`, prints "Transcript saving is off", and never registers in
+`sessions/` — so it is invisible to the listing. The probe had to strip every `CLAUDE*` variable.
+Core is not affected: it runs as a logon task, not under a session.

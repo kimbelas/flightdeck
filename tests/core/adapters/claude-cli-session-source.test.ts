@@ -153,3 +153,44 @@ describe('ClaudeCliSessionSource', () => {
     expect(runner.requests).toHaveLength(0);
   });
 });
+
+// P6-T8. The take-over's lookup: the pid it ends is read off a listing taken at the press.
+describe('ClaudeCliSessionSource.find', () => {
+  const ID = 'e3cd988e-4179-4ba5-9bed-69dbac7c6e93';
+  const INTERACTIVE = {
+    pid: 5300,
+    cwd: 'C:\\ledger',
+    kind: 'interactive',
+    sessionId: ID,
+    status: 'idle',
+  };
+
+  it('answers the one record for that session, pid and status included', async () => {
+    const runner = new FakeProcessRunner();
+    runner.willReturn({ stdout: JSON.stringify([INTERACTIVE]) });
+
+    const found = await source(runner).find('365', ID);
+
+    expect(found.ok && found.value).toMatchObject({
+      pid: 5300,
+      status: 'idle',
+      kind: 'interactive',
+    });
+    expect(runner.requests[0]?.args).toEqual(['agents', '--json', '--all']);
+  });
+
+  it('answers ok(undefined) for a session the listing does not carry', async () => {
+    const runner = new FakeProcessRunner();
+    runner.willReturn({ stdout: '[]' });
+
+    expect(await source(runner).find('365', ID)).toEqual({ ok: true, value: undefined });
+  });
+
+  // Not "it ended": an unreadable listing says nothing, and the take-over must end nothing on it.
+  it('answers unreadable when the listing cannot be read', async () => {
+    const runner = new FakeProcessRunner();
+    runner.willReturn({ code: 1 });
+
+    expect(await source(runner).find('365', ID)).toEqual({ ok: false, error: 'unreadable' });
+  });
+});

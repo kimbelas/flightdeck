@@ -25,7 +25,8 @@ import { RowHandoff } from './row-handoff.tsx';
 import { SessionDetailView } from './session-detail-view.tsx';
 import { SessionPreviewView } from './session-preview-view.tsx';
 import { handlersFor, offerFor, refusalFor, type SessionListProps } from './session-list.tsx';
-import { RowAction, RowDelete, RowTags } from './session-row-card.tsx';
+import { RowAction } from './row-action.tsx';
+import { RowDelete, RowTags } from './session-row-card.tsx';
 import type { SessionRowViewModel } from './session-row-view-model.ts';
 
 interface CardModalProps {
@@ -126,6 +127,7 @@ function ModalActions({
       }}
       onResume={on.onResume}
       onAdopt={on.onAdopt}
+      onTakeOver={on.onTakeOver}
       onStop={on.onStop}
     />
   );
