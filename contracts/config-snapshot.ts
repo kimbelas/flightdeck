@@ -207,8 +207,17 @@ function changeList(value: unknown): readonly ConfigChange[] {
   });
 }
 
+/**
+ * The project's OWN assets of one kind. A plugin's are left out (P9-T5): they come from a config
+ * dir's install, not from this repository, so a plugin update would otherwise be reported as a
+ * change to every project on the machine — and the first read after this build would report every
+ * user-scope plugin skill as added. The `plugins` facet already says when the project's own
+ * `enabledPlugins` moves.
+ */
 function assetNames(map: WorkflowMap, kind: 'agent' | 'command' | 'skill'): readonly string[] {
-  return map.assets.filter((asset) => asset.kind === kind).map((asset) => asset.name);
+  return map.assets
+    .filter((asset) => asset.kind === kind && asset.plugin === undefined)
+    .map((asset) => asset.name);
 }
 
 /**

@@ -23,7 +23,7 @@
 //
 // **Everything here is capped where it is parsed**, the rule `job-state.ts` set: a preset arrives
 // from a text box, goes into a database, and comes back out into a command line and onto a screen.
-import type { ClaudeAsset } from './claude-assets.ts';
+import { scopedAssetName, type ClaudeAsset } from './claude-assets.ts';
 import type { SubscriptionId } from './session.ts';
 import { TicketPrompt } from './ticket-prompt.ts';
 
@@ -87,14 +87,22 @@ export function pinsAgent(profileFn: ProfileFunction): boolean {
 }
 
 /**
- * What an agent name may look like — P9-T1.
+ * What an agent name may look like — P9-T1, widened by P9-T5.
  *
  * Lower case, digits and hyphens, at most 64: the shape Claude Code's own agent names take, and a
  * shape that is safe in every place this string goes — an argv element, a JSON body, a database
  * column and a log line. A name in the roster that is not this shape is not offered at all rather
  * than escaped, because the roster is the allowlist and a name that needs escaping is not on it.
+ *
+ * **A plugin's agent carries its plugin, one colon in front** (`shell-review:bash-script-auditor`).
+ * That is the scoped name `--agent` documents for a plugin agent — `claude --agent
+ * my-plugin:security-reviewer` (code.claude.com/docs/en/sub-agents) — and the bare name would be
+ * ambiguous the moment two plugins ship one each. One colon only: a plugin agent in a SUBFOLDER of
+ * `agents/` would be `plugin:folder:name`, and the reader does not descend (`ClaudeAssetReader`).
+ * A colon is inert in all four places the name goes; the launch line reads it back from
+ * `$env:FD_AGENT` in argument mode, never as source (SEC-PROC-1).
  */
-export const AGENT_SHAPE = /^[a-z0-9-]{1,64}$/u;
+export const AGENT_SHAPE = /^(?:[a-z0-9][a-z0-9-]{0,63}:)?[a-z0-9-]{1,64}$/u;
 
 /** The name if it is agent-shaped, `undefined` otherwise. Never coerced — see `AGENT_SHAPE`. */
 export function agentName(value: unknown): string | undefined {
@@ -111,7 +119,7 @@ export function agentName(value: unknown): string | undefined {
 export function agentRoster(assets: readonly ClaudeAsset[]): readonly string[] {
   const names = assets
     .filter((asset) => asset.kind === 'agent')
-    .map((asset) => agentName(asset.name))
+    .map((asset) => agentName(scopedAssetName(asset)))
     .filter((name): name is string => name !== undefined);
   return [...new Set(names)].sort((left, right) => (left < right ? -1 : 1));
 }

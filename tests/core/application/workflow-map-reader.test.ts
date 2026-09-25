@@ -13,6 +13,7 @@ import { ClaudeAssetReader } from '../../../core/application/claude-asset-reader
 import { ProjectTicketReader } from '../../../core/application/project-ticket-reader.ts';
 import { GitDirectoryLocator } from '../../../core/application/git-directory-locator.ts';
 import { InstructionStackReader } from '../../../core/application/instruction-stack-reader.ts';
+import { PluginAssetReader } from '../../../core/application/plugin-asset-reader.ts';
 import { WorkflowMapReader } from '../../../core/application/workflow-map-reader.ts';
 import { WorktreeReader } from '../../../core/application/worktree-reader.ts';
 import { projectKey, type ProjectRecord } from '../../../contracts/project.ts';
@@ -76,6 +77,12 @@ function build(records: ProjectRecord[]): Harness {
       configDirs: { '365': C365, isg: ISG },
     }),
     assets: new ClaudeAssetReader({ paths, files }),
+    plugins: new PluginAssetReader({
+      paths,
+      files,
+      assets: new ClaudeAssetReader({ paths, files }),
+      configDirs: [C365, ISG],
+    }),
     tickets: new ProjectTicketReader({ paths, files }),
     // The real reader over the real locator, not a fake of either — G.26's lesson, and the one
     // P3-T3 paid for again in G.27: a fake that agreed with the source would have agreed with the
@@ -112,6 +119,35 @@ function populate(files: FakeProjectFiles): void {
     ['---', 'name: german-ui-expert', 'description: German label to source.', '---'].join('\n'),
   );
   files.directory(childPath(claude, 'rules'), ['a.md', 'b.md']);
+}
+
+const PLUGINS = childPath(C365, 'plugins');
+const INDEX = childPath(PLUGINS, 'installed_plugins.json');
+const SUPERPOWERS = [PLUGINS, 'cache', 'claude-plugins-official', 'superpowers', '6.4.1'].reduce(
+  childPath,
+);
+
+/** One user-scope plugin with one skill, and one plugin installed for a folder not imported. */
+function installPlugins(files: FakeProjectFiles, modifiedAt = 0): void {
+  files.file(
+    INDEX,
+    JSON.stringify({
+      version: 2,
+      plugins: {
+        'superpowers@claude-plugins-official': [{ scope: 'user', installPath: SUPERPOWERS }],
+        'elsewhere@claude-plugins-official': [
+          { scope: 'project', projectPath: DOCS, installPath: childPath(PLUGINS, 'elsewhere') },
+        ],
+      },
+    }),
+    modifiedAt,
+  );
+  const skills = childPath(SUPERPOWERS, 'skills');
+  files.directory(skills, ['brainstorming']);
+  files.file(
+    childPath(childPath(skills, 'brainstorming'), 'SKILL.md'),
+    ['---', 'name: brainstorming', 'description: Before creative work.', '---'].join('\n'),
+  );
 }
 
 beforeEach(() => {
@@ -162,6 +198,16 @@ describe('readAll', () => {
     expect(map?.instructions).toHaveLength(5);
     expect(map?.conventions).toHaveLength(6);
     expect(map?.configured).toBe(false);
+  });
+
+  it("appends the installed plugins' assets, each carrying its plugin (P9-T5)", async () => {
+    populate(harness.files);
+    installPlugins(harness.files);
+    const [map] = await harness.reader.readAll();
+    expect(map?.assets.map((asset) => [asset.name, asset.plugin])).toEqual([
+      ['german-ui-expert', undefined],
+      ['brainstorming', 'superpowers'],
+    ]);
   });
 
   it('survives a settings.json that is not valid JSON', async () => {
@@ -221,6 +267,13 @@ describe('the cache', () => {
     harness.files.directory(state, ['XWEB-1830.md'], 67);
     harness.files.file(childPath(state, 'XWEB-1830.md'), 'notes', 67);
     expect((await harness.reader.readAll())[0]?.tickets).toEqual(['XWEB-1830']);
+  });
+
+  it('re-reads when a plugin is installed, which moves only the index (P9-T5)', async () => {
+    populate(harness.files);
+    await harness.reader.readAll();
+    installPlugins(harness.files, 88);
+    expect((await harness.reader.readAll())[0]?.assets).toHaveLength(2);
   });
 
   it('re-reads once the TTL lapses, for the edit no stat can see', async () => {

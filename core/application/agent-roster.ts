@@ -36,9 +36,20 @@ export interface RosterAssets {
   assets(claudeDir: string): Promise<readonly ClaudeAsset[]>;
 }
 
+/** `PluginAssetReader.assets`, narrowed the same way — P9-T5. */
+export interface RosterPluginAssets {
+  assets(projectPaths: readonly string[]): Promise<readonly ClaudeAsset[]>;
+}
+
 export interface AgentRosterParts {
   readonly registry: RosterRegistry;
   readonly assets: RosterAssets;
+  /**
+   * P9-T5. A plugin's agents are on the roster under their scoped name (`plugin:agent`), which is
+   * the name `--agent` takes for one. Read fresh as well, for the same reason: uninstalling a
+   * plugin between the save and the press must refuse the launch.
+   */
+  readonly plugins: RosterPluginAssets;
 }
 
 export class AgentRoster {
@@ -49,7 +60,8 @@ export class AgentRoster {
   }
 
   /**
-   * Every agent-shaped agent name under one imported project's `.claude/agents`, sorted.
+   * Every agent-shaped agent name under one imported project's `.claude/agents`, and every
+   * applicable plugin's, sorted.
    *
    * Empty for a project that is not imported, has no `.claude`, or has no agents — three states the
    * caller treats alike, because each means "no agent may be named here".
@@ -57,7 +69,11 @@ export class AgentRoster {
   public async namesFor(projectPath: string): Promise<readonly string[]> {
     const root = await this.parts.registry.resolveRoot(projectPath);
     if (!root.ok) return [];
-    return agentRoster(await this.parts.assets.assets(childPath(root.value, '.claude')));
+    const [own, plugins] = await Promise.all([
+      this.parts.assets.assets(childPath(root.value, '.claude')),
+      this.parts.plugins.assets([projectPath, root.value]),
+    ]);
+    return agentRoster([...own, ...plugins]);
   }
 
   /** Whether `agent` is on the roster of the imported project that `cwd` is inside. */

@@ -78,6 +78,11 @@ const ALLOWED_FILES: readonly string[] = [
   // refused at runtime. Caught by a unit test that asked the real policy rather than a fake
   // (tests/core/application/instruction-stack-reader.test.ts).
   'claude.md',
+  // Which plugins are installed, where, and for which project — P9-T5. Named here AND in
+  // `ALLOWED_JSON`, because it is a file on the list and a `.json` the deny rule would otherwise
+  // take. Its sibling `plugins\marketplaces\` is deliberately not named: that is a clone of every
+  // plugin ever published, not what is installed (contracts/installed-plugins.ts).
+  'plugins\\installed_plugins.json',
 ];
 
 /** Directories whose non-secret contents are readable: transcripts, session and job state. */
@@ -88,7 +93,11 @@ const ALLOWED_DIRECTORIES: readonly string[] = ['sessions', 'jobs', 'projects'];
  * is refused by SEC-FS-2, which is what keeps the next Claude Code release's new settings file
  * from being readable by default.
  */
-const ALLOWED_JSON: readonly string[] = ['settings.json', 'daemon\\roster.json'];
+const ALLOWED_JSON: readonly string[] = [
+  'settings.json',
+  'daemon\\roster.json',
+  'plugins\\installed_plugins.json',
+];
 
 /**
  * The `.json` files whose NAME is known but whose path carries an id —
@@ -101,6 +110,26 @@ const ALLOWED_JSON: readonly string[] = ['settings.json', 'daemon\\roster.json']
  * admits that file and nothing deeper, nothing shallower, and no sibling.
  */
 const ALLOWED_JSON_PATTERNS: readonly string[] = ['jobs\\*\\state.json'];
+
+/**
+ * What may be opened inside an installed plugin — P9-T5, SEC-FS-1's one subtree per config dir.
+ *
+ * `plugins\cache\<marketplace>\<plugin>\<version>\` is where `installed_plugins.json` points, and
+ * what the workflow map needs from it is exactly the three shapes a project's `.claude` has: the
+ * `agents`, `commands` and `skills` directories to list, an `agents\*.md` or `commands\*.md` to
+ * read the head of, and a `skills\*\SKILL.md`. Patterns rather than the directory, for the `jobs\`
+ * reason: a plugin is a whole repository — the owner's `chrome-devtools-mcp` carries its `src\`,
+ * `tests\`, a `package-lock.json` and dot-folders — and none of that is a skill. `*.md` is one
+ * segment that ends `.md`; lower case because `canonicalWindowsPath` lower-cases.
+ */
+const ALLOWED_PLUGIN_PATTERNS: readonly string[] = [
+  'plugins\\cache\\*\\*\\*\\agents',
+  'plugins\\cache\\*\\*\\*\\commands',
+  'plugins\\cache\\*\\*\\*\\skills',
+  'plugins\\cache\\*\\*\\*\\agents\\*.md',
+  'plugins\\cache\\*\\*\\*\\commands\\*.md',
+  'plugins\\cache\\*\\*\\*\\skills\\*\\skill.md',
+];
 
 export class ReadPolicy {
   private readonly roots: readonly string[];
@@ -161,6 +190,7 @@ function underConfigDir(relative: string): string | undefined {
   const denial = denied(relative);
   if (denial !== undefined) return denial;
   if (ALLOWED_FILES.includes(relative)) return undefined;
+  if (ALLOWED_PLUGIN_PATTERNS.some((pattern) => matches(pattern, relative))) return undefined;
   return allowedByDirectory(relative) ? undefined : 'not on the read allowlist (SEC-FS-1)';
 }
 
@@ -213,12 +243,21 @@ function allowedJson(relative: string): boolean {
   return ALLOWED_JSON_PATTERNS.some((pattern) => matches(pattern, relative));
 }
 
-/** `*` matches exactly one path segment. No `**`, deliberately — see `ALLOWED_JSON_PATTERNS`. */
+/**
+ * `*` matches exactly one path segment and `*.md` one segment ending `.md`. No `**`, deliberately
+ * — see `ALLOWED_JSON_PATTERNS`.
+ */
 function matches(pattern: string, relative: string): boolean {
   const wanted = pattern.split(WINDOWS_SEPARATOR);
   const actual = relative.split(WINDOWS_SEPARATOR);
   if (wanted.length !== actual.length) return false;
-  return wanted.every((segment, index) => segment === '*' || segment === actual[index]);
+  return wanted.every((segment, index) => segmentMatches(segment, actual[index] ?? ''));
+}
+
+function segmentMatches(wanted: string, actual: string): boolean {
+  if (wanted === '*') return actual !== '';
+  if (wanted === '*.md') return actual.length > '.md'.length && actual.endsWith('.md');
+  return wanted === actual;
 }
 
 /** A file inside an allowlisted directory — a transcript under `projects\<slug>\` and the like. */

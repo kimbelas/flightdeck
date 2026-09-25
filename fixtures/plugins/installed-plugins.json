@@ -1,0 +1,68 @@
+{
+  "note": "installed_plugins.json from the 365 config dir, 2026-09-25 (P9-T5)",
+  "version": 2,
+  "plugins": {
+    "context-hygiene@claude-kit": [
+      {
+        "scope": "user",
+        "installPath": "C:\\Users\\path-03206b\\.claude-365\\path-92cd10\\path-5e1ece\\path-d076c5\\path-e8d460\\path-92521f.0",
+        "version": "1.0.0",
+        "installedAt": "2020-09-02T16:48:06.345Z",
+        "lastUpdated": "2020-09-02T16:48:06.345Z"
+      }
+    ],
+    "shell-review@claude-kit": [
+      {
+        "scope": "user",
+        "installPath": "C:\\Users\\path-03206b\\.claude-365\\path-92cd10\\path-5e1ece\\path-d076c5\\path-3b7899\\path-92521f.0",
+        "version": "1.0.0",
+        "installedAt": "2020-09-02T16:48:08.928Z",
+        "lastUpdated": "2020-09-02T16:48:08.928Z"
+      }
+    ],
+    "superpowers@claude-plugins-official": [
+      {
+        "scope": "project",
+        "projectPath": "C:\\Users\\path-03206b\\Documents\\path-875b93\\path-3001a0",
+        "installPath": "C:\\Users\\path-03206b\\.claude-365\\path-92cd10\\path-5e1ece\\path-f6cb1f\\path-b22539\\path-eab33a.1",
+        "version": "6.4.1",
+        "installedAt": "2020-09-23T01:50:14.844Z",
+        "lastUpdated": "2020-09-25T01:44:05.299Z",
+        "gitCommitSha": "text-a6caf121"
+      }
+    ],
+    "typescript-lsp@claude-plugins-official": [
+      {
+        "scope": "project",
+        "projectPath": "C:\\Users\\path-03206b\\Documents\\path-875b93\\path-3001a0",
+        "installPath": "C:\\Users\\path-03206b\\.claude-365\\path-92cd10\\path-5e1ece\\path-f6cb1f\\path-c75692\\path-92521f.0",
+        "version": "1.0.0",
+        "installedAt": "2020-09-25T09:57:51.990Z",
+        "lastUpdated": "2020-09-25T09:57:51.990Z",
+        "gitCommitSha": "text-8a6a2f8d"
+      }
+    ],
+    "chrome-devtools-mcp@claude-plugins-official": [
+      {
+        "scope": "project",
+        "projectPath": "C:\\Users\\path-03206b\\Documents\\path-875b93\\path-3001a0",
+        "installPath": "C:\\Users\\path-03206b\\.claude-365\\path-92cd10\\path-5e1ece\\path-f6cb1f\\path-33e35e\\path-7717cb.0",
+        "version": "1.9.0",
+        "installedAt": "2020-09-25T09:57:58.514Z",
+        "lastUpdated": "2020-09-25T09:57:58.514Z",
+        "gitCommitSha": "text-c07333f3"
+      }
+    ],
+    "frontend-design@claude-plugins-official": [
+      {
+        "scope": "project",
+        "projectPath": "C:\\Users\\path-03206b\\Documents\\path-875b93\\path-3001a0",
+        "installPath": "C:\\Users\\path-03206b\\.claude-365\\path-92cd10\\path-5e1ece\\path-f6cb1f\\path-7429eb\\path-73366f",
+        "version": "ad30d62cd52a",
+        "installedAt": "2020-09-25T09:59:00.972Z",
+        "lastUpdated": "2020-09-26T05:46:49.416Z",
+        "gitCommitSha": "text-92d5c2d1"
+      }
+    ]
+  }
+}

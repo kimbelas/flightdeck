@@ -55,21 +55,44 @@ function roster(): { subject: AgentRoster; asked: string[] } {
       return Promise.resolve(claudeDir.startsWith(APP_NEXT) ? held : []);
     },
   };
-  return { subject: new AgentRoster({ registry: new StubRegistry(), assets }), asked };
+  // P9-T5. One user-scope plugin agent everywhere, and one whose scoped name is too long to be
+  // agent-shaped.
+  const plugins = {
+    assets: (projectPaths: readonly string[]): Promise<readonly ClaudeAsset[]> => {
+      asked.push(`plugins:${projectPaths.join('|')}`);
+      return Promise.resolve([
+        { ...asset('bash-script-auditor'), plugin: 'shell-review' },
+        { ...asset('x'.repeat(65)), plugin: 'too-long' },
+      ]);
+    },
+  };
+  return { subject: new AgentRoster({ registry: new StubRegistry(), assets, plugins }), asked };
 }
 
 describe('AgentRoster.namesFor', () => {
   it('lists the agent-shaped agents under the project, sorted, and nothing else', async () => {
     // `Shouty Name` is not `AGENT_SHAPE` and `deploy` is a command: neither may reach an argv.
-    expect(await roster().subject.namesFor(APP_NEXT)).toEqual(['code-reviewer', 'reviewer']);
+    expect(await roster().subject.namesFor(APP_NEXT)).toEqual([
+      'code-reviewer',
+      'reviewer',
+      'shell-review:bash-script-auditor',
+    ]);
   });
 
-  it('reads the project root .claude, and nothing composed from the request', async () => {
+  it('reads the root .claude and its plugins, and nothing composed from the request', async () => {
     const { subject, asked } = roster();
 
     await subject.namesFor(APP_NEXT);
 
-    expect(asked).toEqual([`${APP_NEXT}\\.claude`]);
+    expect(asked).toEqual([`${APP_NEXT}\\.claude`, `plugins:${APP_NEXT}|${APP_NEXT}`]);
+  });
+
+  it('holds a plugin agent under its scoped name only (P9-T5)', async () => {
+    const { subject } = roster();
+
+    expect(await subject.allows(DOCS_TOOL, 'shell-review:bash-script-auditor')).toBe(true);
+    // Claude Code would resolve the bare name too, but the roster is the scoped name the map offers.
+    expect(await subject.allows(DOCS_TOOL, 'bash-script-auditor')).toBe(false);
   });
 
   it('is empty for a folder nobody imported', async () => {
@@ -86,7 +109,7 @@ describe('AgentRoster.allows', () => {
     const { subject, asked } = roster();
 
     expect(await subject.allows(TREE, 'reviewer')).toBe(true);
-    expect(asked).toEqual([`${APP_NEXT}\\.claude`]);
+    expect(asked).toEqual([`${APP_NEXT}\\.claude`, `plugins:${APP_NEXT}|${APP_NEXT}`]);
   });
 
   it('refuses a name the roster does not hold', async () => {
