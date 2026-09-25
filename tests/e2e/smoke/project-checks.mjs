@@ -12,6 +12,7 @@
 // page's own `fetch`, the rewrite with its server-side bearer, core's parser.
 import { waitFor } from './report.mjs';
 import { agentChecks } from './agent-checks.mjs';
+import { mapPresetChecks } from './map-preset-checks.mjs';
 
 export const PROJECT = 'C:\\Users\\belas\\Documents\\development\\app-next';
 const MISSING = 'C:\\nope\\not-here';
@@ -257,6 +258,8 @@ async function presetChecks(page, report, core) {
   await presetGeometryChecks(page, report, section);
   // P9-T1. Last, because it saves and forgets a preset of its own and leaves the four built-ins.
   await agentChecks(page, report, core, section);
+  // P9-T2. After it, for the same reason: it saves one preset and forgets it again.
+  await mapPresetChecks(page, report, core, section);
 }
 
 /** Pressing `ticket`, typing the id, and watching what actually leaves the page. */

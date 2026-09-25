@@ -4079,10 +4079,46 @@ phases:
           stay agent-less. `presets.agent` is a nullable column and a migration, like `preset_group`.
       - id: P9-T2
         title: The workflow map is pressable — every agent, command and skill becomes a prefilled preset
-        status: todo
+        status: done
+        done_on: 2026-09-25
         depends_on: [P9-T1]
         security: [SEC-UI-2]
+        deliverables:
+          [
+            app/deck/asset-presets.ts,
+            app/deck/preset-fields.tsx,
+            app/deck/presets-panel.tsx,
+            app/deck/presets-view-model.ts,
+            app/deck/project-panels.tsx,
+            app/deck/projects-view-model.ts,
+            app/deck/workflow-map-panel.tsx,
+            tests/app/asset-presets.test.ts,
+            tests/e2e/smoke/map-preset-checks.mjs,
+          ]
         notes: >-
+          **Done 2026-09-25. Verified against the real core on xpert-new.** All 16 rows there get
+          `make a preset`: 3 agents, 3 commands and 10 skills. `fix-review` is both a command and a
+          skill, and each row drafts its own. Each agent (german-ui-expert, niklas-reviewer,
+          orchestrator) opens a draft with that agent selected and an empty prompt, and start stays
+          disabled until a prompt is typed. Each skill or command opens `/<name> ` in the focused
+          prompt, with the caret after the space. The deck sent no POST across seven presses. After
+          the transcripts were read (isg 89 sessions, 365 16), the next draft said `claude-isg`,
+          so the tally rule works on real data. A niklas-reviewer draft was saved through the real
+          core, reopened with its agent and forgotten again, so the owner still has zero saved
+          presets. No session was started from a draft: the launch path is P9-T1's, already
+          proved with a real session, and a draft's start sends the same `PresetLaunch`.
+          **`AssetPresets` makes every decision.** It holds the function (the plain pair only,
+          since the tally counts subscriptions and a tie keeps `claude-365`), the shape of the
+          slash name (`[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}`, so `/superpowers:x` from T5 fits) and
+          the roster check that decides whether a button is drawn. A draft is a `PresetLine` with
+          `origin` set, and `origin` is what hides `forget` and puts `draft from the skill x — not
+          saved` on the `where` line. The draft is held in `ProjectPanels`, the nearest place both
+          panels share, and is keyed by a press counter so a second press starts with fresh boxes.
+          Pressing a chip drops it. `ProjectPanels` and the editor's fields moved to files of
+          their own because the change pushed two files over `max-lines`. Smoke grew 15 checks,
+          one group per kind against the fixture map (454 in all).
+
+          *The task as planned:*
           The map draws `ClaudeAsset` rows (name, description, model, tools) and nothing on them
           does anything. Each row gets `make a preset`: it opens the presets panel with a draft
           filled in — `cwd` the project root; `profileFn` the function the observed-behaviour tally

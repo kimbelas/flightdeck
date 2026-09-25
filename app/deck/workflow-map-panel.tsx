@@ -12,12 +12,18 @@
 // the `3.4 kB`, the plural of "allow rule", the grouping of the timeline. What is left here is
 // markup (CODING-STANDARDS §3).
 //
+// **Each agent, command and skill row is pressable (P9-T2).** `make a preset` hands the asset to
+// the project row, which opens the presets editor with a draft `AssetPresets` built from it. The
+// press writes nothing; the button is drawn only where `AssetPresets` says the draft is one core
+// would accept.
+//
 // **The three strings that came off disk are rendered as text**: an asset's name, its description
 // and a hook's command. React escapes them, there is no `dangerouslySetInnerHTML` anywhere in this
 // repo (§11), and the file they came out of belongs to a repository the owner imported themselves.
 import type { JSX } from 'react';
 import type { ClaudeAsset } from '../../contracts/claude-assets.ts';
 import type { HookStep } from '../../contracts/hook-timeline.ts';
+import type { AssetPresets } from './asset-presets.ts';
 import type { ConfigDriftViewModel } from './config-drift-view-model.ts';
 import type { WorkflowMapViewModel } from './workflow-map-view-model.ts';
 
@@ -34,12 +40,21 @@ interface WorkflowMapPanelProps {
    * a fourth panel between them would break the one piece of layout that carries an argument.
    */
   readonly drift: ConfigDriftViewModel;
+  /** What a row's `make a preset` would draft, and where the press goes (P9-T2). */
+  readonly press?: AssetPress | undefined;
+}
+
+/** The rule and the callback behind `make a preset`, as one prop. */
+export interface AssetPress {
+  readonly presets: AssetPresets;
+  readonly onMake: (asset: ClaudeAsset) => void;
 }
 
 export function WorkflowMapPanel({
   model,
   project,
   drift,
+  press,
 }: WorkflowMapPanelProps): JSX.Element | null {
   // Nothing at all until the first reply — a folder whose map has not arrived draws no section
   // rather than an empty one, which is the same rule `ProjectMeta` follows for git.
@@ -66,7 +81,7 @@ export function WorkflowMapPanel({
         sentence rather than to a row of counts.
       */}
       <Names title="worktrees" names={model.worktrees} />
-      {model.isConfigured ? <Configured model={model} /> : null}
+      {model.isConfigured ? <Configured model={model} press={press} /> : null}
     </details>
   );
 }
@@ -141,12 +156,18 @@ function Stack({ model }: { readonly model: WorkflowMapViewModel }): JSX.Element
 }
 
 /** Everything that comes out of a `.claude` — drawn only for a repository that has one. */
-function Configured({ model }: { readonly model: WorkflowMapViewModel }): JSX.Element {
+function Configured({
+  model,
+  press,
+}: {
+  readonly model: WorkflowMapViewModel;
+  readonly press: AssetPress | undefined;
+}): JSX.Element {
   return (
     <>
-      <Assets title="subagents" assets={model.agents} />
-      <Assets title="commands" assets={model.commands} />
-      <Assets title="skills" assets={model.skills} />
+      <Assets title="subagents" assets={model.agents} press={press} />
+      <Assets title="commands" assets={model.commands} press={press} />
+      <Assets title="skills" assets={model.skills} press={press} />
       <Timeline model={model} />
       <Names title="MCP servers" names={model.servers} />
       <Names title="plugins" names={model.plugins} />
@@ -160,10 +181,11 @@ function Configured({ model }: { readonly model: WorkflowMapViewModel }): JSX.El
 interface AssetsProps {
   readonly title: string;
   readonly assets: readonly ClaudeAsset[];
+  readonly press: AssetPress | undefined;
 }
 
 /** A roster — name, what triggers it, and the model and tools when the file names them. */
-function Assets({ title, assets }: AssetsProps): JSX.Element | null {
+function Assets({ title, assets, press }: AssetsProps): JSX.Element | null {
   if (assets.length === 0) return null;
   return (
     <Section title={title}>
@@ -173,6 +195,7 @@ function Assets({ title, assets }: AssetsProps): JSX.Element | null {
             <span className="map-asset-name">{asset.name}</span>
             {asset.model !== undefined && <span className="map-badge">{asset.model}</span>}
             {asset.tools.length > 0 && <span className="map-badge">{asset.tools.join(', ')}</span>}
+            <MakePreset asset={asset} press={press} />
             {asset.description !== undefined && (
               <span className="map-trigger">{asset.description}</span>
             )}
@@ -180,6 +203,30 @@ function Assets({ title, assets }: AssetsProps): JSX.Element | null {
         ))}
       </ul>
     </Section>
+  );
+}
+
+/** `make a preset` — drawn only for an asset whose draft core would accept (`AssetPresets`). */
+function MakePreset({
+  asset,
+  press,
+}: {
+  readonly asset: ClaudeAsset;
+  readonly press: AssetPress | undefined;
+}): JSX.Element | undefined {
+  if (press?.presets.pressable(asset) !== true) return undefined;
+  return (
+    <button
+      type="button"
+      className="ghost map-make"
+      aria-label={`make a preset from the ${asset.kind} ${asset.name}`}
+      data-map-make={`${asset.kind}:${asset.name}`}
+      onClick={() => {
+        press.onMake(asset);
+      }}
+    >
+      make a preset
+    </button>
   );
 }
 

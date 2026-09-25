@@ -25,10 +25,21 @@
 // the rule core checks a save and a launch with. No select is drawn where there is nothing to pick
 // or where the function pins its own agent (`claude-isg-orch`) — that is said on the `where` line.
 //
+// **A workflow-map row can open the editor too (P9-T2).** `make a preset` on an agent, command or
+// skill hands this panel a `mapDraft` — a line `AssetPresets` built that core has never seen. It is
+// shown in the same editor, marked as a draft on the `where` line, with the cursor already at the
+// end of the prompt; nothing reaches core until save or start is pressed. Pressing a chip drops it.
+//
 // Every decision lives in `PresetsViewModel` — the refusal sentence, the folder phrase, what a
 // half-typed ticket id would actually send. What is left here is markup and four callbacks.
 import { useState, type JSX, type SyntheticEvent } from 'react';
 import type { PresetDraft, PresetLaunch, PresetRef } from '../../contracts/launch-preset.ts';
+import {
+  PresetAgentSelect,
+  PresetStartRow,
+  PresetTextBoxes,
+  type EditorDraft,
+} from './preset-fields.tsx';
 import { draftPrompt, type PresetLine, type PresetsViewModel } from './presets-view-model.ts';
 
 export interface PresetsPanelProps {
@@ -40,22 +51,18 @@ export interface PresetsPanelProps {
   readonly onLaunch: (request: PresetLaunch) => void;
   readonly onSave: (draft: PresetDraft) => void;
   readonly onForget: (ref: PresetRef) => void;
-}
-
-/** What is currently in the boxes. One object, so one setter threads through the fragments. */
-interface EditorDraft {
-  readonly sessionName: string;
-  readonly typed: string;
-  readonly cwd: string;
-  /** `''` is `none`. A roster name otherwise (P9-T1). */
-  readonly agent: string;
+  /** An unsaved draft a workflow-map row opened, shown in place of any chip (P9-T2). */
+  readonly mapDraft?: PresetLine | undefined;
+  /** Drops the draft — called when a chip is pressed instead. */
+  readonly onDropDraft?: () => void;
 }
 
 export function PresetsPanel(props: PresetsPanelProps): JSX.Element | undefined {
   const [selected, setSelected] = useState<string | undefined>(undefined);
   const { lines } = props.model;
   if (lines.length === 0) return undefined;
-  const line = lines.find((held) => held.key === selected);
+  const { mapDraft } = props;
+  const line = mapDraft ?? lines.find((held) => held.key === selected);
   return (
     <section className="presets" aria-label={`presets for ${props.projectName}`}>
       <ul className="preset-chips">
@@ -64,12 +71,13 @@ export function PresetsPanel(props: PresetsPanelProps): JSX.Element | undefined 
             <button
               type="button"
               className="preset-chip"
-              aria-pressed={held.key === selected}
+              aria-pressed={mapDraft === undefined && held.key === selected}
               /* What the chip cannot say in one word, and the only thing that tells a saved
                  preset from the built-in it shadows before you open it (running it, P4-T1). */
               title={`${held.builtIn ? '' : 'saved · '}${held.profileFn} · ${held.where}`}
               onClick={() => {
-                setSelected(held.key === selected ? undefined : held.key);
+                props.onDropDraft?.();
+                setSelected(mapDraft === undefined && held.key === selected ? undefined : held.key);
               }}
             >
               {held.name}
@@ -117,6 +125,9 @@ function PresetEditor(props: PresetEditorProps): JSX.Element {
         {`${line.profileFn} · ${line.subscription} · ${line.where}`}
         {line.namesItself && <span className="preset-pinned"> · names itself</span>}
         {line.pinsAgent && <span className="preset-pinned"> · runs its own agent</span>}
+        {line.origin !== undefined && (
+          <span className="preset-draft"> · draft from the {line.origin} — not saved</span>
+        )}
       </p>
       <PresetStartRow
         line={line}
@@ -129,97 +140,6 @@ function PresetEditor(props: PresetEditorProps): JSX.Element {
       <PresetAgentSelect line={line} draft={draft} prompt={prompt} onChange={change} />
       <PresetSaveRow {...props} draft={draft} />
     </form>
-  );
-}
-
-interface FieldProps {
-  readonly line: PresetLine;
-  readonly draft: EditorDraft;
-  readonly prompt: string;
-  readonly onChange: (patch: Partial<EditorDraft>) => void;
-}
-
-/** The session name and the one button that acts on what is typed — the editor's first row. */
-function PresetStartRow({
-  line,
-  draft,
-  prompt,
-  disabled,
-  onChange,
-}: FieldProps & { readonly disabled: boolean }): JSX.Element {
-  return (
-    <>
-      <input
-        className="preset-session-name"
-        value={draft.sessionName}
-        aria-label="session name"
-        placeholder={line.promptSource === 'ticket' ? 'ticket id — XWEB-2019' : 'session name'}
-        onChange={(event) => {
-          onChange({ sessionName: event.target.value });
-        }}
-      />
-      <button type="submit" className="preset-start" disabled={disabled || prompt.trim() === ''}>
-        start
-      </button>
-    </>
-  );
-}
-
-/** The prompt that will be sent, and the folder it will be sent in. Both span the grid. */
-function PresetTextBoxes({ line, draft, prompt, onChange }: FieldProps): JSX.Element {
-  return (
-    <>
-      <textarea
-        className="preset-prompt"
-        value={prompt}
-        rows={3}
-        readOnly={line.promptSource === 'ticket'}
-        aria-label="first prompt"
-        placeholder="first prompt — --bg will not start without one"
-        onChange={(event) => {
-          onChange({ typed: event.target.value });
-        }}
-      />
-      <input
-        className="preset-cwd"
-        value={draft.cwd}
-        aria-label="folder"
-        placeholder="project root — or a worktree under it"
-        onChange={(event) => {
-          onChange({ cwd: event.target.value });
-        }}
-      />
-    </>
-  );
-}
-
-/**
- * The agent the session starts under — `none`, or a name from the project's roster (P9-T1).
- *
- * Absent rather than disabled where there is nothing to choose, for `PresetForgetButton`'s reason.
- * A saved agent the roster no longer holds is still listed, marked, so the select shows what the
- * preset says; core refuses the press and the banner says why.
- */
-function PresetAgentSelect({ line, draft, onChange }: FieldProps): JSX.Element | undefined {
-  if (line.agentChoices.length === 0) return undefined;
-  return (
-    <select
-      className="preset-agent"
-      value={draft.agent}
-      aria-label="agent"
-      onChange={(event) => {
-        onChange({ agent: event.target.value });
-      }}
-    >
-      <option value="">agent — none</option>
-      {line.agentChoices.map((name) => (
-        <option key={name} value={name}>
-          {line.agentMissing && name === line.agent
-            ? `${name} (no longer in .claude/agents)`
-            : name}
-        </option>
-      ))}
-    </select>
   );
 }
 
@@ -276,7 +196,7 @@ function PresetSaveRow(props: PresetEditorProps & { readonly draft: EditorDraft 
  * `ProjectsPanel`'s reason — it removes a button and brings the built-in back, so the act narrows.
  */
 function PresetForgetButton(props: PresetEditorProps): JSX.Element | undefined {
-  if (props.line.builtIn) return undefined;
+  if (props.line.builtIn || props.line.origin !== undefined) return undefined;
   return (
     <button
       type="button"
