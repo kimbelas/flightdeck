@@ -101,6 +101,25 @@ async function countsChecks(page, report) {
     report.check(`the reading lists ${label}`, (await list.count()) === 1, text);
   }
 
+  // P7-T4, SPEC §6(11). By kind, with its fires, its sessions and its age — and the cron kept to
+  // the tooltip, because for a loop it is only the minute the next wake-up chose.
+  const scheduled = page.locator('[data-observed-counts="scheduled"] .observed-count');
+  const pill = ((await scheduled.allTextContents())[0] ?? '(none)').replaceAll(/\s+/gu, ' ');
+  const cron = (await scheduled.first().getAttribute('title')) ?? '';
+  report.check(
+    'scheduled tasks are listed by kind — the loop, its fires, sessions and last fire',
+    pill.includes('loop') &&
+      pill.includes('2') &&
+      pill.includes('1 session') &&
+      pill.includes('3h ago'),
+    pill,
+  );
+  report.check(
+    'and the last cron rides the tooltip, not the pill',
+    cron === 'last cron 27 10 * * *',
+    cron,
+  );
+
   const names = page.locator('[data-observed-counts="session names"]');
   const text = ((await names.allTextContents())[0] ?? '').replaceAll(/\s+/gu, ' ');
   // SPEC asks for "subagents" here and `agent-name` is the SESSION's name — the correction is

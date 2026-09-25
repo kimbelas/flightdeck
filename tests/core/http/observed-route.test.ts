@@ -31,6 +31,7 @@ function reading(path: string): ObservedBehaviour {
     medianPeakContextTokens: 42_000,
     compactions: 0,
     scheduledFires: 0,
+    schedules: [],
     unknownLines: 0,
   };
 }

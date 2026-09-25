@@ -110,6 +110,18 @@ export type TranscriptRecord =
       /** `system`/`scheduled_task_fire` — a loop or cron firing in this folder (SPEC §5.1(b)). */
       readonly kind: 'scheduled';
       readonly at: number | undefined;
+      /**
+       * `loop` is the only kind observed — P7-T4. `taskKind` since 2.1.26x, `cronKind` before it,
+       * so the older spelling is the fallback. `undefined` when neither is there.
+       */
+      readonly taskKind: string | undefined;
+      /**
+       * The five-field schedule it fired on, e.g. `56 9 * * *`, in LOCAL time. A `/loop` wake-up
+       * is a ONE-SHOT: each fire carries a new `taskId` and a cron for the next minute it chose,
+       * measured on seven consecutive fires of one session. Absent on the older shape.
+       */
+      readonly cron: string | undefined;
+      // Never the `prompt` — that is the owner's own words for the loop (SEC-DATA-1).
     };
 
 export interface TranscriptLine {
@@ -195,7 +207,12 @@ function parseSystem(fields: Readonly<Record<string, unknown>>): TranscriptRecor
     }
     // P3-T5. A loop or a cron firing here. Seven of them in this repository's own slug.
     case 'scheduled_task_fire':
-      return { kind: 'scheduled', at };
+      return {
+        kind: 'scheduled',
+        at,
+        taskKind: bounded(stringAt(fields, 'taskKind') ?? stringAt(fields, 'cronKind')),
+        cron: bounded(stringAt(fields, 'cron')),
+      };
     // A `system` record with no subtype at all; `isKnown` has already counted it as drift.
     case undefined:
     default:
@@ -333,6 +350,11 @@ function fileOf(path: string | undefined, at: number | undefined): TranscriptRec
 }
 
 /** As in statusline-report.ts: an annotated return keeps `any` from escaping `Object.entries`. */
+/** A vocabulary word or a schedule. One that arrived as a paragraph is not either. */
+function bounded(value: string | undefined): string | undefined {
+  return value === undefined || value === '' || value.length > 40 ? undefined : value;
+}
+
 function asRecord(value: unknown): Readonly<Record<string, unknown>> | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
   return Object.fromEntries(Object.entries(value));

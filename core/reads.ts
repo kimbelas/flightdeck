@@ -10,10 +10,12 @@
 // and two small reads per click is the right trade for not holding every session's job history in
 // memory (SessionDetailReader).
 import type { SubscriptionId } from '../contracts/session.ts';
+import { DaemonReader } from './application/daemon-reader.ts';
 import { PreviewReader } from './application/preview-reader.ts';
 import { SessionDetailReader } from './application/session-detail-reader.ts';
 import type { TranscriptReader } from './application/transcript-reader.ts';
 import type { VitalsRegistry } from './application/vitals-registry.ts';
+import { FsDaemonLogSource } from './adapters/node/fs-daemon-log-source.ts';
 import { FsJobFiles } from './adapters/node/fs-job-files.ts';
 import { FsRosterSource } from './adapters/node/fs-roster-source.ts';
 import { FsTranscriptFile } from './adapters/node/fs-transcript-file.ts';
@@ -89,6 +91,22 @@ export function buildPreviewReader(parts: PreviewParts): PreviewReader {
     policy: new ReadPolicy(Object.values(configDirs)),
     clock: parts.clock,
     logger: parts.logger,
+  });
+}
+
+/**
+ * What each subscription's background daemon is doing — P7-T4, SPEC §6(13).
+ *
+ * The third per-request reader, and the cheapest: the roster, the tail of `daemon.log` and a
+ * `kill(pid, 0)` per pid it names. Its own roster source for `buildPreviewReader`'s reason — the
+ * answer is only worth having FRESH.
+ */
+export function buildDaemonReader(parts: Pick<ReadParts, 'install' | 'clock'>): DaemonReader {
+  return new DaemonReader({
+    roster: new FsRosterSource(parts.install),
+    log: new FsDaemonLogSource(parts.install),
+    probe: new SignalProcessProbe(),
+    clock: parts.clock,
   });
 }
 

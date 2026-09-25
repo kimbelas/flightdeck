@@ -157,6 +157,7 @@ All mutating routes and `/pty` require `Authorization: Bearer <token>`. All rout
 | `POST /popout/:shortId` | detach any pane, then `wt.exe -w 0 nt --title <name> -d <cwd> powershell -NoExit -Command "<profileFn> attach <shortId>"` |
 | `POST /connect/:subscription?dryRun=1` | D13: compute/merge the hooks + statusLine blocks into `$CFG/settings.json` with backup |
 | `GET /doctor?subscription=` · `POST /update` · `POST /sessions/respawn` | The version chip's three verbs (P4-T5). `doctor` is a GET, reads, and writes no audit row; its output is **parsed against a closed key list**, because the raw text carries the binary's path and the account name in it (SEC-DATA-2, F.10.1). `update` is a POST because there is **no check-only form** of it (F.10.2). `respawn` takes one SHORT id or `{subscription, all: true}`, and answers the ids the CLI actually restarted — `--all` skips what has finished (F.10.4). |
+| `GET /daemon` | Each subscription's background daemon (P7-T4, D60): the supervisor's state — `running`, `stale` (the roster names a supervisor the log saw shut down or the probe cannot find, F.2.16) or `absent` — the roster's workers, and how each recent session ENDED (`stopped`, `finished`, or `retired` with the daemon's reason word), which `agents --json` cannot say (F.2.3). No parameters, no `cwd`, no prompt; read fresh per request, never polled. |
 | `GET /health` · `GET /version` | core liveness; Claude Code version per subscription; update available? |
 
 `app/api/*` in Next contains nothing but the rewrite; the UI never talks to `claude.exe` itself.

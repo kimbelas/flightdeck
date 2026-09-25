@@ -15,6 +15,7 @@ import type { JSX } from 'react';
 import type { SubscriptionId } from '../../contracts/session.ts';
 import { BrowserDeckApi } from './browser-deck-api.ts';
 import { ConnectPanel } from './connect-panel.tsx';
+import { DaemonPanel } from './daemon-panel.tsx';
 import type { DeckActions } from './deck-commands.ts';
 import type { DeckState } from './deck-state.ts';
 import type { DeckStore } from './deck-store.ts';
@@ -46,6 +47,8 @@ export function DeckInstall({
       onClose={actions.onCloseInstall}
     >
       <ConnectPanel api={CONNECT_API} />
+      {/* P7-T4. The same stateless client: both panels only ever ask core a question. */}
+      <DaemonPanel api={CONNECT_API} />
     </InstallPanel>
   );
 }

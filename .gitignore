@@ -4,6 +4,9 @@ coverage/
 dist/
 out/
 *.log
+# ...except the scrubbed daemon.log fixtures, which are a shape a parser reads (P7-T4, D60).
+# The raw captures stay ignored: `fixtures/raw/` is excluded as a directory below.
+!fixtures/daemon/*.log
 *.tsbuildinfo
 .env
 .env.*

@@ -1681,6 +1681,42 @@ button.chip-version {
   margin: 0;
 }
 
+/* ---- background daemons, inside the installation panel (P7-T4) ----
+   The stale headline is the one in `--bad`: it is the state where stop, rm and logs fail and say
+   "try again in a moment" (F.2.16). An idle-prompt retirement is `--warn` — an unanswered request,
+   not a failure. */
+.daemon {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+}
+
+.daemon-head {
+  margin: 0;
+}
+
+.daemon-ok {
+  color: var(--good);
+}
+
+.daemon-bad {
+  color: var(--bad);
+}
+
+.daemon-quiet {
+  color: var(--dim);
+}
+
+.daemon-list {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.daemon-attention {
+  color: var(--warn);
+}
+
 /* ---- Handing a session to another worktree (P6-T6) -------------------------
    Between the preview and the delete, inside the expanded row. It is NOT styled
    like `.row-delete`: nothing here destroys anything, and a second control in

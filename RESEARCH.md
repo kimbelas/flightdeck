@@ -3794,3 +3794,58 @@ shown. `flightdeck.cmd` next to them printed "already running" twice and opened 
 moved aside, the deck task wrote one line (`no production build at … Run flightdeck.cmd once`)
 and exited `1` without restarting. Not measured: an actual log off and log on, which would have
 ended the session doing the measuring. That is the owner's check.
+
+### G.57 What `daemon.log` actually says, and what a `/loop` fire actually is (P7-T4, 2026-09-25)
+
+Read off both config directories on this machine, read-only, before a line of the parser was
+written. Claude Code 2.1.260 → 2.1.282 across the two logs.
+
+| | size | lines | since | supervisor starts | shutdowns | retirements | `settled (done)` | `settled (killed)` |
+|---|---|---|---|---|---|---|---|---|
+| 365 | 13 384 B | 165 | 2026-09-11 | 16 | 14 (12 `idle_exit`, 2 `upgrade`) | 6 (3 `settled`, 3 `idle-prompt`) | 6 | 14 |
+| isg | 14 234 B | 176 | 2026-09-04 | 17 | 16 (14 `idle_exit`, 2 `upgrade`) | 7 (4 `settled`, 2 `idle-prompt`, 1 `empty-idle`) | 7 | 19 |
+
+- **Nothing rotates it.** Three weeks, one file each, about 80 bytes a line. The reader takes the
+  last 64 KiB anyway (`FsDaemonLogSource`), which is about 800 lines.
+- **Fourteen line templates cover every line of both files.** They are the scrubber's allowlist
+  (`scripts/capture-log.mjs`, D60). Six lines are ones RESEARCH.md had never quoted: the auth
+  refresh pair, `workers=<n>`, `bg adopt: adopted=… respawned=… dead=… [dead_epoch=…]`, the
+  post-takeover prewarm burst (with `, <n> refused` on 365), and `binary at <path> changed (mtime
+  changed) — self-restarting for upgrade`, which is the one that carries a path.
+- **Every `(done)` in both logs follows a retirement.** Not one background session on this machine
+  settled `(done)` on its own: each one ended by `claude stop` (`killed`) or by the idle timer. So
+  `finished` is a reason the parser supports and has never observed, and "a background session
+  ends when somebody stops it or the daemon retires it" is the honest summary of F.2.3.
+- **Two kinds of spawn were new:** `(fleet)` — five in each log, on 2.1.278 and later, which is a
+  session woken from FleetView or by `--resume` — beside B.3's `(shell)`, `(slash)` and `(spare)`.
+  A `(spare)` is killed by the daemon itself seconds later, so it is left out of the endings rather
+  than reported as a stop nobody made.
+- **Supervisors die without a shutdown line.** 365 has two starts with no shutdown after them —
+  the next start in each case reports `adopt: … dead=1`, which is what a reboot or a sleep looks
+  like from inside the log. So "a later start" counts as the earlier supervisor being gone
+  (`DaemonHistory.hasExited`), and the probe is never asked about a pid the log saw replaced.
+- **A refused start is not a supervisor.** isg, 2026-09-10 20:45:23: pid 23140 starts, pid 34948
+  starts 266 ms later, and 34948 writes `another daemon is already running (pid=23140 …)` and
+  leaves with no shutdown line. The shutdown two minutes later is 23140's. A fold that took "the
+  newest start" as the running supervisor pinned 23140's exit on 34948 and reported 23140 as
+  replaced — the first version of `DaemonHistory` did exactly that, and the fixture test found it.
+  This is F.2.16's own supervisor: the roster named 23140 for days after that shutdown.
+
+**The two rosters, read the same day.** isg's `daemon/roster.json` names `supervisorPid` 27708,
+no workers, written 2026-09-21 07:38:47; the log saw 27708 start at 07:38:31 and idle-exit at
+07:38:52. So it is `stale`, four days old, and the log is what says so without a probe. **365 has
+no `roster.json` at all** — nor `pipe.key` nor `pty-pids\` — after its last supervisor (2.1.282,
+pid 9700) idle-exited at 07:06:37 that morning, while isg's last (2.1.278) left all three behind.
+Whether 2.1.282 now removes the roster on a clean exit is NOT established: it would take a
+`--bg` launch on 365 to see, and that was not done here. `DaemonReader` handles both: no roster is
+`absent`, and a still-open start in the log is the only other way to be `running`.
+
+**`scheduled_task_fire`, measured.** 70 fires in 20 transcripts across both subscriptions, in two
+shapes. The older one (2.1.234, August; 9 of the 70) carries only `content` and `cronKind:
+"loop"`. The newer one (61 of the 70) adds `taskId`, `cron`, `prompt` and `taskKind`. **Each `/loop` wake-up is a
+one-shot**: seven consecutive fires of one isg session carried seven different `taskId`s, each with
+a cron naming the next minute it chose — `56 9 * * *`, `27 10 * * *`, `58 10 * * *` … — in local
+time, two hours ahead of the UTC timestamp. So a tally keyed on the task id would be a column of
+ones, and `ScheduleTally` counts per KIND. `prompt` is the owner's own words and never leaves the
+parser (SEC-DATA-1); the scrubber now lists it with the free-text keys and keeps `cron`,
+`taskKind` and `cronKind` readable.

@@ -23,6 +23,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { scrubLog } from './capture-log.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const RAW_ROOT = join(ROOT, 'fixtures', 'raw');
@@ -47,6 +48,12 @@ const VOCABULARY_KEYS = new Set([
   'connection',
   'user-agent',
   'host',
+  // `scheduled_task_fire` (P7-T4). `cron` is a five-field schedule — `27 11 * * *` survives the
+  // length rule by one character and `*/5 9-17 * * 1-5` would not, and a schedule is not identity.
+  // The two kinds are Claude Code's own closed words (`loop`).
+  'cron',
+  'taskKind',
+  'cronKind',
 ]);
 
 // Keys this script writes itself while curating a capture. They are documentation, not observed
@@ -182,6 +189,9 @@ const FREE_TEXT_KEYS = new Set([
   'gitBranch',
   'title',
   'text',
+  // `scheduled_task_fire.prompt` (P7-T4) — what a `/loop` or cron was told to do, which is the
+  // owner's own words and as identifying as `lastPrompt`.
+  'prompt',
 ]);
 
 // A session record — anything carrying a pid or a sessionId — has a user-chosen `name`, and that
@@ -460,7 +470,9 @@ function triage(files) {
     // `.txt` is a terminal frame (P5a-T4). The extension is the whole classification, and
     // `scrubFrame` is what makes that safe rather than a guess: a `.txt` with no escape sequence
     // in it fails the capture instead of being scrubbed by rules written for something else.
-    if (name.endsWith('.json') || name.endsWith('.jsonl') || name.endsWith('.txt')) {
+    // `.log` is a line log with a grammar (P7-T4, D60): `scrubLog` fails the capture on any line
+    // its templates do not describe, which is what makes classifying by extension safe here too.
+    if (['.json', '.jsonl', '.txt', '.log'].some((extension) => name.endsWith(extension))) {
       scrubbable.push(file);
     } else if (DEFERRED.has(name)) deferred.push(file);
     else unhandled.push(file);
@@ -477,6 +489,19 @@ function triage(files) {
  * is. Blank lines are dropped rather than carried: a real transcript ends with a newline, and a
  * fixture whose last line is empty asserts a trailing record that is not there.
  */
+/**
+ * The three rewrites a line log's slots get — `scripts/capture-log.mjs`.
+ *
+ * The instant and the path are the JSON rules' own, so a scrubbed log and a scrubbed transcript of
+ * the same afternoon agree about when it was and what a folder is called. The short id is a digest
+ * of itself, 8 hex characters like the original, so every line about one session still names one.
+ */
+const LOG_RULES = {
+  instant: fakeInstant,
+  path: fakePath,
+  id: (shortId) => digest(`short-id:${shortId}`, 8),
+};
+
 /** Scrubs one record and refuses to hand back anything still keyed by data. */
 function scrubChecked(record) {
   assertNoDataKeys(record, '$', undefined);
@@ -488,6 +513,7 @@ function render(raw, name) {
   // comes back exactly as long as it went in, with no trailing newline added. One appended here
   // would be one row of scroll the real `claude logs` never sent.
   if (name.endsWith('.txt')) return scrubFrame(raw);
+  if (name.endsWith('.log')) return scrubLog(raw, LOG_RULES);
   if (!name.endsWith('.jsonl')) {
     return `${JSON.stringify(scrubChecked(JSON.parse(raw)), null, 2)}\n`;
   }

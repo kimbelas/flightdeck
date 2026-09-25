@@ -29,6 +29,24 @@ export interface ObservedCount {
   readonly count: number;
 }
 
+/**
+ * One KIND of scheduled task and how often it fired here — P7-T4, SPEC §6(11).
+ *
+ * Per kind rather than per task because a `/loop` wake-up is a one-shot with a fresh `taskId` every
+ * time (core/domain/schedule-tally.ts), so a per-task list would be a column of ones.
+ */
+export interface ObservedSchedule {
+  /** `loop`, or `scheduled` for the older shape that named no kind. */
+  readonly kind: string;
+  readonly fires: number;
+  /** How many of the folder's sessions it fired in. */
+  readonly sessions: number;
+  /** The newest fire, epoch ms, or `undefined` when none carried a timestamp. */
+  readonly lastAt: number | undefined;
+  /** The cron the newest fire ran on, in the machine's local time, when it said. */
+  readonly lastCron: string | undefined;
+}
+
 /** One subscription's share of the work in a folder. */
 export interface ObservedShare {
   readonly subscription: SubscriptionId;
@@ -87,6 +105,8 @@ export interface ObservedBehaviour {
   readonly compactions: number;
   /** `scheduled_task_fire` — loops and crons that fired in this folder. */
   readonly scheduledFires: number;
+  /** Those fires, by kind — what the count above is made of (P7-T4). */
+  readonly schedules: readonly ObservedSchedule[];
   /**
    * Lines whose type this build has never seen — SPEC §8 R2's drift alarm, over a whole folder.
    *
@@ -121,8 +141,32 @@ export function parseObservedBehaviour(value: unknown): ObservedBehaviour | unde
     medianPeakContextTokens: whole(fields['medianPeakContextTokens']),
     compactions: whole(fields['compactions']),
     scheduledFires: whole(fields['scheduledFires']),
+    schedules: scheduleList(fields['schedules']),
     unknownLines: whole(fields['unknownLines']),
   };
+}
+
+function scheduleList(value: unknown): readonly ObservedSchedule[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .flatMap((entry: unknown) => {
+      const fields = asRecord(entry);
+      const kind = fields?.['kind'];
+      if (fields === undefined || typeof kind !== 'string' || kind === '') return [];
+      const lastAt = fields['lastAt'];
+      const lastCron = fields['lastCron'];
+      return [
+        {
+          kind: kind.slice(0, MAX_NAME_CHARS),
+          fires: whole(fields['fires']),
+          sessions: whole(fields['sessions']),
+          lastAt: typeof lastAt === 'number' && Number.isFinite(lastAt) ? lastAt : undefined,
+          lastCron:
+            typeof lastCron === 'string' && lastCron !== '' ? lastCron.slice(0, 40) : undefined,
+        },
+      ];
+    })
+    .slice(0, MAX_OBSERVED_ENTRIES);
 }
 
 function countList(value: unknown): readonly ObservedCount[] {
