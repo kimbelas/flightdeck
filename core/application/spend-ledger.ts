@@ -23,7 +23,8 @@
 // trailing partial line so the line is read whole next time, and so does this — unless the partial
 // line is already longer than `MAX_LINE_CHARS`, which a 1.3 KB `cost-state` never is. Without that,
 // the 3.2 MB single line P1-T7 found would pin the cursor to its first byte forever: every slice
-// would begin inside it and end inside it, and the file would never be read past it.
+// would begin inside it and end inside it, and the file would never be read past it. The indexer
+// had exactly that bug until it took the same rule.
 import { parseTranscriptRecord } from '../../contracts/transcript-record.ts';
 import type { SpendCoverage } from '../../contracts/spend-summary.ts';
 import type { ReadPolicy } from '../domain/read-policy.ts';

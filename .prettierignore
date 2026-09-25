@@ -1,4 +1,6 @@
 node_modules
+# Agents' worktrees: whole checkouts, mid-task, that are not this tree.
+.claude/worktrees
 .next
 coverage
 dist

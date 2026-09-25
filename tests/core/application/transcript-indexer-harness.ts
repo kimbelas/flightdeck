@@ -53,9 +53,15 @@ class FakeTranscriptFile implements TranscriptFile {
   private content = '';
   private identity = 'dev:1:2026';
   private unreadable = false;
+  private cap = Number.POSITIVE_INFINITY;
 
   public holds(content: string): void {
     this.content = content;
+  }
+
+  /** `FsTranscriptFile`'s read cap, in characters — the tests that use it write ASCII. */
+  public readsAtMost(characters: number): void {
+    this.cap = characters;
   }
 
   /** A fresh file at the same path — what `--resume` produces (`transcript-file.ts`). */
@@ -82,7 +88,7 @@ class FakeTranscriptFile implements TranscriptFile {
     }
     const restarted = cursor.identity !== '' && cursor.identity !== this.identity;
     const from = restarted ? 0 : cursor.offset;
-    const text = this.content.slice(from);
+    const text = this.content.slice(from, from + this.cap);
     return Promise.resolve({
       text,
       from,
