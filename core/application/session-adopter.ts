@@ -112,6 +112,28 @@ export class SessionAdopter {
   }
 
   /**
+   * Adopts `sessionId` in `cwd`, which the CALLER has already read off the machine — P6-T8.
+   *
+   * `SessionTakeover`'s way in. A take-over cannot go through `adopt`: at the moment it spawns,
+   * the reconciler's row still says the session is live — it was, a second ago, and no sweep has
+   * run since the take-over ended it — so `adopt` would refuse it as `still_running`. The folder
+   * is the take-over's own fresh reading of the listing, which is the same source this class's
+   * row came from, a sweep sooner. Never a folder from a request (SEC-FS-1).
+   *
+   * The two checks that protect the argv are repeated rather than trusted, because they are what
+   * stops this from starting a copy (F.2.7).
+   */
+  public async adoptAt(request: AdoptRequest, cwd: string): Promise<Result<string, AdoptFailure>> {
+    const { executable } = this.parts.install;
+    if (executable === undefined) return this.refuse(request, 'no_claude', 'claude.exe not found');
+    if (!isFullSessionId(request.sessionId)) {
+      return this.refuse(request, 'bad_session', 'not a full lowercase session uuid');
+    }
+    if (cwd === '') return this.refuse(request, 'not_adoptable', 'no folder known');
+    return this.wake(request, executable, cwd);
+  }
+
+  /**
    * The spawn.
    *
    * Split from `adopt` so the refusals above read as one list: everything before this point

@@ -19,6 +19,7 @@ import { ConnectPlanRoute, ConnectWriteRoute } from './http/connect-routes.ts';
 import { DoctorRoute, RespawnRoute, UpdateRoute } from './http/install-routes.ts';
 import { GroupLaunchRoute, type GroupStarter } from './http/group-route.ts';
 import { AdoptRoute, type SessionAdopterPort } from './http/adopt-route.ts';
+import { TakeoverRoute, type SessionTakeoverPort } from './http/takeover-route.ts';
 import { SearchRoute, type TranscriptSearch } from './http/search-route.ts';
 import { OtlpLogsRoute, OtlpMetricsRoute, type OtlpRouteParts } from './http/otlp-routes.ts';
 import { TelemetryRoute } from './http/telemetry-route.ts';
@@ -107,6 +108,14 @@ export interface RouterParts {
    * doing both would hide exactly that.
    */
   readonly adopter: SessionAdopterPort;
+  /**
+   * Ends a live, idle interactive session's terminal and adopts it — P6-T8, D63.
+   *
+   * Its own field beside `adopter` rather than a flag on it: this is the only verb in core that
+   * ends a process core did not start (SEC-PROC-5's one exception), and a field is where a reader
+   * of this interface would look for that.
+   */
+  readonly takeover: SessionTakeoverPort;
   /** The one verb that destroys something — its own route, and its own confirm in the deck (P4-T2). */
   readonly remover: SessionRemover;
   /** One headless question at a time, streamed onto `/stream` (P4-T4, D47, D48). */
@@ -241,6 +250,8 @@ function sessionRoutes(parts: RouterParts): readonly Route[] {
     new ResumeRoute(parts.resumer),
     // What `resume` is for a session that was never a `--bg` job — P6-T7, SPEC §4.3.
     new AdoptRoute(parts.adopter),
+    // The same adoption for a session whose terminal is still open: it ends that terminal first.
+    new TakeoverRoute(parts.takeover),
     // The only verb in the table that ADDS a session without being able to lose one — P6-T6.
     new HandoffRoute(parts.forker),
     new StopRoute(parts.stopper),

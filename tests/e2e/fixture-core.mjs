@@ -253,6 +253,10 @@ export class FixtureCore {
     this.adoptions = [];
     /** A code to refuse the NEXT adoption with, or `undefined` to accept it. `refuseHandoff`'s twin. */
     this.refuseAdopt = undefined;
+    /** Every take-over core was asked for — P6-T8. The whole body, so a check can see no pid in it. */
+    this.takeovers = [];
+    /** A code to refuse the NEXT take-over with, or `undefined` to accept it. */
+    this.refuseTakeover = undefined;
     /**
      * A code to refuse the NEXT handoff with, or `undefined` to accept it.
      *
@@ -481,6 +485,9 @@ export class FixtureCore {
     }
     if (request.method === 'POST' && path === '/sessions/adopt') {
       return this.adopt(await body(request));
+    }
+    if (request.method === 'POST' && path === '/sessions/takeover') {
+      return this.takeOver(await body(request));
     }
     if (request.method === 'POST' && path === '/run') return this.startAsk(await body(request));
     if (request.method === 'GET' && path === '/doctor') return this.doctor(url);
@@ -917,6 +924,28 @@ export class FixtureCore {
     this.refuseAdopt = undefined;
     if (refusal !== undefined) return [refusal === 'no_claude' ? 503 : 400, { error: refusal }];
     return [200, { sessionId }];
+  }
+
+  /**
+   * `POST /sessions/takeover` — closing a live terminal and adopting its session (P6-T8, D63).
+   *
+   * **Nothing is ended here.** Which process a real core ends, and that every refusal comes before
+   * it, is `session-takeover.test.ts`. What this side of the wire can see is what the row SENT: a
+   * ref and no pid and no folder, because core reads both off the machine at the press. The whole
+   * body is recorded so a check can assert the absence, as `adopt` does.
+   */
+  takeOver(raw) {
+    const fields = parseJson(raw) ?? {};
+    const { sessionId, subscription } = fields;
+    const known = subscription === '365' || subscription === 'isg';
+    const full = typeof sessionId === 'string' && FULL_SESSION_ID.test(sessionId);
+    if (!known || !full) return [400, { error: 'bad_session' }];
+    this.takeovers.push(fields);
+    const refusal = this.refuseTakeover;
+    this.refuseTakeover = undefined;
+    if (refusal === undefined) return [200, { sessionId }];
+    const status = refusal === 'no_claude' ? 503 : refusal === 'busy' ? 409 : 400;
+    return [status, { error: refusal }];
   }
 
   /**

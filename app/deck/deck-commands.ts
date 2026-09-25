@@ -101,6 +101,14 @@ export interface DeckActions {
    */
   readonly onAdopt: (row: SessionRowViewModel) => void;
   /**
+   * Moving a LIVE interactive session into Flightdeck — P6-T8, D63, and NOT a palette entry.
+   *
+   * For `onAdopt`'s reason and a stronger one: it closes a terminal window, and the row arms a
+   * second button that names the session before it is sent (`RowTakeover`). A palette match would
+   * skip exactly that.
+   */
+  readonly onTakeOver: (row: SessionRowViewModel) => void;
+  /**
    * Hands a session to Windows Terminal — P6-T2, and NOT a palette entry.
    *
    * It is reached from the pane, because what it does is about the pane: it detaches this

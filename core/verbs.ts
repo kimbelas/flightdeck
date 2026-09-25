@@ -47,6 +47,10 @@ import { SessionPopper, type PaneHolders } from './application/session-popper.ts
 import { GroupLauncher } from './application/group-launcher.ts';
 import { type PaneRegistry } from './application/pane-registry.ts';
 import { SessionAdopter, type SessionDirectory } from './application/session-adopter.ts';
+import { SessionTakeover } from './application/session-takeover.ts';
+import { SignalProcessProbe } from './adapters/node/signal-process-probe.ts';
+import { TaskkillProcessEnder } from './adapters/windows/taskkill-process-ender.ts';
+import type { LiveSessionLookup } from './ports/live-session-lookup.ts';
 import { SessionHandoff } from './application/session-handoff.ts';
 import { type ExecFileProcessRunner } from './adapters/claude-cli/execfile-process-runner.ts';
 import type { ProjectSlice } from './projects.ts';
@@ -59,13 +63,12 @@ import { WindowsTerminalCommands } from './adapters/windows/windows-terminal-com
  * `ClaudeInstall` already carries about the npm shim.
  */
 function powerShellPath(): string {
-  return join(
-    process.env['SystemRoot'] ?? 'C:\\Windows',
-    'System32',
-    'WindowsPowerShell',
-    'v1.0',
-    'powershell.exe',
-  );
+  return systemTool('WindowsPowerShell', 'v1.0', 'powershell.exe');
+}
+
+/** A tool under `%SystemRoot%\System32`, by absolute path for `powerShellPath`'s reason. */
+function systemTool(...segments: readonly string[]): string {
+  return join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32', ...segments);
 }
 
 export function sessionVerbs(
@@ -169,7 +172,36 @@ export interface SessionSliceParts {
    * it is the `SessionSource` — the thing that sweeps rather than the thing that remembers.
    */
   readonly directory: SessionDirectory;
+  /**
+   * The listing, asked about one session at the moment of a take-over — P6-T8.
+   *
+   * The same `ClaudeCliSessionSource` the reconciler sweeps with, narrowed to the one method that
+   * reads a pid: the pid a take-over ends is read fresh, never remembered (`LiveSessionLookup`).
+   */
+  readonly sessions: LiveSessionLookup;
   readonly logger: Logger;
+}
+
+/**
+ * Moving a live interactive session into Flightdeck — P6-T8, D63.
+ *
+ * Its own builder for `buildPopper`'s reason: it needs something the other verbs do not — a way to
+ * end a process, which is SEC-PROC-5's one exception and should be findable by name.
+ */
+function buildTakeover(
+  parts: SessionVerbParts & { readonly lookup: LiveSessionLookup },
+  adopter: SessionAdopter,
+): SessionTakeover {
+  return new SessionTakeover({
+    ...parts,
+    ender: new TaskkillProcessEnder({
+      taskkill: systemTool('taskkill.exe'),
+      runner: parts.runner,
+      probe: new SignalProcessProbe(),
+      pause: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    }),
+    adopter,
+  });
 }
 
 export function sessionSlice(
@@ -187,10 +219,12 @@ export function sessionSlice(
   | 'groups'
   | 'forker'
   | 'adopter'
+  | 'takeover'
 > {
   const { install, logger } = parts;
   const sessionParts = { install, runner: parts.runner, audit: parts.audit, logger };
   const verbs = sessionVerbs(sessionParts, parts.projects.roster);
+  const adopter = new SessionAdopter({ ...sessionParts, sessions: parts.directory });
   return {
     ...verbs,
     popper: buildPopper({ ...sessionParts, panes }),
@@ -199,7 +233,9 @@ export function sessionSlice(
     forker: new SessionHandoff({ ...sessionParts, registry: parts.projects.registry }),
     // P6-T7. The reconciler, because an adoption runs in the folder the terminal was in and core
     // is the only one that knows it — the browser sends a ref and no path (SEC-FS-1).
-    adopter: new SessionAdopter({ ...sessionParts, sessions: parts.directory }),
+    adopter,
+    // P6-T8, D63. The same adopter, so a take-over's adoption is the one P6-T7 measured.
+    takeover: buildTakeover({ ...sessionParts, lookup: parts.sessions }, adopter),
     groups: new GroupLauncher({
       presets: parts.projects.presets,
       launcher: verbs.launcher,

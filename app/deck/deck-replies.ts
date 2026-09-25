@@ -10,6 +10,7 @@
 // claude.exe. That is the operator's to fix and is the one code worth repeating verbatim.
 import {
   parseAdoptFailure,
+  parseTakeoverFailure,
   parseLaunchAccepted,
   parseLaunchFailure,
   parseRemoveFailure,
@@ -104,6 +105,34 @@ export function whyNotAdopted(reply: JsonReply | undefined): string {
     return 'Core no longer knows where that session was running, so it cannot be adopted.';
   }
   if (failure !== undefined) return 'Core could not adopt that session.';
+  return describeStatus(reply.status);
+}
+
+/**
+ * Why a live session would not be moved here — P6-T8, D63.
+ *
+ * `busy` first, because it is the common one and not a failure: the session started a turn between
+ * the row being drawn and the press. Every refusal happened before core ended anything, which is
+ * why the sentences say the terminal is untouched — that is the question somebody has after a
+ * refusal on this button. `adopt_failed` is the one that comes after: the terminal is gone and the
+ * row will offer `adopt` as the retry.
+ */
+export function whyNotTakenOver(reply: JsonReply | undefined): string {
+  if (reply === undefined) return UNREACHABLE;
+  const failure = parseTakeoverFailure(bodyError(reply.body));
+  if (failure === 'busy')
+    return 'That session started working. Its terminal was left alone — try again when the turn ends.';
+  if (failure === 'no_claude') {
+    return 'Core is running but cannot find claude.exe — run `npm run doctor`.';
+  }
+  if (failure === 'not_running') return 'That session has already ended. Adopt it instead.';
+  if (failure === 'end_failed')
+    return 'Windows would not close that terminal’s Claude. Nothing was moved.';
+  if (failure === 'adopt_failed') {
+    return 'Its terminal closed, but the session did not come back here. Adopt it from its row to retry.';
+  }
+  if (failure !== undefined)
+    return 'Core would not move that session. Its terminal was left alone.';
   return describeStatus(reply.status);
 }
 

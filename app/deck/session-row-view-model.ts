@@ -148,6 +148,44 @@ export class SessionRowViewModel {
   }
 
   /**
+   * Whether this row offers to be MOVED into Flightdeck — P6-T8, D63.
+   *
+   * A LIVE interactive session, which is exactly the row `canAdopt` does not cover: between the
+   * two, every interactive row has a way into a pane — close the terminal and adopt it, or press
+   * this and have core close it. Offered whether or not it is idle; `takeOverReady` is the half
+   * that decides whether it can be pressed yet.
+   */
+  public get canTakeOver(): boolean {
+    return this.row.kind === 'interactive' && this.row.live;
+  }
+
+  /**
+   * Whether the session is idle, which is the only state core will end its terminal in.
+   *
+   * `idle` and nothing else, as core decides it (`SessionTakeover`): a busy session is mid-turn,
+   * and a missing status is not evidence that it is not.
+   */
+  public get takeOverReady(): boolean {
+    return this.canTakeOver && this.row.status === 'idle';
+  }
+
+  /** What the button does, or what it is waiting for — its title. */
+  public get takeOverHint(): string {
+    if (!this.takeOverReady) return 'Working — it can be moved here once this turn finishes.';
+    return `Close this session in its terminal and continue it here, in ${this.project}.`;
+  }
+
+  /**
+   * The armed sentence: what closes, and what the session is called afterwards.
+   *
+   * The rename is `adoptHint`'s — a take-over ends in the same adoption, and `-n` would fork
+   * (RESEARCH.md G.55).
+   */
+  public get takeOverWarning(): string {
+    return `This closes Claude in the terminal window it is running in. The conversation continues here as a background session, renamed ${this.row.shortId}.`;
+  }
+
+  /**
    * Whether this row can be RESPAWNED — P5a-T6.
    *
    * Any background session, running or not, which makes it wider than `canStop` on purpose:

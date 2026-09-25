@@ -2000,3 +2000,31 @@ button.chip-version {
   color: var(--bad);
   font-size: 11px;
 }
+
+/* ---- Moving a live interactive session here (P6-T8) ------------------------
+   Arms like `.row-delete`, in the warning colour rather than the danger one: the
+   conversation is not lost, but the terminal window it was running in closes. */
+.row-takeover {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  flex-basis: 100%;
+}
+
+.row-takeover-warning {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--warn);
+  font-size: 11px;
+}
+
+button.warn {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+button.warn:hover:not(:disabled) {
+  background: var(--warn);
+  color: var(--bg);
+}
