@@ -200,7 +200,15 @@ describe('ObservedTally', () => {
 });
 
 function cost(costUsd: number): TranscriptRecord {
-  return { kind: 'cost', costUsd, linesAdded: 0, linesRemoved: 0, spend: [], at: NOW };
+  return {
+    kind: 'cost',
+    costUsd,
+    linesAdded: 0,
+    linesRemoved: 0,
+    spend: [],
+    at: NOW,
+    startedAt: NOW,
+  };
 }
 
 function context(contextTokens: number): TranscriptRecord {

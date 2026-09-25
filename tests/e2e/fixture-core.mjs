@@ -42,6 +42,10 @@ import { ConnectPlanner } from '../../core/application/connect-planner.ts';
 import { StatuslinePatcher } from '../../core/adapters/statusline/statusline-patcher.ts';
 import { PresetCatalogue } from '../../core/domain/preset-catalogue.ts';
 import { ConfigHistorian } from '../../core/application/config-historian.ts';
+import { SpendReport } from '../../core/application/spend-report.ts';
+import { NOTHING_SPENT } from '../../core/domain/spend-fold.ts';
+import { weekStartOf } from '../../contracts/spend-summary.ts';
+import { FakeSpendStore } from '../fakes/fake-spend-store.ts';
 import { FakeStore } from '../fakes/fake-store.ts';
 import { fixtureDaemonReader } from './smoke/daemon-fixture.mjs';
 import { FixtureSearch } from './fixture-search.mjs';
@@ -57,7 +61,12 @@ import {
   PROFILE_FUNCTIONS,
 } from '../../contracts/launch-preset.ts';
 import { MAX_GROUP_LAUNCH, presetGroups } from '../../contracts/preset-group.ts';
-import { parseProjectPathBody, projectKey, projectName } from '../../contracts/project.ts';
+import {
+  parseProjectPathBody,
+  projectKey,
+  projectName,
+  projectSlug,
+} from '../../contracts/project.ts';
 import { parseWorkflowMap } from '../../contracts/workflow-map.ts';
 import { ASK_MAX_BUDGET_USD } from '../../contracts/ask-run.ts';
 import { SUBSCRIPTION_IDS } from '../../contracts/session.ts';
@@ -259,6 +268,16 @@ export class FixtureCore {
     this.groupPresses = [];
     /** Held while a press is 'in flight', so a smoke check can reach the 409 — P6-T4. */
     this.groupBusy = false;
+    /**
+     * The cost summary — P7-T3 — over the REAL `SpendReport` and an in-memory ledger store.
+     *
+     * The historian's reason: what the smoke checks is that the panel draws what core's own
+     * pivot produces, so the weeks, the per-project sessions and the cap come out of the class
+     * core runs rather than out of a hand-written reply that could agree with the panel by luck.
+     */
+    this.spend = spendReport();
+    /** While true, `GET /analytics/spend` answers 503 — the panel's "did not answer" path. */
+    this.spendDown = false;
     /** Every request core answered, so a check can ask what the deck actually sent. */
     this.requests = [];
     /** The bodies of every `POST /sessions`. The launch form's real destination. */
@@ -500,6 +519,9 @@ export class FixtureCore {
     }
     if (request.method === 'GET' && path === '/projects/observed') {
       return this.observed(url.searchParams.get('path'));
+    }
+    if (request.method === 'GET' && path === '/analytics/spend') {
+      return this.spendDown ? [503, { error: 'unavailable' }] : [200, this.spend.summary()];
     }
     if (request.method === 'GET' && path === '/projects/presets') {
       return [200, { presets: this.presetList() }];
@@ -1557,6 +1579,57 @@ function observedBehaviour(project) {
     ],
     unknownLines: 5,
   };
+}
+
+/** The folder `projectViewChecks` imports, whose spend the panel should name — P7-T3. */
+const SPEND_LEDGER = String.raw`C:\Users\owner\Documents\ledger`;
+
+/**
+ * Four weeks of spend across both accounts — P7-T3.
+ *
+ * Shaped so every sentence the panel has is reachable: two sessions of `ledger` on 365 this week
+ * and one on isg last week (so the folder's session count is a DISTINCT three, not a sum of
+ * weeks), a folder nobody imported (drawn as its slug), a week three back with the only 365
+ * spend in it, and a ledger still behind (the "still reading" line).
+ *
+ * Totals the checks read: 365 $13.65, isg $23.10, $36.75 in all; this week $15.50 over three
+ * sessions; `ledger` $32.40 over three sessions, `Desktop` $4.35 over two.
+ */
+function spendReport() {
+  const store = new FakeSpendStore();
+  const now = Date.now();
+  const week = (back) => {
+    const day = new Date(weekStartOf(now));
+    day.setDate(day.getDate() - 7 * back);
+    return day.getTime();
+  };
+  const ledger = projectSlug(SPEND_LEDGER);
+  const desktop = 'C--Users-owner-Desktop';
+  const spent = [
+    ['a', '365', ledger, week(0), 8],
+    ['b', '365', ledger, week(0), 4.4],
+    ['c', 'isg', desktop, week(0), 3.1],
+    ['d', 'isg', ledger, week(1), 20],
+    ['e', '365', desktop, week(3), 1.25],
+  ];
+  for (const [path, subscription, projectKey, weekStart, costUsd] of spent) {
+    store.recordSpend({
+      path,
+      subscription,
+      sessionId: path,
+      projectKey,
+      cursor: { offset: 1, identity: 'fixture' },
+      run: { ...NOTHING_SPENT, startedAt: undefined },
+      weeks: [{ ...NOTHING_SPENT, weekStart, costUsd, linesAdded: 12, linesRemoved: 3 }],
+      restarted: false,
+      at: now,
+    });
+  }
+  return new SpendReport({
+    store,
+    ledger: { progress: () => ({ transcripts: 41, behind: 3, passes: 2 }) },
+    clock: { now: () => new Date() },
+  });
 }
 
 function countChecks(fixture) {

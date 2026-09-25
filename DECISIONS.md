@@ -1885,7 +1885,7 @@ real name would stop the capture rather than publish it.
 **The second half is about trust, and it is what the verdict of the panel rests on.** Three
 witnesses answer "is there a daemon", and each is wrong in a known way. The roster is a cache the
 supervisor stops writing when it exits — both rosters on this machine named dead supervisors when
-P5a-T4 looked, and isg's still does (G.57). The process probe answers "does a process with this pid
+P5a-T4 looked, and isg's still does (G.58). The process probe answers "does a process with this pid
 exist", which a reissued pid answers yes. The log records what HAPPENED — every start with its pid,
 every shutdown with its cause — and is never stale about the past. So `DaemonReader` trusts them in
 that order: the log's "that supervisor shut down" (or "was replaced by a later start") makes the
@@ -1900,3 +1900,41 @@ background sessions and not a month. And one gap is deliberately left: the rows 
 raises the "finished" toast D58 described. The endings are on the panel, where they can be read;
 putting them on the row is a change to the reconciler's sweep and is left for a task that owns it.
 
+## D61 — spend is an increment per run, read by a ledger with its own cursors (decided 2026-09-25, P7-T3)
+
+P7's goal ends *"cost visible per project, subscription and week"*. Two things already showed a
+cost — the header's `spendUsd` (today, sessions that reported since midnight) and the observed
+reading (one folder, ever, behind a button) — and neither can say what last week cost. Three
+decisions made that possible; G.59 has the numbers behind them.
+
+**The unit is the run, not the transcript.** A `cost-state` line's totals count from one claude
+process's `startTime`; a session resumed into the same file starts again near zero at a new
+`startTime` ($85.69 → $8.23, measured). So a week's spend is the sum of INCREMENTS — each reading
+minus the previous one in the same run, or the whole reading when it starts a new run
+(`core/domain/spend-fold.ts`). The last total loses the first run, the maximum loses the smaller
+one, and a sum of lines counts twice the 36 that repeat the total before them. The increments add up
+to Claude Code's own totals, so D5 holds: nothing is multiplied by a rate. The price is that a run
+lands in the week it ENDED — Claude Code writes `cost-state` at exit, not per turn (283 of 679 lines
+are a file's last) — so a session running now is the header's figure until it exits, and the panel
+says so.
+
+**A ledger with its own cursors, not a second use of the search index's.** `SpendLedger` walks the
+same catalogue as `TranscriptIndexer` and keeps a cursor per transcript in migration 9's
+`spend_cursors`, beside the run the cursor stopped inside. Sharing `transcript_cursors` would have
+been one read instead of two, but the index has been advancing them since P7-T1 past every
+`cost-state` it did not keep, and recovering the money would have meant resetting a four-hour index.
+A second cursor is a row per file; the second read is cheap because only lines holding the token
+`"cost-state"` are parsed (679 of half a million), so the budget is 128 slices a pass rather than 32,
+and a pass that is still behind schedules the next in fifteen seconds rather than five minutes. The
+weekly rows outlive the transcripts — `cleanupPeriodDays` deletes those after thirty days, so the
+first boot sees five weeks and every week after that is kept (D9).
+
+**Core does not name a folder; the deck does.** A row is keyed by the slug a transcript sits in. The
+deck matches slugs to imported folders with `projectSlug`, now in `contracts/`, and shows any other
+slug as itself: "which folders are imported" is the registry's answer, and a name resolved in core
+would be a second copy of it. `projectSlug` also learned that a dot becomes `-` (G.59), which is
+what makes a worktree under `.claude\worktrees` match its project.
+
+**Not done, deliberately.** No per-model split (the tokens are summed across models; `modelUsage` is
+there when a panel wants it), no pricing for `hasUnknownModelCost` lines (four on this machine, all
+isg — D5's table is for sanity checks), and no poll: the panel reads when opened and on refresh.

@@ -44,6 +44,7 @@ import {
   toSnapshot,
 } from './rows.ts';
 import { migrate, versionOf, PRAGMAS } from './schema.ts';
+import { SqliteSpendLedger } from './sqlite-spend-ledger.ts';
 import { SqliteTranscriptIndex } from './sqlite-transcript-index.ts';
 import {
   prepareConfigStatements,
@@ -72,6 +73,13 @@ export interface TruncatedPayload {
 }
 
 export class SqliteStore implements Store {
+  /**
+   * The spend ledger's tables — P7-T3, behind a port of their own (`SpendStore`).
+   *
+   * Exposed rather than delegated, unlike the search index: `Store` does not carry these methods,
+   * so there is nothing to forward, and the ledger and its report are handed this directly.
+   */
+  public readonly spend: SqliteSpendLedger;
   private readonly db: DatabaseSync;
   private readonly insertEvent: StatementSync;
   private readonly selectSince: StatementSync;
@@ -146,6 +154,7 @@ export class SqliteStore implements Store {
     this.configRows = prepareConfigStatements(this.db);
     this.muteRows = prepareMuteStatements(this.db);
     this.index = new SqliteTranscriptIndex(this.db);
+    this.spend = new SqliteSpendLedger(this.db);
   }
 
   /** The schema version this file is at. `flightdeck-core status` prints it (P1-T12). */

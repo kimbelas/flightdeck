@@ -19,7 +19,13 @@ import { BrowserStreamTransport } from './browser-stream-transport.ts';
 import { CommandPalette } from './command-palette.tsx';
 import { DeckBody } from './deck-body.tsx';
 import { installActions } from './deck-install.tsx';
-import { askActions, groupActions, lifecycleActions, projectActions } from './deck-actions.ts';
+import {
+  askActions,
+  groupActions,
+  lifecycleActions,
+  projectActions,
+  spendActions,
+} from './deck-actions.ts';
 import { DeckTop, projectTargets } from './deck-top.tsx';
 import { groupTargets } from './group-targets.ts';
 import { presetTargets, ticketTarget, type PresetSources } from './preset-targets.ts';
@@ -281,6 +287,7 @@ function useDeckActions(
     ...lifecycleActions(store),
     ...groupActions(store),
     ...projectActions(store),
+    ...spendActions(store),
     ...askActions(store),
     ...installActions(store, openInstall),
   };

@@ -123,6 +123,15 @@ describe('the traps the lean/rich pairs exist to pin', () => {
     expect(Math.max(...spends)).toBeGreaterThan(0);
   });
 
+  // P7-T3. The run a total is cumulative over — a resumed session starts a new one in the same file.
+  it('reads the run each cost-state total belongs to off startTime', () => {
+    const starts = kindsOf('cost').map((record) =>
+      record.kind === 'cost' ? record.startedAt : undefined,
+    );
+
+    expect(starts).toEqual([1789284209990, 1788420193895]);
+  });
+
   it('reads cost per model off modelUsage, whose KEYS are the model ids', () => {
     const rich = kindsOf('cost').find((record) => record.kind === 'cost' && record.spend.length > 0);
 

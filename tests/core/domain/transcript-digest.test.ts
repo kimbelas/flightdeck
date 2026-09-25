@@ -105,6 +105,7 @@ describe('TranscriptDigest', () => {
         },
       ],
       at: 900,
+      startedAt: 100,
     });
 
     expect(digest.spend?.costUsd).toBe(31.16);
@@ -140,6 +141,7 @@ describe('TranscriptDigest — the tokens sparkline (P2-T4)', () => {
         },
       ],
       at,
+      startedAt: undefined,
     };
   }
 

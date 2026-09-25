@@ -275,6 +275,51 @@ export const MIGRATIONS: readonly string[] = [
 
   DELETE FROM transcript_cursors;
   `,
+  // 10 — the spend ledger (P7-T3): where it got to in each transcript, and what each week gained.
+  //
+  // **Its own cursor, not `transcript_cursors`.** The search index has been advancing those since
+  // P7-T1, past every `cost-state` line it read and did not keep; reusing them would have meant
+  // resetting the index to recover the money. A second cursor per file costs a row.
+  //
+  // **The run sits beside the cursor** because a `cost-state` total is cumulative over one claude
+  // process (core/domain/spend-fold.ts): the next slice's increment is its reading minus this.
+  // `run_started_at` is NULL before the first reading, and for a line that carried no startTime.
+  //
+  // **`spend_weeks` is keyed by transcript AND week**, and holds the subscription and project
+  // beside them rather than joining back to the cursor: every read of it is a GROUP BY one of
+  // those, and a transcript never changes either. REAL for the dollars — `$0.12` is an answer.
+  `
+  CREATE TABLE spend_cursors (
+    path              TEXT PRIMARY KEY,
+    subscription      TEXT    NOT NULL,
+    session_id        TEXT    NOT NULL,
+    project_key       TEXT    NOT NULL,
+    offset_bytes      INTEGER NOT NULL,
+    identity          TEXT    NOT NULL,
+    run_started_at    INTEGER,
+    run_cost_usd      REAL    NOT NULL,
+    run_lines_added   INTEGER NOT NULL,
+    run_lines_removed INTEGER NOT NULL,
+    run_tokens_in     INTEGER NOT NULL,
+    run_tokens_out    INTEGER NOT NULL,
+    read_at           INTEGER NOT NULL
+  );
+
+  CREATE TABLE spend_weeks (
+    path          TEXT    NOT NULL,
+    week_start    INTEGER NOT NULL,
+    subscription  TEXT    NOT NULL,
+    project_key   TEXT    NOT NULL,
+    cost_usd      REAL    NOT NULL,
+    lines_added   INTEGER NOT NULL,
+    lines_removed INTEGER NOT NULL,
+    tokens_in     INTEGER NOT NULL,
+    tokens_out    INTEGER NOT NULL,
+    PRIMARY KEY (path, week_start)
+  );
+  -- Both summaries are "everything since a week start", grouped.
+  CREATE INDEX spend_weeks_week ON spend_weeks (week_start);
+  `,
 ];
 
 /**

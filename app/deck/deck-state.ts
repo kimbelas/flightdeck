@@ -16,6 +16,7 @@ import type { InstallHealth, UpdateResult } from '../../contracts/install-health
 import type { HandoffRefusal } from './handoff-slice.ts';
 import type { RespawnReport } from './install-slice.ts';
 import type { AskRun } from './ask-slice.ts';
+import { NO_SPEND_HELD, type SpendHeld } from './spend-slice.ts';
 import type { LaunchPreset, PresetRefusal } from '../../contracts/launch-preset.ts';
 import type { ConfigDrift } from '../../contracts/config-snapshot.ts';
 import type { ObservedBehaviour } from '../../contracts/observed-behaviour.ts';
@@ -156,6 +157,13 @@ export interface DeckState {
   readonly presets: readonly LaunchPreset[];
   /** Why the last save was refused, as core's code. `undefined` once one succeeds. */
   readonly presetRefusal: PresetRefusal | undefined;
+  /**
+   * Cost per week, subscription and project — P7-T3.
+   *
+   * Nothing until the panel is first opened, and then the last summary core gave: a failed
+   * re-read keeps it on screen and says so, rather than emptying a chart somebody is reading.
+   */
+  readonly spend: SpendHeld;
   readonly coreUp: boolean;
   readonly loading: boolean;
   readonly error: string | undefined;
@@ -205,6 +213,7 @@ export const EMPTY: DeckState = {
   observed: {},
   presets: [],
   presetRefusal: undefined,
+  spend: NO_SPEND_HELD,
   coreUp: false,
   loading: false,
   error: undefined,

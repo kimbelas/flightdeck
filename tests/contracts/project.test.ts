@@ -10,6 +10,7 @@ import {
   parseProjectPathBody,
   projectKey,
   projectName,
+  projectSlug,
 } from '../../contracts/project.ts';
 
 const PATH = 'C:\\Users\\belas\\Documents\\development\\app-next';
@@ -18,6 +19,21 @@ describe('projectKey', () => {
   it('reads two spellings of one folder as one project', () => {
     expect(projectKey('C:/Users/belas/Documents')).toBe(
       projectKey('C:\\USERS\\belas\\Documents\\'),
+    );
+  });
+});
+
+// Read off this machine's own `projects/` folders, both config dirs (P3-T5, P7-T3).
+describe('projectSlug', () => {
+  it('turns every separator and the colon into a dash', () => {
+    expect(projectSlug('C:\\Users\\belas\\Documents\\development\\flightdeck')).toBe(
+      'C--Users-belas-Documents-development-flightdeck',
+    );
+  });
+
+  it('turns a dot into a dash too — a worktree under .claude has one', () => {
+    expect(projectSlug('C:\\dev\\xpert-new\\.claude\\worktrees\\xweb-1941')).toBe(
+      'C--dev-xpert-new--claude-worktrees-xweb-1941',
     );
   });
 });

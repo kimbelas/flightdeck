@@ -295,3 +295,11 @@ export const CORE_CONNECT_PATH = `${CORE_PREFIX}connect`;
  * nothing and core opens only the two files it derives from a subscription id (SEC-FS-1).
  */
 export const CORE_DAEMON_PATH = `${CORE_PREFIX}daemon`;
+
+/**
+ * Cost per project, subscription and week — P7-T3, SPEC §6(9).
+ *
+ * Under `/analytics/` rather than `/projects/`: it answers about every slug folder a transcript
+ * sits in, imported or not, and the registry is only what names some of them.
+ */
+export const CORE_SPEND_PATH = `${CORE_PREFIX}analytics/spend`;

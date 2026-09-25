@@ -1104,6 +1104,129 @@ button.ghost {
   color: var(--warn);
 }
 
+/* ---- Spend: cost per week, subscription and project (P7-T3) ----
+   Closed by default, under the projects. The two accounts keep one colour each
+   everywhere in the panel, so a bar and a total can be read against each other
+   without a legend. */
+.spend {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.spend > summary {
+  cursor: pointer;
+  color: var(--dim);
+}
+
+.spend-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.spend-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spend-failed {
+  color: var(--warn);
+}
+
+.spend-note {
+  margin: 0;
+  max-width: 44em;
+}
+
+/* The ledger is still reading: coloured, because a low week that is low only
+   because it has not been read yet must not pass for a quiet one. */
+.spend-filling {
+  color: var(--warn);
+}
+
+.spend-totals {
+  display: flex;
+  gap: 14px;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.spend-weeks,
+.spend-projects {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.spend-week {
+  display: grid;
+  grid-template-columns: 4em 1fr 6em 7em;
+  align-items: center;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.spend-week.is-current .spend-week-label {
+  color: var(--accent);
+}
+
+.spend-week-cost,
+.spend-project-cost {
+  text-align: right;
+}
+
+.spend-bar {
+  display: flex;
+  height: 7px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.spend-seg.spend-sub-365 {
+  background: var(--accent);
+}
+
+.spend-seg.spend-sub-isg {
+  background: var(--good);
+}
+
+.spend-total.spend-sub-365 {
+  color: var(--accent);
+}
+
+.spend-total.spend-sub-isg {
+  color: var(--good);
+}
+
+.spend-projects {
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  padding-top: 4px;
+}
+
+.spend-project {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6em;
+  gap: 0 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A slug is long and says the most at its end, so it clips rather than wraps;
+   the whole of it is in the title. */
+.spend-project-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spend-project-split {
+  grid-column: 1 / -1;
+  font-size: 11px;
+}
+
 /* ---- Ask: one headless question and its answer (P4-T4) ---- */
 
 .ask {

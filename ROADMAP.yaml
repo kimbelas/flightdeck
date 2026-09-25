@@ -3851,7 +3851,7 @@ phases:
             tests/fixtures/daemon-log.test.ts,
             tests/fixtures/scheduled-fires.test.ts,
             DECISIONS.md D60,
-            RESEARCH.md G.57,
+            RESEARCH.md G.58,
           ]
         notes: >-
           **Done 2026-09-25.** The daemon.log fixture is OWNED (D28), and the "same non-JSON
@@ -3873,7 +3873,7 @@ phases:
           logs follows a retirement: no background session here ever finished on its own.
           Scheduled tasks: `scheduled_task_fire` now carries kind and cron (never the prompt), and
           the observed reading lists fires PER KIND, because a `/loop` wake-up is a one-shot with a
-          fresh task id each time (G.57). **Live, with flightdeck.cmd:** `GET /daemon` answered in
+          fresh task id each time (G.58). **Live, with flightdeck.cmd:** `GET /daemon` answered in
           138 ms, 401 without the token; both subscriptions read `stale` — isg's roster names
           27708, which the log saw idle-exit four days earlier, and 365's roster (rewritten that
           morning after being absent at capture time) names 9700, idle-exited four hours before;
