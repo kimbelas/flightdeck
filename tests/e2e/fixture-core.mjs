@@ -29,7 +29,7 @@
 // instead: every fixture goes through the SAME parsers the deck uses, at boot, and the server
 // refuses to start on one that no longer matches the contract.
 import { createServer } from 'node:http';
-import { win32 } from 'node:path';
+import { dirname, win32 } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -44,6 +44,7 @@ import { PresetCatalogue } from '../../core/domain/preset-catalogue.ts';
 import { ConfigHistorian } from '../../core/application/config-historian.ts';
 import { FakeStore } from '../fakes/fake-store.ts';
 import { fixtureDaemonReader } from './smoke/daemon-fixture.mjs';
+import { FixtureSearch } from './fixture-search.mjs';
 import {
   agentRoster,
   byProjectThenName,
@@ -355,6 +356,8 @@ export class FixtureCore {
     /** Every body `POST /projects/presets` was sent. The save button's real destination. */
     this.presetSaves = [];
     this.catalogue = new PresetCatalogue();
+    /** The transcript search — core's own route over a real index in the temp dir (P7-T2). */
+    this.search = new FixtureSearch();
     this.server = createServer((request, response) => {
       void this.route(request, response);
     });
@@ -372,6 +375,7 @@ export class FixtureCore {
   async start() {
     this.fixture = validated(shiftTimes(JSON.parse(await readFile(FIXTURE, 'utf8'))));
     writeFileSync(this.tokenFile, this.token, 'utf8');
+    this.search.start(dirname(this.tokenFile));
     await new Promise((resolve, reject) => {
       this.server.once('error', reject);
       this.server.listen(CORE_PORT, LOOPBACK_ADDRESS, resolve);
@@ -384,6 +388,7 @@ export class FixtureCore {
     this.sockets.close();
     this.server.closeAllConnections();
     await new Promise((resolve) => this.server.close(resolve));
+    this.search.close();
   }
 
   /** One frame to every open stream — the deltas the deck is supposed to apply without a fetch. */
@@ -412,6 +417,8 @@ export class FixtureCore {
   /** @returns `[status, body]` — the double never touches the socket outside `openStream`. */
   async answer(request, url) {
     const path = url.pathname;
+    const searched = await this.search.answer(request, url);
+    if (searched !== undefined) return searched;
     if (request.method === 'GET' && path === '/health') return [200, { ok: true }];
     if (request.method === 'GET' && path === '/sessions') return [200, this.fixture.snapshot];
     if (request.method === 'GET' && path === '/session') return [200, this.detailFor(url)];

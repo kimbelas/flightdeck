@@ -176,6 +176,16 @@ export const CORE_PREVIEW_PATH = `${CORE_PREFIX}preview`;
 export const CORE_RUN_PATH = `${CORE_PREFIX}run`;
 
 /**
+ * The transcript search — P7-T1's index, P7-T2's panel (SPEC §5.8).
+ *
+ * A GET with the query and SPEC §5.8's filters as parameters (`searchQueryString`), answered with
+ * the hits and how far the index has got. The tool list is its own path because it changes when a
+ * tool is first called, not per keystroke.
+ */
+export const CORE_SEARCH_PATH = `${CORE_PREFIX}search`;
+export const CORE_SEARCH_TOOLS_PATH = `${CORE_PREFIX}search/tools`;
+
+/**
  * The project registry — `GET` to list it, `POST` to import a folder (P3-T1, DECISIONS.md D26).
  *
  * A request rather than a stream frame, like the session detail and for a related reason: the

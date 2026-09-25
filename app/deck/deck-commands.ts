@@ -30,6 +30,7 @@ import {
   LAUNCH_PROMPT_ID,
   PROJECT_PATH_ID,
   SEARCH_INPUT_ID,
+  TRANSCRIPT_SEARCH_ID,
 } from './deck-keyboard.ts';
 import type { DeckCommand } from './command-palette-view-model.ts';
 import type { GroupTarget } from './group-targets.ts';
@@ -208,6 +209,7 @@ export function deckCommands(targets: CommandTargets, query = ''): readonly Deck
   return [
     ...planCommands(targets, query),
     ...globalCommands(targets),
+    TRANSCRIPT_SEARCH_COMMAND,
     ...projectCommands(targets),
     ...groupCommands(targets),
     ...presetCommands(targets),
@@ -303,6 +305,16 @@ function layoutCommands(targets: CommandTargets): readonly DeckCommand[] {
     },
   }));
 }
+
+/** P7-T2. The `/` box filters what is on screen; this one searches what is not. */
+const TRANSCRIPT_SEARCH_COMMAND: DeckCommand = {
+  id: 'search-transcripts',
+  label: 'Search every transcript',
+  hint: 'search · both subscriptions, every project',
+  run: () => {
+    focusControl(TRANSCRIPT_SEARCH_ID);
+  },
+};
 
 function globalCommands(targets: CommandTargets): readonly DeckCommand[] {
   return [
