@@ -43,7 +43,14 @@ export function lifecycleActions(
   store: DeckStore,
 ): Pick<
   DeckActions,
-  'onResume' | 'onAdopt' | 'onStop' | 'onRemove' | 'onPreview' | 'onHandOff' | 'onMute'
+  | 'onResume'
+  | 'onAdopt'
+  | 'onTakeOver'
+  | 'onStop'
+  | 'onRemove'
+  | 'onPreview'
+  | 'onHandOff'
+  | 'onMute'
 > {
   return {
     onResume: (row: SessionRowViewModel) => {
@@ -53,6 +60,12 @@ export function lifecycleActions(
     // sweep as a background row, which is the same report a resume gets.
     onAdopt: (row: SessionRowViewModel) => {
       void store.adopt(row.ref);
+    },
+    // P6-T8. Fire-and-forget for the same reason: the row comes back a sweep later as a
+    // background session under the same key. The confirm is the row's (`RowTakeover`), as
+    // `onRemove`'s is.
+    onTakeOver: (row: SessionRowViewModel) => {
+      void store.takeOver(row.ref);
     },
     onStop: (row: SessionRowViewModel) => {
       void store.stop(row.ref);

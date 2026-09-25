@@ -250,3 +250,35 @@ describe('SessionAdopter — the audit trail', () => {
     expect(store.allAudit[0]?.args).toEqual(['--bg', '--resume']);
   });
 });
+
+// P6-T8. The take-over's way in: the row still says live, and the folder is the caller's reading.
+describe('SessionAdopter.adoptAt', () => {
+  it('adopts in the folder it is given, even while core’s row still says live', async () => {
+    const { adopter, asked } = build(endedRow({ live: true }));
+
+    const adopted = await adopter.adoptAt(REQUEST, 'C:\\elsewhere');
+
+    expect(adopted).toEqual({ ok: true, value: SESSION });
+    expect(asked[0]?.args).toEqual(['--bg', '--resume', SESSION]);
+    expect(asked[0]?.cwd).toBe('C:\\elsewhere');
+  });
+
+  it.each([
+    { why: 'a short id', sessionId: '337975f9', cwd: FOLDER, code: 'bad_session' },
+    { why: 'no folder', sessionId: SESSION, cwd: '', code: 'not_adoptable' },
+  ] as const)('still refuses $why', async ({ sessionId, cwd, code }) => {
+    const { adopter, asked } = build();
+
+    expect(await adopter.adoptAt({ subscription: '365', sessionId }, cwd)).toEqual({
+      ok: false,
+      error: code,
+    });
+    expect(asked).toEqual([]);
+  });
+
+  it('still refuses without a binary', async () => {
+    const { adopter } = build(endedRow(), WOKE, NONE);
+
+    expect(await adopter.adoptAt(REQUEST, FOLDER)).toEqual({ ok: false, error: 'no_claude' });
+  });
+});

@@ -158,6 +158,7 @@ function listProps(
     onOpen: actions.onOpenPane,
     onResume: actions.onResume,
     onAdopt: actions.onAdopt,
+    onTakeOver: actions.onTakeOver,
     onStop: actions.onStop,
     onRemove: actions.onRemove,
     onPreview: actions.onPreview,
