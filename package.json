@@ -30,7 +30,8 @@
     "build": "next build",
     "start": "next start -H 127.0.0.1 -p 4949",
     "connect": "node scripts/connect-cli.ts connect",
-    "disconnect": "node scripts/connect-cli.ts disconnect"
+    "disconnect": "node scripts/connect-cli.ts disconnect",
+    "otlp": "node scripts/otlp-cli.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

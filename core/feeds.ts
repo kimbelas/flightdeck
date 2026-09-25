@@ -5,6 +5,7 @@
 // and of the three things it did — issue the secrets, wire the feeds, wire the server — this is
 // the one with a story of its own, so it is the seam that costs a reader the least. `shutdown.ts`
 // was split off the same file for the same kind of reason.
+import { otlpReceiverEnabled } from '../contracts/otlp-receiver.ts';
 import { SUBSCRIPTION_IDS } from '../contracts/session.ts';
 import { AskBroadcast } from './application/ask-broadcast.ts';
 import { EventHub } from './application/event-hub.ts';
@@ -13,6 +14,7 @@ import { MuteBook } from './application/mute-book.ts';
 import { QuotaReport } from './application/quota-report.ts';
 import { Reconciler } from './application/reconciler.ts';
 import { StatuslineQueue } from './application/statusline-queue.ts';
+import { TelemetryTally } from './application/telemetry-tally.ts';
 import { ToastAnnouncer } from './application/toast-announcer.ts';
 import { TranscriptIndexer } from './application/transcript-indexer.ts';
 import { TranscriptReader } from './application/transcript-reader.ts';
@@ -59,6 +61,14 @@ export interface Feeds {
    * second scheduler for it would be the timer nobody cancels that `buildFeeds` warns about.
    */
   readonly indexer: TranscriptIndexer;
+  /**
+   * The optional OTLP receiver's sums — P7-T5. Always built, so `GET /telemetry` can say "off";
+   * the two routes that feed it exist only when core started with `FLIGHTDECK_OTLP=1`.
+   *
+   * A passive sink rather than a feed in D3's sense: it publishes nothing and nudges no sweep, so
+   * an owner who turns it on changes what `/telemetry` answers and nothing else core does.
+   */
+  readonly telemetry: TelemetryTally;
 }
 
 export interface FeedParts {
@@ -126,6 +136,8 @@ export function buildFeeds(parts: FeedParts): Feeds {
     transcripts,
     vitals,
     storing,
+    // Read from core's own environment, once, at boot — the switch is core's, never a session's.
+    telemetry: new TelemetryTally({ enabled: otlpReceiverEnabled(process.env), clock }),
   };
 }
 

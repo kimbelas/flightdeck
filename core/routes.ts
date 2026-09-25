@@ -20,6 +20,8 @@ import { DoctorRoute, RespawnRoute, UpdateRoute } from './http/install-routes.ts
 import { GroupLaunchRoute, type GroupStarter } from './http/group-route.ts';
 import { AdoptRoute, type SessionAdopterPort } from './http/adopt-route.ts';
 import { SearchRoute, type TranscriptSearch } from './http/search-route.ts';
+import { OtlpLogsRoute, OtlpMetricsRoute, type OtlpRouteParts } from './http/otlp-routes.ts';
+import { TelemetryRoute } from './http/telemetry-route.ts';
 import { HandoffRoute, type SessionForker } from './http/handoff-route.ts';
 import { LaunchRoute } from './http/launch-route.ts';
 import { MutesReadRoute, MutesWriteRoute } from './http/mutes-route.ts';
@@ -165,7 +167,25 @@ export function buildRouter(parts: RouterParts, extra: readonly Route[]): Reques
       limiter: parts.limiter,
       logger: parts.logger,
     }),
+    ...telemetryRoutes({
+      tally: parts.feeds.telemetry,
+      limiter: parts.limiter,
+      logger: parts.logger,
+    }),
   ]);
+}
+
+/**
+ * The optional OTLP receiver — P7-T5 — and the read of what it summed.
+ *
+ * **The switch is here, as the presence of two rows**, rather than a flag each route checks: a
+ * path that is not in the table cannot be reached by any request, which is a stronger "off" than a
+ * handler remembering to refuse. The read is always a row, so "off" can be asked about.
+ */
+export function telemetryRoutes(receiver: OtlpRouteParts): readonly Route[] {
+  const read = new TelemetryRoute(receiver.tally);
+  if (!receiver.tally.enabled) return [read];
+  return [read, new OtlpMetricsRoute(receiver), new OtlpLogsRoute(receiver)];
 }
 
 /**

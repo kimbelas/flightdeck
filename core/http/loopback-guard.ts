@@ -34,9 +34,10 @@ export type ControlId =
  * Which secrets a route accepts (SEC-HTTP-7).
  *
  * `token` is every route: the per-boot bearer, rotated on restart. `token-or-ingest-key` is
- * `POST /hooks` alone, and it is not laxness — it is the only route whose client is a process
- * that captured its credential at spawn and cannot re-read it (contracts/ingest-key.ts). The
- * default is the strict one, and a route declares the loose one out loud.
+ * `POST /hooks` and the optional OTLP receiver's two POSTs (P7-T5), and it is not laxness — they
+ * are the routes whose client is a Claude Code session that fixed its credential at spawn and
+ * cannot follow a restart (contracts/ingest-key.ts, contracts/otlp-receiver.ts). The default is
+ * the strict one, and a route declares the loose one out loud.
  */
 export type Credential = 'token' | 'token-or-ingest-key';
 

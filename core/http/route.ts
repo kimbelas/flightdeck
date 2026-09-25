@@ -31,8 +31,9 @@ export interface Route extends Routable {
    * Which secrets authenticate it (SEC-HTTP-7). Declared, never defaulted.
    *
    * Same reasoning as `limit`: a new route has to answer the question rather than inherit
-   * whichever answer happened to be written first. Exactly one route says `token-or-ingest-key`,
-   * and the JSDoc on `Credential` says why it is the only one that may.
+   * whichever answer happened to be written first. Only session-originated ingest says
+   * `token-or-ingest-key` — `/hooks` and, when enabled, `/v1/metrics` and `/v1/logs` — and the
+   * JSDoc on `Credential` says why they are the only ones that may.
    */
   readonly credential: Credential;
 
