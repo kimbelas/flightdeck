@@ -267,6 +267,34 @@ project/subscription/week from `cost-state`, daemon visibility, optional OTLP/ht
 
 **Gate:** "where did I do that Cloudflare Workers deploy?" returns the session in under a second.
 
+**Order, as of 2026-09-25 (D59):** 7.1 lands first; 7.2–7.5 follow Phase 9.
+
+### Phase 8 — always on, and on the phone (2–3 sessions, D59)
+
+Register the core logon task P1-T12 built and add one for the deck (`next start` against the
+existing build, never `next build`); spike the deck through `tailscale serve` from the phone and
+record Host, Origin, the WebSocket upgrade, the keyboard and the latency (R, a new §H); one extra
+host/origin pair from a file core owns in `LoopbackGuard` and the deck, the PTY socket URL derived
+from the page's host and mounted on the proxy; a phone layout — attention list, one pane, a composer
+line that writes to the pane's own socket; SEC-NET-3 rewritten from the measurements and a "from the
+phone" runbook in the README. Bind addresses never change; `tailscale serve reset` is the inverse.
+
+**Gate:** from the phone — see what needs me, open a pane, send a prompt; `netstat` shows nothing
+new on any address but loopback.
+
+### Phase 9 — one press (2 sessions, D59)
+
+`agent` on a preset, allowlisted from the project's `.claude/agents` roster at save and at launch,
+passed as `--agent` through a fixed PowerShell line with `FD_AGENT`, refused on `claude-isg-orch`;
+every row of the workflow map becomes a prefilled preset (a skill or command is a `/name` prompt,
+an agent fills the field); ticket ids read from `.claude/specs/` and `.claude/state/` into a
+datalist; `Launch <project> · <preset>` and ticket-shaped queries in the palette; plugin skills and
+agents on the map from `plugins/cache/` with their `/plugin:skill` names.
+
+**Gate:** pick a project, a ticket and an agent, press once — a named `--bg` session starts in
+that folder under that agent with the plan-first prompt, on the subscription with more headroom,
+and the argv is in the audit row.
+
 ---
 
 ## 6. Test strategy

@@ -251,19 +251,28 @@ export class RoadmapReporter {
   }
 
   /**
-   * The next few tasks, out of the first phase that is neither finished nor abandoned.
+   * The next few tasks that can actually be started, in file order across phases.
    *
    * `dropped` is skipped alongside `done`, and that is a bug fixed rather than a nicety: P5b sits
    * between P5a and P6, so the moment it was dropped it became the first phase that was not
    * `done` — and "next up" went empty while P6 had seven tasks waiting in it.
+   *
+   * **`depends_on` is honoured, and the walk does not stop at the first unfinished phase** —
+   * both since 2026-09-25, when P8 and P9 were sequenced ahead of the rest of P7 (DECISIONS.md
+   * D59). A task whose `depends_on` names an unfinished task or phase is not next, and neither is
+   * any task of a phase whose own `depends_on` is unfinished: `P7-T2` depends on `P9`, and a
+   * "next up" that listed it would send a session to the wrong work. P7 stays first in the file
+   * with one task ready, and the slots after it belong to P8.
    */
   public nextUp(limit = 4): readonly Task[] {
-    const active = this.roadmap.phases.find(
-      (phase) => phase.status !== 'done' && phase.status !== 'dropped',
-    );
-    if (active === undefined) return [];
-    const doing = active.tasks.filter((task) => task.status === 'doing');
-    const todo = active.tasks.filter((task) => task.status === 'todo');
+    const finished = this.finishedIds();
+    const ready = (owner: { readonly depends_on?: readonly string[] }): boolean =>
+      (owner.depends_on ?? []).every((id) => finished.has(id));
+    const candidates = this.roadmap.phases
+      .filter((phase) => phase.status !== 'done' && phase.status !== 'dropped' && ready(phase))
+      .flatMap((phase) => phase.tasks.filter((task) => ready(task)));
+    const doing = candidates.filter((task) => task.status === 'doing');
+    const todo = candidates.filter((task) => task.status === 'todo');
     return [...doing, ...todo].slice(0, limit);
   }
 
@@ -271,5 +280,16 @@ export class RoadmapReporter {
     return this.roadmap.phases.flatMap((phase) =>
       phase.tasks.filter((task) => task.status === 'blocked'),
     );
+  }
+
+  /** Every phase and task id that nothing needs to wait for: `done`, or `dropped` on purpose. */
+  private finishedIds(): ReadonlySet<string> {
+    const finished = new Set<string>();
+    const settled = (status: Status): boolean => status === 'done' || status === 'dropped';
+    for (const phase of this.roadmap.phases) {
+      if (settled(phase.status)) finished.add(phase.id);
+      for (const task of phase.tasks) if (settled(task.status)) finished.add(task.id);
+    }
+    return finished;
   }
 }
