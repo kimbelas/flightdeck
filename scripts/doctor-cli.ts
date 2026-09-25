@@ -5,12 +5,12 @@
 // real OS is proven by tests/win/** or by running it).
 //
 // **It writes nothing.** Every call here is a read: `netstat`, `icacls`, `schtasks /query`,
-// `claude --version`, an in-memory SQLite database, `Connector.plan` (which is the dry-run half of
-// Connect by construction, P1-T11), and a sample of transcripts. A health check that repaired
-// things would be a health check nobody dares run.
+// `claude --version`, whether `.next/BUILD_ID` exists, an in-memory SQLite database,
+// `Connector.plan` (which is the dry-run half of Connect by construction, P1-T11), and a sample of
+// transcripts. A health check that repaired things would be a health check nobody dares run.
 import { execFileSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CORE_PORT, UI_PORT } from '../contracts/origins.ts';
 import { ingestKeyFile } from '../contracts/ingest-key.ts';
@@ -21,6 +21,9 @@ import { ClaudeInstall } from '../core/adapters/claude-cli/claude-install.ts';
 import { ConsoleLogger } from '../core/adapters/console-logger.ts';
 import { WindowsFileAcl } from '../core/adapters/windows/windows-file-acl.ts';
 import { SchtasksLogonTask } from '../core/adapters/windows/schtasks-logon-task.ts';
+import { logonTaskParts, type LogonRole } from '../core/adapters/windows/logon-task-definition.ts';
+import type { LogonTaskState } from '../core/ports/logon-task.ts';
+import { buildIdFile } from './deck-launch.ts';
 import type { Connector } from '../core/application/connector.ts';
 import { buildConnector } from '../core/connect.ts';
 import { ReadPolicy } from '../core/domain/read-policy.ts';
@@ -30,6 +33,7 @@ import {
   aclCheck,
   claudeCheck,
   counterCheck,
+  deckBuildCheck,
   exitCodeFor,
   fts5Check,
   hooksCheck,
@@ -50,15 +54,21 @@ const TRANSCRIPT_SAMPLE = 15;
 const install = new ClaudeInstall();
 const acl = new WindowsFileAcl();
 
+const REPO = join(import.meta.dirname, '..');
+
 async function main(): Promise<number> {
+  const coreTask = logonTask('core');
+  const deckTask = logonTask('deck');
   const checks: Check[] = [
     nodeCheck(process.version, engines()),
     claudeCheck(install.executable, claudeVersion()),
-    ...portChecks(),
+    ...portChecks(deckTask.installed),
     ...aclChecks(),
     secretsCheck(policy(), secretCandidates()),
     hooksCheck(connector().plan('connect')),
-    logonTaskCheck(logonTask().describe()),
+    logonTaskCheck(coreTask, 'logon: core'),
+    logonTaskCheck(deckTask, 'logon: deck'),
+    deckBuildCheck(existsSync(buildIdFile(REPO)), deckTask.installed),
     fts5Check(fts5Failure()),
     await transcripts(),
     ...(await counters()),
@@ -71,16 +81,22 @@ async function main(): Promise<number> {
   return exitCodeFor(checks);
 }
 
-function portChecks(): readonly Check[] {
+/**
+ * Both ports, from one `netstat`.
+ *
+ * The deck becomes `needed` once its logon task exists (P8-T1): a registered task that is not
+ * holding 4949 is a task that failed, which is what `doctor` is for. Without one the deck being
+ * down costs nobody a session (D2) and is only worth a warning.
+ */
+function portChecks(deckTaskInstalled: boolean): readonly Check[] {
   // One netstat for both ports: two calls could disagree about a port that changed between them.
   const netstat = execFileSync(join(SYSTEM32, 'netstat.exe'), ['-ano', '-p', 'TCP'], {
     encoding: 'utf8',
   });
   return [
-    // Core is `needed` and the deck is not: hooks post to core whether a browser is open or not,
-    // and the deck being down costs nobody a session (D2).
+    // Core is always `needed`: hooks post to core whether a browser is open or not.
     loopbackCheck('core port', netstat, CORE_PORT, true),
-    loopbackCheck('deck port', netstat, UI_PORT, false),
+    loopbackCheck('deck port', netstat, UI_PORT, deckTaskInstalled),
   ];
 }
 
@@ -149,15 +165,10 @@ function connector(): Connector {
   return buildConnector(install, new ConsoleLogger());
 }
 
-function logonTask(): SchtasksLogonTask {
-  const repo = join(import.meta.dirname, '..');
-  return new SchtasksLogonTask({
-    account: whoami(),
-    nodePath: process.execPath,
-    scriptPath: join(repo, 'scripts', 'flightdeck-core.ts'),
-    workingDirectory: repo,
-    logPath: join(repo, '.flightdeck-core.log'),
-  });
+/** What is registered under the role's name. Only `describe` is called — doctor writes nothing. */
+function logonTask(role: LogonRole): LogonTaskState {
+  const parts = logonTaskParts(role, { account: whoami(), nodePath: process.execPath, repo: REPO });
+  return new SchtasksLogonTask(parts).describe();
 }
 
 /** D9's one-line check, re-run because an older Node had no FTS5 (nodejs/node#56951). */

@@ -1,24 +1,33 @@
-// `npm run task:install [-- --apply]` · `npm run task:remove [-- --apply]` — D21, SEC-OPS-3.
+// `npm run task:install [-- --apply]` · `npm run task:remove [-- --apply]` — D21, SEC-OPS-3, P8-T1.
 //
 // **Dry run is the default and `--apply` is the opt-in**, exactly as `connect-cli.ts` has it, and
 // for the same reason: every other safeguard in this feature is something the code does, and this
-// one is something the code cannot do by accident. It registers a task that starts a service at
+// one is something the code cannot do by accident. It registers tasks that start services at
 // every logon — the owner should be able to run it once to see what it would do.
 //
-// It prints the definition in full. That is the whole point of `LogonTask.plan()`: the XML shown
+// It prints each definition in full. That is the whole point of `LogonTask.plan()`: the XML shown
 // here is the XML that gets registered, not a description of it.
+//
+// **Both tasks, every time.** Core (D21) and the deck (P8-T1) are registered, replaced and removed
+// together: one without the other is either hooks with no deck or a deck showing `core down`, and
+// neither is a state anybody would choose. The deck may start before core — it already shows
+// `core down` and reconnects on its own (P1-T9) — so there is no dependency between them.
 import { execFileSync } from 'node:child_process';
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   ephemeralDirectory,
   logonTaskCommand,
-  LOGON_TASK_NAME,
+  logonTaskParts,
+  LOGON_ROLES,
+  type LogonRole,
   type LogonTaskDefinitionParts,
 } from '../core/adapters/windows/logon-task-definition.ts';
 import { SchtasksLogonTask } from '../core/adapters/windows/schtasks-logon-task.ts';
+import { buildIdFile } from './deck-launch.ts';
 
 const SYSTEM32 = join(process.env['SystemRoot'] ?? 'C:/Windows', 'System32');
+const REPO = join(import.meta.dirname, '..');
 
 /** `DOMAIN\account` — the trigger and the principal both name it, and icacls prints it the same. */
 function account(): string {
@@ -26,16 +35,16 @@ function account(): string {
 }
 
 /**
- * The node this task should run, which is NOT `process.execPath`.
+ * The node these tasks should run, which is NOT `process.execPath`.
  *
  * A version manager hands each shell a shim in a directory named after that shell, and deletes it
  * with the shell; `realpathSync` resolves it to the installation behind it. See
  * `ephemeralDirectory` — this was found by reading the installer's own dry run.
  *
  * It resolves to a VERSION-PINNED path, and that is the right answer for a service: a later
- * `fnm use 27` leaves the task on the Node it was installed with rather than silently moving a
+ * `fnm use 27` leaves the tasks on the Node they were installed with rather than silently moving a
  * long-running receiver onto an untested runtime. `npm run task:install --apply` again is how you
- * move it, and `npm run doctor` is what notices the version drifted.
+ * move them, and `npm run doctor` is what notices the version drifted.
  */
 function stableNodePath(): string {
   try {
@@ -45,21 +54,35 @@ function stableNodePath(): string {
   }
 }
 
-function parts(): LogonTaskDefinitionParts {
-  const repo = join(import.meta.dirname, '..');
-  return {
-    account: account(),
-    // Not `process.execPath` — a scheduled task's PATH is not an interactive shell's, and the
-    // shell's own node may not exist at logon (`stableNodePath`).
-    nodePath: stableNodePath(),
-    scriptPath: join(repo, 'scripts', 'flightdeck-core.ts'),
-    workingDirectory: repo,
-    logPath: join(repo, '.flightdeck-core.log'),
-  };
+function parts(role: LogonRole): LogonTaskDefinitionParts {
+  // Not `process.execPath` — a scheduled task's PATH is not an interactive shell's, and the
+  // shell's own node may not exist at logon (`stableNodePath`).
+  return logonTaskParts(role, { account: account(), nodePath: stableNodePath(), repo: REPO });
 }
 
 function install(apply: boolean): number {
-  const definition = parts();
+  for (const role of LOGON_ROLES) {
+    const code = installOne(role, apply);
+    if (code !== 0) return code;
+  }
+  if (!existsSync(buildIdFile(REPO))) {
+    // Not a refusal: the task is right and the build is missing, and the task says so in its log.
+    console.log(
+      `  NOTE: there is no deck build yet. Run flightdeck.cmd once, or the deck task will`,
+    );
+    console.log(`  log "no production build" and exit at every logon until there is one.\n`);
+  }
+  if (!apply) {
+    console.log(`  DRY RUN — nothing registered. Re-run with --apply to register both.`);
+    console.log(`  Then npm run doctor, which checks the shape of what this wrote.\n`);
+    return 0;
+  }
+  console.log(`  registered both. They start at the next logon; flightdeck.cmd starts them now.\n`);
+  return 0;
+}
+
+function installOne(role: LogonRole, apply: boolean): number {
+  const definition = parts(role);
   const ephemeral = ephemeralDirectory(definition.nodePath);
   if (ephemeral !== undefined) {
     // Fail closed, and print the path: a task registered against this would never start, and
@@ -72,55 +95,54 @@ function install(apply: boolean): number {
     return 1;
   }
   const logon = new SchtasksLogonTask(definition);
-  const state = logon.describe();
-  const replacing = state.installed
+  const replacing = logon.describe().installed
     ? 'already registered — this would REPLACE it'
     : 'not yet registered';
-  console.log(`\n  task     ${LOGON_TASK_NAME}`);
+  console.log(`\n  task     ${definition.name}`);
   console.log(`  state    ${replacing}`);
   console.log(`  as       ${definition.account}, at every logon, never elevated (SEC-OPS-3)`);
   console.log(`\n  it runs:\n\n    cmd.exe ${logonTaskCommand(definition)}\n`);
-  console.log(
-    `  A console window appears at logon and stays for as long as core runs. That is the`,
-  );
+  console.log(`  A console window appears at logon and stays for as long as it runs. That is the`);
   console.log(`  price of SEC-OPS-3: a task with no window has to store a credential (D21).\n`);
   console.log(logon.plan());
-  if (!apply) {
-    console.log(`\n  DRY RUN — nothing registered. Re-run with --apply to register it.`);
-    console.log(`  Then npm run doctor, which checks the shape of what this wrote.\n`);
-    return 0;
-  }
+  console.log('');
+  if (!apply) return 0;
   try {
     logon.install();
   } catch (cause) {
     console.error(`\n  FAILED: ${cause instanceof Error ? cause.message : 'unknown'}\n`);
     return 1;
   }
-  console.log(`\n  registered. It starts core at the next logon; flightdeck.cmd starts it now.\n`);
+  console.log(`  registered "${definition.name}".\n`);
   return 0;
 }
 
 function remove(apply: boolean): number {
-  const logon = new SchtasksLogonTask(parts());
+  for (const role of LOGON_ROLES) {
+    const code = removeOne(role, apply);
+    if (code !== 0) return code;
+  }
+  console.log(apply ? '' : `\n  DRY RUN — nothing removed. Re-run with --apply to remove them.\n`);
+  return 0;
+}
+
+function removeOne(role: LogonRole, apply: boolean): number {
+  const definition = parts(role);
+  const logon = new SchtasksLogonTask(definition);
   if (!logon.describe().installed) {
-    console.log(`\n  "${LOGON_TASK_NAME}" is not registered — nothing to do.\n`);
+    console.log(`\n  "${definition.name}" is not registered — nothing to do.`);
     return 0;
   }
-  console.log(`\n  "${LOGON_TASK_NAME}" is registered and would be unregistered.`);
-  if (!apply) {
-    console.log(`\n  DRY RUN — nothing removed. Re-run with --apply to remove it.\n`);
-    return 0;
-  }
+  console.log(`\n  "${definition.name}" is registered and would be unregistered.`);
+  if (!apply) return 0;
   try {
     logon.remove();
   } catch (cause) {
     console.error(`\n  FAILED: ${cause instanceof Error ? cause.message : 'unknown'}\n`);
     return 1;
   }
-  // Core keeps running: unregistering the task never stops the process it started.
-  console.log(
-    `\n  unregistered. A core already running is untouched; flightdeck-stop.cmd ends it.\n`,
-  );
+  // The process keeps running: unregistering a task never stops what it started.
+  console.log(`  unregistered. What it started is untouched; flightdeck-stop.cmd ends it.`);
   return 0;
 }
 

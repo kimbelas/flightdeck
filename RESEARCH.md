@@ -3749,3 +3749,48 @@ store begin with a `tool_result` array.
 
 `GET /search` answered in 3–6 ms on the partial index, with hits from both subscriptions, and 401
 without the token.
+
+### G.57 The logon task had never started core, and could not have (P8-T1, 2026-09-25)
+
+P1-T12 wrote the logon task, registered it **under a probe name**, read the definition back and
+fixed what that showed (G.17, G.18), then left registering the real one to the owner. P8-T1
+registered both tasks and ran them with `schtasks /run`, which executes exactly the action a logon
+would. Both exited `1` within a second, and neither log file was touched. That is why it looked at
+first like something was still holding the file.
+
+**`cmd /c` strips quotes.** From `cmd /?`: if the text after `/c` starts with a quote and holds
+more than two, cmd removes the first and the last quote and runs what is left. The P1-T12 action
+was
+
+```
+/c "…\node.exe" "…\flightdeck-core.ts" > "…\.flightdeck-core.log" 2>&1
+```
+
+and cmd ran `…\node.exe" "…\flightdeck-core.ts" > "…\.flightdeck-core.log 2>&1`. The command
+name ends in `node.exe"`, which does not exist, so cmd fails before it gets to the redirect.
+Reproduced by hand with `Start-Process cmd.exe`:
+
+| Arguments | Result |
+|---|---|
+| `/c "node.exe" -e "…" > "log" 2>&1` (the P1-T12 form) | `'…\node.exe" -e "console.log' is not recognized`, no log |
+| `/c ""node.exe" -e "…" > "log" 2>&1"` | runs; the log says `ran` |
+
+So the stripped pair has to be a wrapper, and the three inner pairs survive. `logonTaskCommand`
+now emits that form. A test models cmd's rule and shows the old form breaking under it, and
+`doctor` fails any registered task whose `<Arguments>` does not start with `/c ""`. Without that
+check, a task registered by the old installer would pass every other check: it is registered,
+interactive, least-privilege, and pointing at a real node. It just never starts.
+
+**Why nothing noticed for two weeks:** the task was never registered, so `doctor` warned "not
+registered" every time, which is its correct answer on a machine that has not opted in. Reading a
+definition back proves the XML, not the command inside it. Only running it proves that.
+
+**After the fix, measured on this machine.** Starting from both ports free, `schtasks /run` on
+both tasks: core bound `127.0.0.1:4950` and answered `/health` 15 s later. The deck bound
+`127.0.0.1:4949` (`Ready in 6.9s`), `/deck` returned 200, and both tasks read `Running` (result
+`267009`, "currently running"). `doctor` gave 16 checks, all clear, with both tasks' node paths
+shown. `flightdeck.cmd` next to them printed "already running" twice and opened the Edge window.
+`flightdeck-stop.cmd` ended both processes and the tasks went back to `Ready`. With `.next`
+moved aside, the deck task wrote one line (`no production build at … Run flightdeck.cmd once`)
+and exited `1` without restarting. Not measured: an actual log off and log on, which would have
+ended the session doing the measuring. That is the owner's check.

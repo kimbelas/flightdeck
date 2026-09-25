@@ -4,7 +4,8 @@
 // readable by core's allowlist, hooks blocks match the template, Claude Code version, Node
 // version, ports. P1-T12 adds the three the tasks since then earned — the store's ACL (SEC-FS-4,
 // which P1-T8 shipped without), the logon task's shape (SEC-OPS-3, D21) and the two counters that
-// only mean something when they are not zero.
+// only mean something when they are not zero. P8-T1 adds the deck's task beside core's, the node
+// each one runs, and the build the deck's task serves.
 //
 // **Split the way every probe here is split**: this file decides, `doctor-cli.ts` looks things up
 // and prints. Each verdict is a pure function of what was found, which is the only way to have a
@@ -14,7 +15,10 @@
 // code says so. `warn` means something is absent that a working machine may legitimately not have
 // — core not running while somebody debugs, the logon task on a checkout that is not the owner's.
 // Anything that would silently weaken a SEC control is a `fail`.
-import { ephemeralDirectory } from '../core/adapters/windows/logon-task-definition.ts';
+import {
+  ephemeralDirectory,
+  startsUnderCmd,
+} from '../core/adapters/windows/logon-task-definition.ts';
 import type { ConnectPlan } from '../contracts/connect-plan.ts';
 import type { CoreStatus } from '../contracts/core-status.ts';
 import type { AclFacts } from '../core/ports/file-acl.ts';
@@ -128,11 +132,11 @@ export function hooksCheck(plan: ConnectPlan): Check {
  * this check asserted the positive form and failed on the very task the installer had just
  * written — found by registering one under a probe name and reading it back.
  */
-export function logonTaskCheck(state: LogonTaskState): Check {
+export function logonTaskCheck(state: LogonTaskState, name = 'logon task'): Check {
   if (!state.installed || state.definition === undefined) {
     // A dead receiver makes every interactive session wear a hook error on every turn (F.1.5), so
     // this is the check that decides whether hooks are safe to leave installed across a reboot.
-    return warn('logon task', `"${state.name}" is not registered — npm run task:install --apply`);
+    return warn(name, `"${state.name}" is not registered — npm run task:install -- --apply`);
   }
   const problems: string[] = [];
   if (!state.definition.includes('<LogonType>InteractiveToken</LogonType>')) {
@@ -143,8 +147,44 @@ export function logonTaskCheck(state: LogonTaskState): Check {
   // manager deletes with the shell it was installed from (logon-task-definition.ts).
   const ephemeral = ephemeralDirectory(state.definition);
   if (ephemeral !== undefined) problems.push(`points into ${ephemeral}, gone by the next logon`);
-  if (problems.length > 0) return fail('logon task', `${problems.join(' and ')} — SEC-OPS-3`);
-  return ok('logon task', `"${state.name}" — at logon, interactive token, least privilege`);
+  if (problems.length > 0) return fail(name, `${problems.join(' and ')} — SEC-OPS-3`);
+  if (!startsUnderCmd(state.definition)) {
+    // Registered and shaped right and has never started once (logon-task-definition.ts, G.57).
+    return fail(
+      name,
+      `cmd /c strips its quotes and never starts node — npm run task:install -- --apply`,
+    );
+  }
+  const node = taskNodePath(state.definition) ?? 'node path not found in the definition';
+  return ok(name, `"${state.name}" — at logon, interactive token, least privilege, ${node}`);
+}
+
+/**
+ * The node a registered task runs, read out of its `<Arguments>`.
+ *
+ * Reported because it is version-pinned on purpose (install-task-cli.ts) — after a Node upgrade the
+ * tasks keep the old one until they are re-registered, and this line is where that shows.
+ * Task Scheduler may hand the quotes back raw or as `&quot;`, so both are accepted.
+ */
+export function taskNodePath(definition: string): string | undefined {
+  return /(?:"|&quot;)([^"&<>]*node\.exe)(?:"|&quot;)/i.exec(definition)?.[1];
+}
+
+/**
+ * P8-T1 — the build the deck's task serves.
+ *
+ * The task never builds (deck-launch.ts), so a missing `.next` is the one way a registered deck
+ * task fails at every logon without anything else looking wrong. A `fail` only when the task is
+ * registered: without one, `flightdeck.cmd` builds before it starts and a missing build is
+ * nothing but a fresh clone.
+ */
+export function deckBuildCheck(buildPresent: boolean, deckTaskInstalled: boolean): Check {
+  if (buildPresent)
+    return ok('deck build', '.next is built — the deck task has something to serve');
+  const detail = 'no .next build — run flightdeck.cmd once, which builds';
+  return deckTaskInstalled
+    ? fail('deck build', `${detail}; the deck task exits at logon`)
+    : warn('deck build', detail);
 }
 
 export function claudeCheck(path: string | undefined, version: string | undefined): Check {
