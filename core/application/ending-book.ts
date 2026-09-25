@@ -113,7 +113,9 @@ export class EndingBook {
 }
 
 /**
- * A background session the listing says has stopped: no `pid`, and a state that is not `working`.
+ * A background session the listing says has stopped: no `pid`, and a state that is not `working`
+ * or `failed` — or no state at all, which is how the listing reports an older stopped session (two
+ * of them on this machine read `unknown` beside a `stopped` in the log until this allowed it).
  *
  * `working` without a `pid` is a session a moment from starting, not one that stopped (G.2) — a
  * respawn looks exactly like that for a sweep, and handing it the ending of the run before would
@@ -122,5 +124,5 @@ export class EndingBook {
  */
 function explainable(row: SessionRow): boolean {
   if (row.kind !== 'background' || row.live) return false;
-  return row.runState === 'done' || row.runState === 'blocked';
+  return row.runState !== 'working' && row.runState !== 'failed';
 }

@@ -70,6 +70,19 @@ describe('EndingBook — naming the ending', () => {
     expect(book.explain(other).endReason).toBe('finished');
   });
 
+  it('explains a stopped session the listing gave no state at all', async () => {
+    const log = new FakeDaemonLogSource().willReturn(
+      'isg',
+      logLine(1, 'bg', `bg settled ${SHORT} (killed)`),
+    );
+    const book = new EndingBook(log);
+    const stateless = rowOf({ runState: undefined });
+
+    await book.learn([stateless], 10);
+
+    expect(book.explain(stateless).endReason).toBe('stopped');
+  });
+
   it('leaves a row the log says nothing about as unknown', async () => {
     const book = new EndingBook(new FakeDaemonLogSource().willReturn('isg', ''));
 

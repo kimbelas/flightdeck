@@ -76,7 +76,8 @@ async function stoppedByOwner(page, report, core, foxtrot) {
   const log = line(Date.now() - 30_000, `bg settled ${foxtrot.shortId} (killed)`);
   core.publish('snapshot', await core.snapshotEndedBy(STOPPED, log));
 
-  const said = await waitFor(async () => /\bstopped\b/u.test(await metaOf(page)));
+  // `includes`, not a word boundary: the meta's spans join with no space (`ledgerstopped24h 1m`).
+  const said = await waitFor(async () => (await metaOf(page)).includes('stopped'));
   report.check('a stop says "stopped"', said, await metaOf(page));
 }
 
