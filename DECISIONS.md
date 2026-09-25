@@ -1805,3 +1805,54 @@ both read `state: done`, and only `daemon.log` separates them (F.2.3, P7-T4). So
 raises the "finished" toast. That is a wrong word rather than a wrong toast — the session did stop —
 and a heuristic guessing which it was would be worse than the word.
 
+## D59 — phone access and one-press dispatch are in scope; D12 and D44 amended (decided 2026-09-25, P8 · P9)
+
+**Question (owner, 2026-09-25):** two goals, in this order. First, "an agentic workflow on my machine
+where I can use it in a browser, then set up my phone to use it when this machine is on so that I
+can check it and prompt." Second, "use existing agents with a lot of skills, one click away, to
+trigger a problem or ticket and assign it to a designated project to run."
+
+Neither was on the roadmap. The roadmap was 93 % done — P0–P6 complete, M3 reached, P5b dropped
+(D52) — and P7 was next by file order. So the question was not "what is left" but "what is left that
+the owner wants", and the answer is two phases, sequenced ahead of the rest of P7.
+
+**D12 said phone access was out of scope, and the reason it gave still holds — so the amendment is
+narrow.** D12 excluded "remote/phone access (Remote Control)" beside cloud sessions and multi-machine
+aggregation: Flightdeck is one machine, one owner, loopback (SPEC §7). What P8 adds is not a wider
+bind and not Remote Control. SEC-NET-1 is untouched: core and the deck keep binding `127.0.0.1`, and
+a host flag is still never added. The phone reaches the deck through an **identity-aware reverse
+proxy the owner installs in front of loopback** (Tailscale `serve`, DP4), which terminates
+authentication outside Flightdeck and presents ONE extra host/origin pair that core and the deck
+allowlist by exact string (SEC-NET-3, P8-T3). The threat model in SECURITY.md §1 — any page in a
+browser tab can POST to loopback — is unchanged by that, because a tailnet address is neither
+loopback nor a page. What stays out: Remote Control (it drives one *interactive* session from the
+Claude app and is documented for interactive sessions only, so it cannot attach to a `--bg` session
+— checked against code.claude.com/docs/en/remote-control on 2.1.281), cloud sessions, other machines.
+
+**Three things measured before the phase was written, because the roadmap was about to promise
+"when the machine is on".** (1) Nothing was listening on 4949 or 4950 and the last run was 21 Sep;
+the P1-T12 logon task is not registered and the deck has never had one — so P8-T1 is the first task,
+and it is worth doing before any proxy exists. (2) The pane socket is opened by the browser DIRECTLY
+at `ws://127.0.0.1:4950/pty` (SPEC §4.1, `contracts/origins.ts`); from a phone that is the phone, so
+P8-T3 derives the socket URL from the page's host and mounts the PTY path on the same proxy. (3) The
+deck has one breakpoint and was designed as a wall (D15); the phone view is a task (P8-T4), not a
+media query.
+
+**D44 dropped three preset fields; one comes back, and it is the one that is not routing.** D44's
+argument was that the profile function IS the account and the model, so `model` and `effort` on a
+preset would be a second opinion the command line contradicts. That holds and they stay dropped.
+`agent` is different: it chooses the system prompt and the tools, not the account or the model, and
+the docs compose the two (`claude --agent code-reviewer --bg …`, agent-view). P9-T1 re-adds it with
+the roster as its allowlist and a refusal on the one function that pins an agent
+(`claude-isg-orch`) — the same shape as `pinsSessionName`. A preset whose prompt is a slash line is
+already a one-press skill — `claude --bg "/skill args"` runs the skill (same doc) — so most of P9 is
+making what exists pressable rather than adding a mechanism. Zero presets are saved on this machine
+today and three projects are imported; the gate assumes the owner imports the folders they work in.
+
+**Order.** P7-T1 lands first: it is written on `feat/P7-T1-search-index`, 2 927 of 2 928 tests
+green (the one red: the prose reader accepts a `tool_result` fed back as a user record). P7-T2..T5
+carry `depends_on: [P9]`, and `RoadmapReporter.nextUp` now honours `depends_on` and walks past the
+first unfinished phase, so `npm run roadmap` names P8 next rather than "search UI". M4 and M5 are the
+two milestones; DP4 (Tailscale on both devices) and DP5 (a ticket from outside the repo) are the two
+questions only the owner answers.
+

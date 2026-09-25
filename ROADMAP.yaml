@@ -9,7 +9,7 @@
 
 version: 1
 project: flightdeck
-updated: 2026-09-21
+updated: 2026-09-25
 
 docs:
   spec: SPEC.md
@@ -35,6 +35,37 @@ decisions_pending:
     why_deferred: Five minutes of typing into a real pane answers it; deciding now is guessing.
     blocks: [P5b-T1]
     ref: DECISIONS.md D22
+  - id: DP4
+    question: >-
+      Tailscale on this machine and on the phone — acceptable? P8 reaches the deck through an
+      identity-aware reverse proxy the owner installs in front of loopback, never through a wider
+      bind (SEC-NET-1), and Tailscale is the recommendation: WireGuard between the owner's own
+      devices, HTTPS from `tailscale serve`, no port opened on the router, no domain, a phone app,
+      and a one-line inverse (`tailscale serve reset`). The alternatives are a Cloudflare Tunnel
+      with Access (a third party in the path, needs a domain, reachable from the whole internet)
+      or an SSH port-forward from the phone (works, but every open is a ritual, which is the
+      failure the "automate, don't ask him to remember" rule names). Installing a mesh VPN client
+      on both devices is the owner's call, as the Rust toolchain was (D22) and the logon task was
+      (DP2, D21).
+    deferred_to: P8-T2
+    why_deferred: >-
+      Two facts the spike measures decide the shape of P8-T3 (whether the proxy preserves Host,
+      whether it carries the WebSocket upgrade); the install itself only the owner can approve.
+    blocks: [P8-T2]
+    ref: DECISIONS.md D59
+  - id: DP5
+    question: >-
+      Does a ticket ever come from OUTSIDE the repository? P9-T3 reads ticket ids from the
+      project's own `.claude/specs/` and `.claude/state/` because that is where the plan-first
+      prompt already sends Claude. A Jira, Linear or GitHub Issues picker would be the first
+      outbound call core makes (SEC-NET-2 forbids it today) and would carry a credential the
+      machine does not hold yet. Not needed for P9's gate; asked here so it is not built by
+      reflex.
+    deferred_to: P9-T3
+    why_deferred: >-
+      The repo-local picker answers the goal as stated; the tracker question only exists if the
+      owner finds the id is not in the repo when a session should start.
+    ref: DECISIONS.md D59
 
 milestones:
   - id: M1
@@ -46,6 +77,12 @@ milestones:
   - id: M3
     name: A full working day with no hand-opened terminal
     after: P6
+  - id: M4
+    name: What needs me, and a prompt sent, from the phone — with the machine's bind addresses unchanged
+    after: P8
+  - id: M5
+    name: A ticket starts under the chosen agent, in its project, with one press
+    after: P9
 
 phases:
   - id: P0
@@ -3624,6 +3661,14 @@ phases:
     goal: Every transcript searchable; cost visible per project, subscription and week.
     gate: '"Where did I do that Cloudflare Workers deploy?" returns the session in under a second.'
     depends_on: [P2]
+    notes: >-
+      **T1 lands first; T2–T5 follow P9 — the owner's ordering, 2026-09-25 (DECISIONS.md D59).**
+      On that day the roadmap was 93 % done and the two things the owner wanted next were not on
+      it: reaching the deck from a phone (P8) and putting an agent on a ticket with one press (P9).
+      T1 is written on `feat/P7-T1-search-index` — 2 927 of 2 928 tests green; the one red is the
+      prose reader accepting a `tool_result` fed back as a user record — so it lands as is. The
+      rest of this phase carries `depends_on: [P9]`, which `RoadmapReporter.nextUp` honours, so
+      `npm run roadmap` names P8 next rather than a search UI.
     tasks:
       - id: P7-T1
         title: FTS5 indexer over both subscriptions' transcripts, incremental by byte offset
@@ -3632,12 +3677,15 @@ phases:
       - id: P7-T2
         title: Search UI with filters (project, subscription, date, tool, session)
         status: todo
+        depends_on: [P9]
       - id: P7-T3
         title: Cost and activity analytics from cost-state
         status: todo
+        depends_on: [P9]
       - id: P7-T4
         title: Daemon visibility (roster, retire events) and scheduled-task visibility
         status: todo
+        depends_on: [P9]
         notes: >-
           Owns the daemon.log fixture (DECISIONS.md D28). The lifecycle lines and the retirement
           reason words settled / idle-prompt / empty-idle are quoted in RESEARCH.md B.3 and F.2.7
@@ -3648,3 +3696,330 @@ phases:
       - id: P7-T5
         title: Optional OTLP http/json receiver
         status: todo
+        depends_on: [P9]
+
+  - id: P8
+    name: Always on, and on the phone
+    status: todo
+    goal: >-
+      The deck is reachable from the owner's phone whenever this machine is on, and nothing binds
+      wider than loopback to make that so.
+    gate: >-
+      From the phone, away from the desk: see what needs me, open a pane on a background session
+      and send it a prompt — with core and the deck still bound to 127.0.0.1 only, and every
+      request that reaches them carrying the one tailnet origin and nothing else new.
+    depends_on: [P6]
+    notes: >-
+      **Why this phase exists, and why it is not a bind flag.** SPEC §6 and DECISIONS.md D12 put
+      phone access out of scope for v1, and SEC-NET-1 says a host flag is never added. Both
+      stand. What changed is the owner's first goal (2026-09-25, D59): check the deck and prompt a
+      session from the phone while the machine is on. The way in is an identity-aware reverse
+      proxy the owner installs in front of loopback — the recommendation is Tailscale
+      (`tailscale serve`), DP4 — so the threat model of SECURITY.md §1 is unchanged: the deck is
+      reachable by the owner's own devices, authenticated outside Flightdeck, and still not by any
+      page in a browser tab. SEC-HTTP-1 and SEC-HTTP-2 keep working because the proxy presents ONE
+      known host and origin, allowlisted by exact string (SEC-NET-3).
+
+      **What was measured on 2026-09-25 before this was written** (the §G habit). Nothing was
+      listening on 4949 or 4950 and the last run was 21 Sep — "when the machine is on" is not
+      true today even at the desk. The `Flightdeck Core` logon task from P1-T12 is not registered
+      (`schtasks` cannot find it) and the deck has no logon task at all; `flightdeck.cmd` is the
+      only thing that starts `next start`. The browser opens the PTY socket DIRECTLY at
+      `ws://127.0.0.1:4950/pty` (`contracts/origins.ts`, SPEC §4.1), so from a phone that address
+      is the phone. The deck has exactly one breakpoint (900 px) and no phone layout. Tailscale
+      and cloudflared are both absent from the machine. Claude Code 2.1.281's Remote Control
+      drives ONE interactive session from the Claude app and is documented for interactive
+      sessions only (code.claude.com/docs/en/remote-control), so it cannot be attached to a
+      Flightdeck `--bg` session: a stopgap for a single long session, not this phase.
+
+      **Order matters.** T1 is worth doing today and needs no proxy; T2 decides T3's shape; T4 is
+      the phone; T5 is the paperwork that makes the change reviewable, written when the shape is
+      known rather than before.
+    tasks:
+      - id: P8-T1
+        title: Always on — register the core logon task, add one for the deck, and let doctor prove both
+        status: todo
+        security: [SEC-OPS-3, SEC-NET-1]
+        notes: >-
+          P1-T12 built the installer, proved the definition by registering it under a probe name
+          and reading it back, and deliberately stopped short of registering it — "the owner's
+          call". The owner has now called it. Two tasks, not one. **Core** as P1-T12 wrote it
+          (`npm run task:install`, dry run first, the plan printed before anything is registered).
+          **The deck**: a second task that runs `next start -H 127.0.0.1 -p 4949` against the
+          EXISTING `.next` build with `NEXT_TELEMETRY_DISABLED=1` — never `next build`, which is
+          `flightdeck.cmd`'s job when a person is there to read a failure. Same principal, same
+          `LeastPrivilege`, same `ExecutionTimeLimit PT0S` and battery settings, same `realpathSync`
+          on the node path (the fnm shim trap, RESEARCH.md G.18). The deck may start before core:
+          it already shows `core down` and reconnects on its own (P1-T9), so no dependency between
+          the two tasks is needed and none should be invented.
+
+          **What must not change.** Both tasks bind `127.0.0.1`; the deck task's start is checked
+          the way `flightdeck.cmd` checks it — the ADDRESS, not the port — because `next start`
+          defaulting to `0.0.0.0` was the SEC-NET-1 regression once already (G.6). `doctor`
+          reports both tasks, their node paths and the address each bound to. `flightdeck.cmd`
+          keeps working beside the tasks: "already running" on both ports is the expected morning,
+          and the Edge `--app` window is still what it opens. `flightdeck-stop.cmd` stops the
+          processes, not the tasks — say so in its banner.
+
+          Verify by logging off and on: `/health` answers and `/deck` renders before a browser is
+          opened by hand. A `.next` that is missing (fresh clone, never built) is the one failure
+          the deck task must report rather than loop on — Task Scheduler restarts nothing here.
+      - id: P8-T2
+        title: Spike — the deck through `tailscale serve` from the phone; Host, Origin, the WebSocket upgrade and the keyboard, measured
+        status: todo
+        depends_on: [P8-T1]
+        security: [SEC-NET-1, SEC-HTTP-1, SEC-HTTP-2, SEC-WS-1]
+        notes: >-
+          A spike in P0's sense: nothing ships, every finding lands in RESEARCH.md with a date (a
+          new §H), and T3 is designed from what was measured rather than from what the Tailscale
+          docs say. Blocked on DP4 — Tailscale installed on this machine and the phone, same
+          tailnet — and the install is recorded as the answer to DP4 the way P1-T12 recorded DP2.
+
+          **Five questions, each with a yes/no the next task depends on.** (1) With
+          `tailscale serve --bg --https=443 http://127.0.0.1:4949`, what `Host` does the deck
+          receive — `127.0.0.1:4949` or `<machine>.<tailnet>.ts.net`? Core's `LoopbackGuard`
+          compares `CORE_HOSTS` exactly (and the deck's own SEC-HTTP-1 check, if it has one — find
+          out; `proxy.ts` does not), so this decides whether T3 is one allowlist entry or a header
+          rewrite at the proxy. (2) Does the proxy carry a WebSocket upgrade, and does a path mount
+          on the same HTTPS host (`tailscale serve --set-path /pty http://127.0.0.1:4950/pty`)
+          reach core with `Origin: https://<machine>.<tailnet>.ts.net` — the one Origin core would
+          then allowlist? (3) Does the P0-T7 security probe (`scripts/security-probe-cli.ts`)
+          still refuse everything it refused, run against the tailnet address — a rebinding name,
+          a foreign origin, a no-ticket upgrade? SEC-NET-1 is re-proven by `netstat`: nothing new
+          listens on any address but loopback and Tailscale's own. (4) On the phone: does the
+          phone's browser deliver keys to xterm.js in a pane, does the soft keyboard cover the
+          cursor, does the CSP nonce survive the proxy, does `/api/stream` (SSE) stay unbuffered
+          through it the way it did through the Next rewrite (RESEARCH.md F.6.1)? (5) Latency: a
+          keystroke round trip on the tailnet, measured, so T4 knows whether a pane on a phone is
+          a terminal or a composer.
+
+          **What the spike must not do:** widen a bind, add a host flag, install anything under
+          `~/.claude*`, or leave the proxy running after the measurements — `tailscale serve
+          reset`. Every command typed is recorded, so T3's PR body can cite the section.
+      - id: P8-T3
+        title: The tailnet origin — one extra host/origin pair from config, and the PTY socket reached through the page's own host
+        status: todo
+        depends_on: [P8-T2]
+        security: [SEC-NET-3, SEC-HTTP-1, SEC-HTTP-2, SEC-WS-1, SEC-UI-1]
+        notes: >-
+          The shape P5b-T3 was going to have for the Tauri origin, now for the tailnet one. Two
+          changes, both allowlists, never wildcards.
+
+          **Origins and hosts.** `contracts/origins.ts` grows a remote pair — exact
+          `scheme://host[:port]` and `host[:port]` — read from ONE place core owns
+          (`%LOCALAPPDATA%\flightdeck\remote.json`, or an argument the logon task passes; decide
+          from T2's Host finding), screened by shape at load, refused if it names an IP literal, a
+          wildcard, or a loopback name. `LoopbackGuard` compares against the loopback pair plus this
+          one, and the PAIRING is the allowlist: a request carrying the remote host with a loopback
+          origin, or the reverse, is refused. Absent config means today's behaviour byte for byte.
+          The deck takes the same value from the same file if T2 shows it screens Host at all. The
+          Next rewrite is server-to-server on loopback and does not change.
+
+          **The socket.** `CORE_WEBSOCKET` is a constant today; it becomes a function of the
+          page's `location`. On `127.0.0.1:4949` it stays `ws://127.0.0.1:4950` — direct, SPEC
+          §4.1, and the smoke suite keeps measuring that path. On any other host it is
+          `wss://<location.host>/pty`, the path mount T2 measured, and NOTHING else about the
+          handshake changes: the ticket is still minted by `POST /pty-ticket` through the rewrite,
+          bound to one target, burnt on presentation (SEC-WS-1, D32). Core sees the tailnet
+          Origin, finds it in the pair, and the per-boot token still never enters a browser.
+
+          **The security probe grows the remote case rather than a second probe**: the same
+          refusals asserted against the remote pair, plus the mismatched-pair refusal above. Then
+          `npm run build && npm run smoke` AND `npm run smoke:dev`, because `proxy.ts` and the CSP
+          are on the path (the ship skill's G.3 rule).
+      - id: P8-T4
+        title: The phone view — the attention list, one pane, and a composer that sends a line
+        status: todo
+        depends_on: [P8-T3]
+        security: [SEC-UI-1, SEC-UI-2, SEC-WS-3]
+        notes: >-
+          The deck is a wall (SPEC §5.4, D15: twenty rows on 1080p). A phone is a glance and a
+          reply. Same app, same routes, same store — a layout chosen by viewport width (the
+          900 px breakpoint becomes the boundary, plus a `?view=phone` override for measuring at
+          the desk and in the smoke suite), never a second app.
+
+          **Three things on the phone and nothing else.** (1) The attention-sorted rows with the
+          needs-you border, the two quota gauges as numbers, and the row's expanded detail — last
+          prompt, away summary, "doing now". (2) ONE pane: the grid is 1-up on a phone whatever
+          the saved layout, `focus` mode's single pane, `fit` against the visual viewport so the
+          soft keyboard does not hide the cursor (T2 says how bad this is). (3) The **composer**: a
+          single-line input under the pane whose submit writes the text and `\r` to the pane's OWN
+          socket — the same `PaneSocket` the keyboard uses, so nothing new reaches a PTY (SEC-WS-3
+          whole) and no new route exists. It is there because typing into xterm on a soft keyboard
+          is the thing T2 will have shown to be poor; Esc and Ctrl+C become two buttons beside it
+          (P5a's interrupt path).
+
+          **What it does NOT do.** No new notification channel — toasts are Windows (D16); the
+          phone learns by looking, and push is a decision for later if the owner asks. No launch
+          form — starting sessions is a desk job, and the palette's `Launch <group>` is enough from
+          a phone. No attach to an interactive session — the same read-only rule as everywhere.
+          `Ask` (P4-T4) works from the phone as it is, a headless question with the answer on the
+          stream, and the view keeps it reachable.
+
+          Smoke: the suite runs once more at a phone viewport (Playwright, 390×844) and asserts
+          the three things and the composer's write against the fixture PTY echo.
+      - id: P8-T5
+        title: SEC-NET-3 written from measurements, D12's amendment completed, and the phone's own runbook
+        status: todo
+        depends_on: [P8-T3]
+        security: [SEC-NET-3, SEC-OPS-1]
+        notes: >-
+          SECURITY.md carries SEC-NET-3 as a placeholder from the day this phase was added; this
+          task replaces the placeholder with what T2 measured and T3 built — the exact headers, the
+          one file the pair is read from, what `netstat` shows, what the probe refuses. The phase
+          checklist row for P8 is filled in. DECISIONS.md D59 already amends D12; this task adds
+          the measured half. SPEC §6's out-of-scope line already says what is in and what stays
+          out (Remote Control itself, cloud sessions, other machines) — confirm it still does.
+
+          **The runbook is the part the owner will actually use.** README gets a "from the phone"
+          section: the install, the `tailscale serve` lines, the URL, what `core down` means from
+          the phone (the machine is off or the logon tasks did not run — T1's `doctor` line), and
+          the one-line inverse (`tailscale serve reset`) that puts everything back to
+          loopback-only. Nothing in it asks the owner to remember a command that `doctor` or the
+          deck could print for them.
+
+  - id: P9
+    name: One press
+    status: todo
+    goal: >-
+      An agent, a skill or a ticket starts in the right project with one press and nothing typed
+      but the ticket id.
+    gate: >-
+      From the deck: pick a project, pick a ticket from its own spec folder, pick an agent from
+      its own roster, press once — a named background session starts in that folder under that
+      agent with the plan-first prompt, on the subscription with more headroom, and the argv it
+      ran with is in the audit row.
+    depends_on: [P4]
+    notes: >-
+      **Most of this is built, and these notes say what is not.** Since P4 a preset is a profile
+      function, a folder, a name and a prompt (D44); every imported project has four computed
+      presets; the `ticket` preset computes the plan-first prompt from the id (`TicketPrompt`);
+      preset groups launch in one press (P6-T4); routing picks the account with headroom (P4-T3);
+      the workflow map (P3-T3) lists a project's agents, commands and skills with their trigger
+      text. What is missing is the last inch: the map is not pressable, a preset cannot name an
+      agent, the ticket id is typed rather than picked, and single presets are not in the palette.
+
+      **Two facts from the docs this phase leans on** (checked 2026-09-25 against
+      code.claude.com/docs/en/agent-view). `claude --bg "/skill-name args"` sends the skill as the
+      first prompt and it runs — skills and prompt-expanding built-ins do; other built-ins print
+      "attach to a session to run it" — so a preset whose prompt is a slash line is already a
+      one-press skill. And `claude --agent <name> --bg "<prompt>"` is a documented example, so an
+      agent is a flag the launcher may pass (SEC-PROC-2 lists `--agent` already).
+
+      **What the owner has to hand, measured 2026-09-25.** Three projects imported (claude-kit,
+      xpert-new, pdf-editor), zero saved presets, no user-level agents in either config dir, and
+      plugins `superpowers` (fifteen skills), `context-hygiene`, `shell-review`,
+      `frontend-design`, `typescript-lsp`, `chrome-devtools-mcp` — the skills the owner means are
+      mostly plugin skills, which is why T5 exists. The first press is preceded by importing the
+      folders the owner actually works in: a usage step the gate assumes, not a task.
+
+      Sequenced before P7-T2..T5 by the owner (P7's notes, D59).
+    tasks:
+      - id: P9-T1
+        title: An agent on a preset — allowlisted from the project's roster, passed as `--agent`, refused on the function that pins one
+        status: todo
+        security: [SEC-PROC-1, SEC-PROC-2, SEC-PROC-3]
+        notes: >-
+          **This reverses one third of D44, and the reason is written before the field is.** D44
+          dropped `model`, `agent` and `effort` from the preset because the profile function is
+          the routing and a second field could contradict it. `model` and `effort` stay dropped —
+          they are the function's business. `agent` comes back because it is not routing: the
+          function chooses the account and the model, the agent chooses the system prompt and the
+          tools, and the docs compose the two. `claude-isg-orch` pins `--agent orchestrator`, so
+          on that function a preset agent is REFUSED at save time (a `pins_agent` refusal beside
+          `bad_cwd`), the way `pinsSessionName` already keeps a second `-n` off the command line.
+
+          **The allowlist is the roster, not a text box.** `LaunchPreset.agent` is `undefined` or
+          a name `WorkflowMapReader` found under the project's `.claude/agents/*.md` (or a plugin's,
+          T5) at SAVE time and again at LAUNCH time — a roster file deleted between the two makes
+          the launch refuse rather than start an agent Claude Code will not find. Screened by
+          shape (`[a-z0-9-]{1,64}`), because the name reaches an argv element, a JSON body, a
+          database column and a log line.
+
+          **The argv.** `PowerShellLaunchCommands` gets a second fixed line for each of the three
+          functions that do not pin an agent — `claude-365 --bg --agent $env:FD_AGENT -n
+          $env:FD_NAME $env:FD_PROMPT` — chosen when the preset carries one, with `FD_AGENT` read
+          back in argument mode like the other two (SEC-PROC-1; RESEARCH.md F.8.2 measured why, so
+          the fixture test grows a row rather than trusting it). The audit row carries the agent.
+          The presets panel shows the roster as a select with `none` first; the four built-ins
+          stay agent-less. `presets.agent` is a nullable column and a migration, like `preset_group`.
+      - id: P9-T2
+        title: The workflow map is pressable — every agent, command and skill becomes a prefilled preset
+        status: todo
+        depends_on: [P9-T1]
+        security: [SEC-UI-2]
+        notes: >-
+          The map draws `ClaudeAsset` rows (name, description, model, tools) and nothing on them
+          does anything. Each row gets `make a preset`: it opens the presets panel with a draft
+          filled in — `cwd` the project root; `profileFn` the function the observed-behaviour tally
+          (P3-T5) says this folder usually runs under, else `claude-365`; `sessionName` the asset
+          name; and the rest by kind. A **skill or command** becomes the prompt `/<name> ` with the
+          cursor after it — a slash line is a prompt Claude Code runs (P9's phase notes). An
+          **agent** sets the draft's `agent` (T1) and leaves the prompt for the owner to write. The
+          draft is shown before it is saved and the prompt before it is sent — P4-T1's rule, and the
+          `TicketPrompt` panel is the pattern.
+
+          **Nothing is written by the press itself** (D26's habit): a preset reaches the store only
+          when the owner saves the draft. The palette's `Start a background session` stays as it
+          is; this is the project's route, not the global one. The smoke suite gains one check per
+          kind against the fixture map.
+      - id: P9-T3
+        title: The ticket picker — ids read from the project's own spec and state folders
+        status: todo
+        depends_on: [P9-T1]
+        security: [SEC-FS-1, SEC-UI-2]
+        notes: >-
+          The plan-first prompt sends Claude to `.claude/specs/<TICKET>/` or
+          `.claude/state/<TICKET>.md`, so the ids a project can plan against are already ON DISK
+          in two of the folders `CONVENTION_FOLDERS` counts. `FsProjectFiles` lists them — names
+          only, never contents; the map reads a 4 KB head of an asset and this reads less — core
+          screens each against `TICKET_SHAPE` and drops the rest, and `GET /projects/map` carries
+          `tickets` capped at 200, newest by mtime first. The `ticket` preset's text box becomes a
+          datalist over that list; a typed id that is not on disk is still accepted, because the
+          spec may be about to be written.
+
+          **Both folders are under an imported project root, so SEC-FS-1's project rules already
+          allow the read.** What is new is only that a directory listing leaves core, and the
+          names are ticket-shaped by construction before they do (SEC-UI-2).
+
+          DP5 is the question this task does NOT answer: a tracker outside the repository. If the
+          owner wants one, it is its own task with its own SEC-NET decision.
+      - id: P9-T4
+        title: Presets and tickets in the palette — `Launch <project> · <preset>`, and a ticket-shaped query plans the ticket
+        status: todo
+        depends_on: [P9-T3]
+        notes: >-
+          `Ctrl+K` lists `Launch <group>` (P6-T4) but not a single preset, so one press today is
+          three: open the project, find the row, press. Two palette entries close the gap.
+          **`Launch <project> · <preset>`** for every preset of every imported project, ordered by
+          `byProjectThenName`, the current project's first when the deck is in one (P3-T6). **A
+          ticket-shaped query** (`TICKET_SHAPE`, e.g. `XWEB-2019`) typed into the palette offers
+          `Plan XWEB-2019 in <current project>` — the project's `ticket` preset with the name
+          filled — and offers nothing when there is no current project, because a guess about
+          which repository a ticket belongs to is the wrong session started in the wrong folder.
+
+          Both go through the same `POST /sessions` the presets panel uses; the palette composes a
+          `PresetLaunch` and nothing new reaches core. The routing hint (P4-T3) is the entry's
+          description, so the account it will land on is read before the press.
+      - id: P9-T5
+        title: Plugin skills and agents on the map, with their namespaced slash names
+        status: todo
+        depends_on: [P9-T2]
+        security: [SEC-FS-1, SEC-FS-2]
+        notes: >-
+          The map lists plugin NAMES (`enabledPlugins`) and none of what they carry, and the skills
+          the owner has in numbers are plugin skills: `superpowers` alone is fifteen. Sources:
+          `$CFG/plugins/installed_plugins.json` (which plugin, which version, which scope — `user`,
+          or `project` with a `projectPath` that must match the project being mapped) and the
+          plugin's `installPath` under `$CFG/plugins/cache/<marketplace>/<plugin>/<version>/`,
+          whose `skills/*/SKILL.md`, `agents/*.md` and `commands/*.md` are the same three shapes
+          `ClaudeAssetReader` already parses. **SEC-FS-1 grows one allowlisted subtree per config
+          dir — `plugins\cache\` and the one JSON above it — read-only, `.md` and that one `.json`
+          only, screened by `ReadPolicy` like everything else. The marketplace clones under
+          `plugins\marketplaces\` are NOT read**: that is every plugin ever published, not what is
+          installed.
+
+          Each asset carries its plugin and is drawn under it; its slash name is
+          `/<plugin>:<skill>` — **verify the namespacing against the docs before the first preset
+          uses it**, the way P9's phase notes verified `--agent`. The T2 press works on these rows
+          too, which is the point: `/superpowers:brainstorming` becomes one press.

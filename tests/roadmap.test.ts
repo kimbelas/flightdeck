@@ -176,4 +176,74 @@ describe('RoadmapReporter', () => {
     expect(reporter.overallPercent()).toBe(50);
     expect(reporter.nextUp().map((task) => task.id)).toEqual(['P0-T2']);
   });
+
+  /**
+   * 2026-09-25, D59: P8 and P9 were sequenced ahead of P7-T2..T5 with a `depends_on`, and "next
+   * up" — which read the first unfinished phase and nothing else — would have kept naming the
+   * search UI. The shape below is the real file's, reduced: P7 first with one ready task, P8
+   * waiting on it, P9 ready, and a task in P7 waiting on P9.
+   */
+  it('skips what waits on unfinished work, and looks past the first unfinished phase', () => {
+    const reporter = new RoadmapReporter(
+      roadmapWith({
+        phases: [
+          {
+            id: 'P7',
+            name: 'Search',
+            status: 'todo',
+            gate: 'g',
+            tasks: [
+              { id: 'P7-T1', title: 'index', status: 'todo' },
+              { id: 'P7-T2', title: 'search ui', status: 'todo', depends_on: ['P9'] },
+            ],
+          },
+          {
+            id: 'P8',
+            name: 'Phone',
+            status: 'todo',
+            gate: 'g',
+            depends_on: ['P7-T1'],
+            tasks: [{ id: 'P8-T1', title: 'always on', status: 'todo' }],
+          },
+          {
+            id: 'P9',
+            name: 'One press',
+            status: 'todo',
+            gate: 'g',
+            tasks: [
+              { id: 'P9-T1', title: 'agent', status: 'doing' },
+              { id: 'P9-T2', title: 'map', status: 'todo', depends_on: ['P9-T1'] },
+            ],
+          },
+        ],
+      }),
+    );
+    // `doing` first wherever it sits; then the two ready `todo`s; nothing that waits.
+    expect(reporter.nextUp().map((task) => task.id)).toEqual(['P9-T1', 'P7-T1']);
+  });
+
+  it('treats a dropped dependency as settled rather than as forever unfinished', () => {
+    const reporter = new RoadmapReporter(
+      roadmapWith({
+        phases: [
+          {
+            id: 'P5b',
+            name: 'Tauri',
+            status: 'dropped',
+            gate: 'g',
+            tasks: [{ id: 'P5b-T1', title: 'probe', status: 'dropped' }],
+          },
+          {
+            id: 'P6',
+            name: 'Next',
+            status: 'todo',
+            gate: 'g',
+            depends_on: ['P5b'],
+            tasks: [{ id: 'P6-T1', title: 'a', status: 'todo', depends_on: ['P5b-T1'] }],
+          },
+        ],
+      }),
+    );
+    expect(reporter.nextUp().map((task) => task.id)).toEqual(['P6-T1']);
+  });
 });

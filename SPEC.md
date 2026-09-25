@@ -476,6 +476,14 @@ transcripts after 30 days, the index is also the only durable history. Phase 7.
 multi-machine aggregation, config scoring (claude-coach), anything on the undocumented
 messaging pipe.
 
+**Amended 2026-09-25 (DECISIONS.md D59).** Two goals the owner set after M3 became Phases 8 and 9.
+**Phone access to the deck is in** — through an identity-aware proxy the owner installs in front
+of loopback (SEC-NET-3), never a wider bind; core and the deck keep §7 rule 1 to the letter. Remote
+Control itself, cloud sessions and other machines stay out. **One press is in** — the workflow map
+becomes pressable: an agent from the project's roster, a skill as a slash-line prompt, or a ticket
+from the project's own spec folder starts a named `--bg` session in that project (§5.6's presets
+grow an `agent`, which reverses one third of D44 and says why).
+
 ---
 
 ## 7. Security model (new in rev 3)
@@ -564,6 +572,8 @@ public→loopback requests (Local Network Access); other browsers may not. So (D
 | 5b | Tauri shell: tray badge, hotkey, native toasts | Ctrl+W deletes a word; nothing closes |
 | 6 | Shell panes, pop-out, preset groups, toasts, handoff, duplicate warning | a full day with no hand-opened terminal |
 | 7 | FTS5 search, cost/activity analytics, daemon view, optional OTLP receiver | "where did I deploy to Workers?" answers in < 1 s |
+| 8 | Always on, and on the phone: logon tasks for core and the deck, the tailnet origin through an owner-installed proxy, the PTY socket via the page's own host, a phone view with a composer (D59) | from the phone: what needs me, a pane, a prompt sent; bind addresses unchanged |
+| 9 | One press: `agent` on presets from the roster, the workflow map pressable, a ticket picker from `.claude/specs`, presets in the palette, plugin skills on the map (D59) | a ticket starts under the chosen agent in its project with one press and only the id typed |
 
 Phases 1–4 need no PTY and no shell; they deliver most of the value. Phase 5 is where the
 remaining technical risk sits, and step 0 already removed its biggest part.
