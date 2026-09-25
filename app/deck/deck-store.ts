@@ -292,6 +292,9 @@ export class DeckStore {
   /** Brings an ended interactive session back as a background one — P6-T7, SPEC §4.3. */
   public adopt = (ref: SessionRef): Promise<boolean> => this.lifecycle.adopt(ref);
 
+  /** Closes a live interactive session's terminal and adopts it — P6-T8, D63. */
+  public takeOver = (ref: SessionRef): Promise<boolean> => this.lifecycle.takeOver(ref);
+
   /** Stops a running background session, without deleting it — P4-T2b. */
   public stop = (ref: SessionRef): Promise<boolean> => this.lifecycle.stop(ref);
 

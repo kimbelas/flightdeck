@@ -13,6 +13,7 @@
 import { useState, type JSX } from 'react';
 import type { HandoffOffer } from './handoff-view-model.ts';
 import { RowHandoff } from './row-handoff.tsx';
+import { RowTakeover } from './row-takeover.tsx';
 import { SessionDetailView } from './session-detail-view.tsx';
 import type { SessionDetailViewModel } from './session-detail-view-model.ts';
 import type { SessionPreviewViewModel } from './session-preview-view-model.ts';
@@ -37,6 +38,7 @@ export interface SessionRowCardProps {
   readonly onOpen: () => void;
   readonly onResume: () => void;
   readonly onAdopt: () => void;
+  readonly onTakeOver: () => void;
   readonly onStop: () => void;
   readonly onRemove: () => void;
   readonly onPreview: () => void;
@@ -78,6 +80,7 @@ export function SessionRowCard(props: SessionRowCardProps): JSX.Element {
         onOpen={props.onOpen}
         onResume={props.onResume}
         onAdopt={props.onAdopt}
+        onTakeOver={props.onTakeOver}
         onStop={props.onStop}
       />
       {expanded && <RowOpen {...props} />}
@@ -110,7 +113,7 @@ function RowOpen({
   onHandOff,
 }: Omit<
   SessionRowCardProps,
-  'expanded' | 'onToggle' | 'onOpen' | 'onResume' | 'onAdopt' | 'onStop'
+  'expanded' | 'onToggle' | 'onOpen' | 'onResume' | 'onAdopt' | 'onTakeOver' | 'onStop'
 >): JSX.Element {
   return (
     <>
@@ -211,6 +214,7 @@ interface RowActionProps {
   readonly onOpen: () => void;
   readonly onResume: () => void;
   readonly onAdopt: () => void;
+  readonly onTakeOver: () => void;
   readonly onStop: () => void;
 }
 
@@ -223,8 +227,9 @@ interface RowActionProps {
  * there on purpose, and it is what makes the button make sense — "Not running. Resume it to
  * attach." and "That terminal has closed." are each half of their own control.
  */
-function RowAction({ row, onOpen, onResume, onAdopt, onStop }: RowActionProps): JSX.Element {
-  if (!row.canOpenPane) return <RowBlocked row={row} onResume={onResume} onAdopt={onAdopt} />;
+function RowAction(props: RowActionProps): JSX.Element {
+  const { row, onOpen, onStop } = props;
+  if (!row.canOpenPane) return <RowBlocked {...props} />;
   return (
     <div className="row-actions">
       <button type="button" onClick={onOpen}>
@@ -253,6 +258,7 @@ function RowBlocked({
   row,
   onResume,
   onAdopt,
+  onTakeOver,
 }: Omit<RowActionProps, 'onOpen' | 'onStop'>): JSX.Element {
   return (
     <div className="row-blocked-line">
@@ -276,6 +282,9 @@ function RowBlocked({
           adopt
         </button>
       )}
+      {/* P6-T8, D63. The live interactive row's way into a pane: core closes the terminal, then
+          adopts. It arms first, because the window it closes is somebody's (`RowTakeover`). */}
+      <RowTakeover row={row} onTakeOver={onTakeOver} />
     </div>
   );
 }

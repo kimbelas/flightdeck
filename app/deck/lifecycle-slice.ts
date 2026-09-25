@@ -18,6 +18,7 @@ import {
   CORE_REMOVE_PATH,
   CORE_RESUME_PATH,
   CORE_STOP_PATH,
+  CORE_TAKEOVER_PATH,
 } from '../../contracts/deck-routes.ts';
 import type { SessionRef } from '../../contracts/session-ref.ts';
 import type { DeckApi, JsonReply } from './deck-api.ts';
@@ -27,6 +28,7 @@ import {
   whyNotRemoved,
   whyNotResumed,
   whyNotStopped,
+  whyNotTakenOver,
 } from './deck-replies.ts';
 
 /** The two fields of `DeckState` every verb here touches. */
@@ -69,6 +71,17 @@ export class LifecycleSlice {
    */
   public adopt(ref: SessionRef): Promise<boolean> {
     return this.send(CORE_ADOPT_PATH, ref, whyNotAdopted);
+  }
+
+  /**
+   * Closes a LIVE interactive session's terminal and adopts it — P6-T8, D63.
+   *
+   * `adopt` for a session whose terminal is still open. The ref goes over and nothing else: the
+   * pid core ends and the folder it adopts in are both read off the machine at the press
+   * (`SessionTakeover`), never sent from here.
+   */
+  public takeOver(ref: SessionRef): Promise<boolean> {
+    return this.send(CORE_TAKEOVER_PATH, ref, whyNotTakenOver);
   }
 
   /**

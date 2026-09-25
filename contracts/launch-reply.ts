@@ -142,6 +142,44 @@ export function parseAdoptFailure(value: unknown): AdoptFailure | undefined {
   return ADOPT_FAILURES.find((known) => known === value);
 }
 
+/**
+ * Why core would not move a LIVE interactive session into Flightdeck — P6-T8, D63.
+ *
+ * Its own union beside `AdoptFailure` for that union's reason: the two verbs end in the same spawn
+ * and are refused for different things. An adoption is refused because a terminal is still open;
+ * a take-over exists to close it, and is refused for what closing it would cost.
+ *
+ * `busy` is the one that is not a failure: the session is mid-turn, and ending it now would cut
+ * that turn off. The answer is to wait for it. `not_running` is a session the listing no longer
+ * shows with a pid — it ended on its own, and `adopt` is now the verb. `end_failed` is the process
+ * still being there after core asked Windows to end it, which leaves the terminal as it was.
+ */
+export type TakeoverFailure =
+  | 'no_claude'
+  | 'bad_session'
+  | 'not_interactive'
+  | 'not_running'
+  | 'busy'
+  | 'no_folder'
+  | 'end_failed'
+  | 'adopt_failed';
+
+export const TAKEOVER_FAILURES: readonly TakeoverFailure[] = [
+  'no_claude',
+  'bad_session',
+  'not_interactive',
+  'not_running',
+  'busy',
+  'no_folder',
+  'end_failed',
+  'adopt_failed',
+];
+
+/** One off the wire, or `undefined`. The deck has a sentence per code and none for anything else. */
+export function parseTakeoverFailure(value: unknown): TakeoverFailure | undefined {
+  return TAKEOVER_FAILURES.find((known) => known === value);
+}
+
 export const RESUME_FAILURES: readonly ResumeFailure[] = [
   'no_claude',
   'bad_session',

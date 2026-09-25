@@ -1969,3 +1969,39 @@ with its own title, remembered as its own condition so it still fires after the 
 the wait it ends. `settled`, `empty-idle`, `killed` and `(done)` get their own completed titles; a
 completion nobody can name says "Session ended", which is true, rather than "finished". The row stays
 `tone-ended` and out of the attention sort: G.24 still holds — the words change, the rank does not.
+
+## D63 — core may end an idle interactive `claude.exe`, and nothing else; SEC-PROC-5 amended (decided 2026-09-25, P6-T8)
+
+**The ask.** A session started in a terminal should be able to move into the deck without the owner
+closing the window first. P6-T7 already did the move once the window was closed; the missing half
+was the close.
+
+**Why it cannot be an attach.** Nothing here reopens SPEC §5.2: `claude attach` takes `--bg`
+sessions only, and an interactive session's input is its own console. The conversation can move;
+the process cannot. So the take-over ends the process — which is exactly what closing the window
+did — and then adopts, which is P6-T7's measured argv unchanged.
+
+**Why that needed a decision.** SEC-PROC-5 said core never touches a process it did not start except
+through the `claude` CLI verbs, and the CLI has no verb that ends an interactive session. The
+options were to leave the feature as two steps, or to make one narrow, stated exception. The
+exception, and its limits — each enforced as a refusal before anything is ended:
+
+1. **The pid is core's reading, taken at the press.** `claude agents --json --all` is asked about
+   that one session when the request arrives. The pid is never on the request, and never taken from
+   a sweep that may be ten seconds old — nothing in core remembers one.
+2. **Only an explicit `kind: interactive`.** The sweep reads a missing `kind` as interactive because
+   that is the kind Flightdeck refuses to attach; here the dangerous direction is the other one, so
+   the default is reversed.
+3. **Only `status: idle`.** A busy session is mid-turn. `waiting` and an absent status refuse too.
+4. **Only `claude.exe`.** taskkill runs with `/FI "IMAGENAME eq claude.exe"`, so a reissued pid is
+   left alone. Its exit code is 0 either way (G.60), so the adapter asks the probe whether the pid
+   is gone and reports that.
+5. **A folder must be known**, checked before the kill: a session that cannot be adopted must not
+   lose its terminal first.
+
+The deck arms the button with a sentence that says the window closes, as `rm` does. Every attempt
+writes a `takeover` audit row with the taskkill argv, pid included, followed by the adoption's own
+`adopt` row.
+
+**Rejected: ending only the parent.** An idle session still owns children (G.60). Closing a
+window ends them; `TerminateProcess` on the parent alone would orphan a stdio MCP server.

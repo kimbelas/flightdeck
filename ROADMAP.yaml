@@ -3655,6 +3655,71 @@ phases:
           reproducing it live needs a real terminal to close, which is the owner's to do.
           `npm run check` 219 files / 2 780 tests; `npm run smoke` 429 checks.
 
+      - id: P6-T8
+        title: Move a live interactive session into Flightdeck — close its terminal, then adopt it
+        status: done
+        done_on: 2026-09-25
+        deliverables:
+          [
+            contracts/launch-reply.ts,
+            contracts/deck-routes.ts,
+            core/ports/live-session-lookup.ts,
+            core/ports/process-ender.ts,
+            core/adapters/windows/taskkill-process-ender.ts,
+            core/adapters/claude-cli/claude-cli-session-source.ts,
+            core/application/session-adopter.ts,
+            core/application/session-takeover.ts,
+            core/http/takeover-route.ts,
+            core/routes.ts,
+            core/verbs.ts,
+            app/deck/row-takeover.tsx,
+            app/deck/session-row-view-model.ts,
+            app/deck/session-row-card.tsx,
+            app/deck/session-list.tsx,
+            app/deck/deck-body.tsx,
+            app/deck/deck-commands.ts,
+            app/deck/deck-actions.ts,
+            app/deck/deck-store.ts,
+            app/deck/lifecycle-slice.ts,
+            app/deck/deck-replies.ts,
+            app/globals.css,
+            tests/core/application/session-takeover.test.ts,
+            tests/core/adapters/taskkill-process-ender.test.ts,
+            tests/core/adapters/claude-cli-session-source.test.ts,
+            tests/core/application/session-adopter.test.ts,
+            tests/core/http/takeover-route.test.ts,
+            tests/app/deck-takeover.test.ts,
+            tests/e2e/fixture-core.mjs,
+            tests/e2e/smoke/takeover-checks.mjs,
+            DECISIONS.md D63,
+            RESEARCH.md G.60,
+          ]
+        notes: >-
+          The owner's ask, after P6-T7: a session started in a terminal should be able to come
+          INTO the deck without them closing the window first. P6-T7 made that two steps — close
+          the terminal, press adopt — and this is the same path in one press. **Nothing about
+          SPEC §5.2 moves**: an interactive session still cannot be attached, and this does not
+          attach one. It ends the terminal's `claude.exe`, which is what closing the window did,
+          and adopts the conversation exactly as P6-T7 does, under the same id and in the folder
+          core read. Measured end to end on a throwaway session before a line was written
+          (RESEARCH.md G.60): idle in the listing, ended, forgotten by the listing at once, and
+          `--bg --resume` answered `backgrounded · <short> (idle — send a prompt to start)`.
+          **This is the one place core ends a process it did not start**, which SEC-PROC-5
+          forbade outright, so the control is amended rather than worked around (D63). The limits
+          are each a refusal that happens BEFORE the kill: the pid is read off a listing taken at
+          the press and never from the request or a remembered sweep; only an explicit
+          `kind: interactive`; only `status: idle` — busy, waiting and absent all refuse; a folder
+          must be known; and taskkill filters on `IMAGENAME eq claude.exe`, so a pid Windows
+          reissued in between is left alone. taskkill exits 0 on that filtered no-op, so the
+          adapter never reads its exit code and asks the probe instead. `/T` because an idle
+          session still holds children — shells its tools ran, stdio MCP servers — which closing a
+          window ends as well.
+          `SessionAdopter.adoptAt` exists because `adopt` would refuse: the reconciler's row still
+          says live for a sweep after the kill. The deck arms the button like `rm` — the window it
+          closes is somebody's — and holds it disabled while the session is working, with the title
+          saying what it waits for. A failed adoption after the close leaves an ended row, and that
+          row offers `adopt`: the retry is the button P6-T7 already drew.
+
   - id: P7
     name: Search and analytics
     status: done

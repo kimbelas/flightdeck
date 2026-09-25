@@ -49,6 +49,7 @@ interface SessionListProps {
   readonly onOpen: (row: SessionRowViewModel) => void;
   readonly onResume: (row: SessionRowViewModel) => void;
   readonly onAdopt: (row: SessionRowViewModel) => void;
+  readonly onTakeOver: (row: SessionRowViewModel) => void;
   readonly onStop: (row: SessionRowViewModel) => void;
   readonly onRemove: (row: SessionRowViewModel) => void;
   readonly onPreview: (row: SessionRowViewModel) => void;
@@ -137,13 +138,20 @@ function Row({
  * above is now what the row IS, and this is what pressing anything on it does. The list's own
  * callbacks all take the row, so binding is the whole of the work.
  */
-function handlersFor(
-  row: SessionRowViewModel,
-  list: SessionListProps,
-): Pick<
+type RowHandlers = Pick<
   SessionRowCardProps,
-  'onHandOff' | 'onToggle' | 'onResume' | 'onAdopt' | 'onStop' | 'onRemove' | 'onOpen' | 'onPreview'
-> {
+  | 'onHandOff'
+  | 'onToggle'
+  | 'onResume'
+  | 'onAdopt'
+  | 'onTakeOver'
+  | 'onStop'
+  | 'onRemove'
+  | 'onOpen'
+  | 'onPreview'
+>;
+
+function handlersFor(row: SessionRowViewModel, list: SessionListProps): RowHandlers {
   return {
     onHandOff: (path, name) => list.onHandOff(row, path, name),
     onToggle: () => {
@@ -154,6 +162,9 @@ function handlersFor(
     },
     onAdopt: () => {
       list.onAdopt(row);
+    },
+    onTakeOver: () => {
+      list.onTakeOver(row);
     },
     onStop: () => {
       list.onStop(row);

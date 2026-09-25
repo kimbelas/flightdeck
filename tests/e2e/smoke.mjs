@@ -45,6 +45,7 @@ import { groupChecks } from './smoke/group-checks.mjs';
 import { duplicateCwdChecks } from './smoke/duplicate-cwd-checks.mjs';
 import { handoffChecks } from './smoke/handoff-checks.mjs';
 import { adoptChecks } from './smoke/adopt-checks.mjs';
+import { takeoverChecks } from './smoke/takeover-checks.mjs';
 import { endingChecks } from './smoke/ending-checks.mjs';
 import { searchChecks } from './smoke/search-checks.mjs';
 import { securityChecks } from './smoke/security-checks.mjs';
@@ -118,6 +119,9 @@ try {
   // Before the handoff, which leaves the fixture's own snapshot in place: this group pushes one
   // with a CLOSED terminal on it and puts the fixture's back (P6-T7). It needs no project.
   await adoptChecks(page, report, core);
+  // Beside the adoption it ends in, for the same reason: it pushes snapshots and puts the
+  // fixture's own back, and it needs no project (P6-T8).
+  await takeoverChecks(page, report, core);
   // Beside the adoption for its reason: it pushes snapshots and puts the fixture's own back, and
   // it needs no project (D62).
   await endingChecks(page, report, core);

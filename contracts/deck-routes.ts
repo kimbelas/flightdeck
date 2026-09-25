@@ -130,6 +130,16 @@ export const CORE_HANDOFF_PATH = `${CORE_PREFIX}sessions/handoff`;
 export const CORE_ADOPT_PATH = `${CORE_PREFIX}sessions/adopt`;
 
 /**
+ * `POST /sessions/takeover` — end a LIVE, idle interactive session's terminal process and adopt it
+ * (P6-T8, D63).
+ *
+ * A ref and nothing else, for `CORE_ADOPT_PATH`'s reason and one more: the process core ends is
+ * the one `claude agents --json` names for that session at the moment of the press. A browser
+ * that could name a pid could end any process the owner can.
+ */
+export const CORE_TAKEOVER_PATH = `${CORE_PREFIX}sessions/takeover`;
+
+/**
  * DELETING one, conversation and all — P4-T2.
  *
  * Its own literal path rather than a field on the stop body, and that is a control rather than
