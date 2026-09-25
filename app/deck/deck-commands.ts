@@ -33,6 +33,7 @@ import {
 } from './deck-keyboard.ts';
 import type { DeckCommand } from './command-palette-view-model.ts';
 import type { GroupTarget } from './group-targets.ts';
+import { planCommands, presetCommands, type PresetCommandTargets } from './preset-commands.ts';
 import type { SessionRowViewModel } from './session-row-view-model.ts';
 
 // Re-exported so the palette's types read from one place, while the TYPE lives in a leaf module a
@@ -75,10 +76,9 @@ export interface DeckActions {
    *
    * On this interface rather than threaded into the projects panel on their own, because that is
    * what this interface is for: a button and a palette entry that do the same thing must be the
-   * same function. None of the three is a palette entry YET, for the reason the header gives about
-   * "switch project" — a palette that could start a session from a preset would need a preset to
-   * name, and naming one needs P3-T6's current project. That is the task that turns these into
-   * `Start app-next · ticket`.
+   * same function. Save and forget are not palette entries: each needs the editor's boxes. Starting
+   * one is, since P9-T4 — `Launch <project> · <preset>` and `Plan <id> in <project>` press
+   * `onLaunch` with what the preset's own start would send (`preset-commands.ts`).
    */
   readonly onSavePreset: (draft: PresetDraft) => void;
   readonly onForgetPreset: (ref: PresetRef) => void;
@@ -187,7 +187,7 @@ export interface ProjectTarget {
   readonly sessions: number;
 }
 
-export interface CommandTargets extends DeckActions {
+export interface CommandTargets extends DeckActions, PresetCommandTargets {
   readonly rows: readonly SessionRowViewModel[];
   /** Not on `DeckActions`: the grid owns the layout, and the store owns everything else there. */
   readonly onLayout: (layout: PaneLayout) => void;
@@ -198,15 +198,27 @@ export interface CommandTargets extends DeckActions {
   readonly onChooseProject: (key: string | undefined) => void;
 }
 
-/** The deck's commands: the always-there ones, the six layouts, then two per session that can be. */
-export function deckCommands(targets: CommandTargets): readonly DeckCommand[] {
+/**
+ * The deck's commands: the always-there ones, the six layouts, then two per session that can be.
+ *
+ * `query` is what is typed into the palette, and only `Plan <id>` reads it (P9-T4). It is first
+ * when it is there: somebody who typed a ticket id most likely means to plan it.
+ */
+export function deckCommands(targets: CommandTargets, query = ''): readonly DeckCommand[] {
   return [
+    ...planCommands(targets, query),
     ...globalCommands(targets),
     ...projectCommands(targets),
     ...groupCommands(targets),
+    ...presetCommands(targets),
     ...layoutCommands(targets),
     ...targets.rows.flatMap((row) => rowCommands(row, targets)),
   ];
+}
+
+/** `deckCommands` over one set of targets, for whatever is typed — what `useDeckKeys` takes. */
+export function commandsFor(targets: CommandTargets): (query: string) => readonly DeckCommand[] {
+  return (query) => deckCommands(targets, query);
 }
 
 /**
