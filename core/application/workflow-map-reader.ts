@@ -33,6 +33,11 @@ import {
 } from '../../contracts/claude-settings.ts';
 import { readHookTimeline, MAX_SETTINGS_BYTES } from '../../contracts/hook-timeline.ts';
 import { INSTRUCTION_SOURCES } from '../../contracts/instruction-stack.ts';
+import {
+  LOCAL_SETTINGS_FILE,
+  SETTINGS_FILE,
+  type ProjectPluginSettings,
+} from '../../contracts/plugin-enablement.ts';
 import { parseProjectGates } from '../../contracts/project-gates.ts';
 import type { ClaudeAsset } from '../../contracts/claude-assets.ts';
 import { TICKET_FOLDERS } from '../../contracts/project-tickets.ts';
@@ -57,8 +62,6 @@ const MAP_TTL_MS = 300_000;
 /** The project's own config directory. Everything but the instruction stack hangs off it. */
 const CLAUDE_DIR = '.claude';
 
-/** The two files a repository declares its servers and its settings in. */
-const SETTINGS_FILE = 'settings.json';
 /** coach-core's gate definitions, when the project is coached at all (P3-T6, D12). */
 const GATES_FILE = 'gates.json';
 /** The one measured on this machine is 1 452 bytes; this is room for a much larger one. */
@@ -130,6 +133,9 @@ export class WorkflowMapReader {
    * five sources are outside it — see the header.
    */
   private async compose(path: string, root: string, claudeDir: string): Promise<WorkflowMap> {
+    // Parsed once and read twice: for the hooks, permissions and plugin names below, and as the
+    // project half of plugin enablement (contracts/plugin-enablement.ts).
+    const settingsRead = this.json(childPath(claudeDir, SETTINGS_FILE), MAX_SETTINGS_BYTES);
     const [
       instructions,
       assets,
@@ -142,10 +148,10 @@ export class WorkflowMapReader {
       configured,
     ] = await Promise.all([
       this.parts.instructions.read(root),
-      this.assets(claudeDir, [path, root]),
+      this.assets(claudeDir, [path, root], this.pluginSettings(claudeDir, settingsRead)),
       this.parts.assets.conventions(claudeDir),
       this.parts.tickets.tickets(claudeDir),
-      this.json(childPath(claudeDir, SETTINGS_FILE), MAX_SETTINGS_BYTES),
+      settingsRead,
       this.json(childPath(root, MCP_FILE), MAX_MCP_BYTES),
       // P3-T6. Through the same door as the other two JSON files, so an unreadable or refused
       // `gates.json` is `undefined` here and draws "not coached" rather than an error.
@@ -174,14 +180,30 @@ export class WorkflowMapReader {
     };
   }
 
-  /** The project's own assets, then its plugins' (P9-T5) — the order the panel draws them in. */
+  /** Both project-side `enabledPlugins` sources, the committed one already being read. */
+  private async pluginSettings(
+    claudeDir: string,
+    settingsRead: Promise<unknown>,
+  ): Promise<ProjectPluginSettings> {
+    const [project, local] = await Promise.all([
+      settingsRead,
+      this.json(childPath(claudeDir, LOCAL_SETTINGS_FILE), MAX_SETTINGS_BYTES),
+    ]);
+    return { project, local };
+  }
+
+  /**
+   * The project's own assets, then its ENABLED plugins' (P9-T5) — the order the panel draws them
+   * in. A plugin the project's `settings.json` or `settings.local.json` switches off is not drawn.
+   */
   private async assets(
     claudeDir: string,
     projectPaths: readonly string[],
+    pluginSettings: Promise<ProjectPluginSettings>,
   ): Promise<readonly ClaudeAsset[]> {
     const [own, plugins] = await Promise.all([
       this.parts.assets.assets(claudeDir),
-      this.parts.plugins.assets(projectPaths),
+      pluginSettings.then((project) => this.parts.plugins.assets(projectPaths, project)),
     ]);
     return [...own, ...plugins];
   }
@@ -195,15 +217,18 @@ export class WorkflowMapReader {
    * signature stops being empty.
    */
   private async signature(claudeDir: string, projectPath: string): Promise<string> {
-    const [directory, settings, worktrees, plugins, ...tickets] = await Promise.all([
+    const [directory, settings, local, worktrees, plugins, ...tickets] = await Promise.all([
       this.facts(claudeDir),
       this.facts(childPath(claudeDir, SETTINGS_FILE)),
+      // An opt-out written to `settings.local.json` switches a plugin off here and nowhere else;
+      // an edit in place moves neither `.claude` nor `settings.json`.
+      this.stamp(childPath(claudeDir, LOCAL_SETTINGS_FILE)),
       // P3-T4's third stat, and it is a third stat rather than a third cache: the trees are part
       // of the same map and a `SignatureCache` of their own would recompute them on a clock the
       // panel never sees. `WorktreeReader` says what it observes and why that is the cheap thing.
       this.parts.worktrees.signature(projectPath),
       // P9-T5. Installing or removing a plugin rewrites a config dir's `installed_plugins.json`,
-      // which moves nothing under the project.
+      // and enabling one at user scope its `settings.json` — neither under the project.
       this.parts.plugins.signature(),
       // P9-T3. A spec written for a new ticket moves `specs/`'s mtime and not `.claude`'s, and the
       // picker should offer it on the next read rather than five minutes later.
@@ -211,7 +236,13 @@ export class WorkflowMapReader {
     ]);
     if (directory === undefined && settings === undefined && worktrees === '') return '';
     const folders = tickets.map((facts) => String(facts?.modifiedAt ?? 0)).join(':');
-    return `${String(directory?.modifiedAt ?? 0)}:${String(settings?.modifiedAt ?? 0)}:${String(settings?.sizeBytes ?? 0)}:${worktrees}:${folders}:${plugins}`;
+    return `${String(directory?.modifiedAt ?? 0)}:${String(settings?.modifiedAt ?? 0)}:${String(settings?.sizeBytes ?? 0)}:${worktrees}:${folders}:${plugins}:${local}`;
+  }
+
+  /** A file's mtime and size as one token, `0.0` when it is not there. */
+  private async stamp(path: string): Promise<string> {
+    const facts = await this.facts(path);
+    return `${String(facts?.modifiedAt ?? 0)}.${String(facts?.sizeBytes ?? 0)}`;
   }
 
   /**

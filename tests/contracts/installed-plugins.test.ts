@@ -13,7 +13,14 @@ const HERE = 'C:\\Users\\dev\\Documents\\development\\app-next';
 const CACHE = 'C:\\Users\\dev\\.claude-365\\plugins\\cache\\m';
 
 function install(overrides: Partial<PluginInstall> = {}): PluginInstall {
-  return { plugin: 'p', scope: 'user', projectPath: undefined, installPath: CACHE, ...overrides };
+  return {
+    id: 'p@m',
+    plugin: 'p',
+    scope: 'user',
+    projectPath: undefined,
+    installPath: CACHE,
+    ...overrides,
+  };
 }
 
 describe('parseInstalledPlugins', () => {
@@ -46,7 +53,7 @@ describe('parseInstalledPlugins', () => {
     });
 
     expect(installs).toEqual([
-      { plugin: 'kept', scope: 'local', projectPath: HERE, installPath: CACHE },
+      { id: 'kept@m', plugin: 'kept', scope: 'local', projectPath: HERE, installPath: CACHE },
     ]);
   });
 

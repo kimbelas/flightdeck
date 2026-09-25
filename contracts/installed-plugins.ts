@@ -43,6 +43,11 @@ export const PLUGIN_SCOPES = ['user', 'project', 'local'] as const;
 export type PluginScope = (typeof PLUGIN_SCOPES)[number];
 
 export interface PluginInstall {
+  /**
+   * `superpowers@claude-plugins-official`, the index's key as written, which is the key
+   * `enabledPlugins` uses for the same plugin (contracts/plugin-enablement.ts).
+   */
+  readonly id: string;
   /** `superpowers` — the prefix of every scoped name the plugin's assets carry. `PLUGIN_SHAPE`. */
   readonly plugin: string;
   readonly scope: PluginScope;
@@ -68,7 +73,7 @@ export function parseInstalledPlugins(value: unknown): readonly PluginInstall[] 
     const plugin = key.split('@')[0] ?? '';
     if (!PLUGIN_SHAPE.test(plugin) || !Array.isArray(entries)) continue;
     for (const entry of entries) {
-      const install = installOf(plugin, entry);
+      const install = installOf(key, plugin, entry);
       if (install !== undefined) installs.push(install);
     }
   }
@@ -89,7 +94,7 @@ export function installAppliesTo(install: PluginInstall, projectPaths: readonly 
   return projectPaths.some((path) => projectKey(path) === projectKey(wanted));
 }
 
-function installOf(plugin: string, value: unknown): PluginInstall | undefined {
+function installOf(id: string, plugin: string, value: unknown): PluginInstall | undefined {
   const fields = record(value);
   if (fields === undefined) return undefined;
   const scope = PLUGIN_SCOPES.find((known) => known === fields['scope']);
@@ -97,7 +102,13 @@ function installOf(plugin: string, value: unknown): PluginInstall | undefined {
   if (scope === undefined || installPath === undefined) return undefined;
   const projectPath = path(fields['projectPath']);
   if (scope !== 'user' && projectPath === undefined) return undefined;
-  return { plugin, scope, projectPath: scope === 'user' ? undefined : projectPath, installPath };
+  return {
+    id,
+    plugin,
+    scope,
+    projectPath: scope === 'user' ? undefined : projectPath,
+    installPath,
+  };
 }
 
 function path(value: unknown): string | undefined {
