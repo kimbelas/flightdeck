@@ -27,7 +27,9 @@
 // transcript's bytes are prose; the other 98.6 % is tool results and pasted files, which are not
 // indexed because they are not read (SEC-DATA-1's sensitivity, and `transcript-record.ts`'s own
 // "what is never read cannot leak").
+import { NOT_YET_INDEXED, type IndexProgress } from '../../contracts/search-reply.ts';
 import { readTranscriptProse, type TranscriptProse } from '../../contracts/transcript-prose.ts';
+import { readToolNames } from '../../contracts/transcript-tools.ts';
 import type { ReadPolicy } from '../domain/read-policy.ts';
 import type { Cancellation } from '../ports/cancellation.ts';
 import type { Clock } from '../ports/clock.ts';
@@ -81,9 +83,21 @@ export class TranscriptIndexer {
   private readonly parts: TranscriptIndexerParts;
   private timer: Cancellation | undefined;
   private running = false;
+  private latest: IndexProgress = NOT_YET_INDEXED;
 
   constructor(parts: TranscriptIndexerParts) {
     this.parts = parts;
+  }
+
+  /**
+   * How far the index has got, as of the last pass that finished — P7-T2.
+   *
+   * What `GET /search` carries beside its hits, so the deck can say the index is still filling
+   * rather than let a missing hit read as "never happened" (RESEARCH.md G.56). `NOT_YET_INDEXED`
+   * until the boot pass has finished, which is a different state from "caught up".
+   */
+  public progress(): IndexProgress {
+    return this.latest;
   }
 
   /**
@@ -146,7 +160,33 @@ export class TranscriptIndexer {
       excerpts += read.excerpts;
       if (read.behind) behind += 1;
     }
+    this.latest = this.measured(entries);
     return { filesRead, excerpts, behind };
+  }
+
+  /**
+   * The progress report, read off the cursors AFTER the pass rather than tallied during it.
+   *
+   * Tallying would have to account for the file skipped because nothing was appended, the one
+   * refused by the policy and the one cut off by the budget, each differently. The cursors already
+   * say how far every file has got; a point lookup per transcript is about a thousand primary-key
+   * reads every five minutes. A refused path is not part of the corpus and is not counted.
+   */
+  private measured(entries: readonly CatalogueEntry[]): IndexProgress {
+    let bytesTotal = 0;
+    let bytesIndexed = 0;
+    let behind = 0;
+    let transcripts = 0;
+    for (const entry of entries) {
+      if (!this.parts.policy.allows(entry.path)) continue;
+      const offset = this.parts.store.transcriptCursor(entry.path)?.offset ?? 0;
+      transcripts += 1;
+      bytesTotal += entry.bytes;
+      bytesIndexed += Math.min(offset, entry.bytes);
+      if (entry.bytes > offset) behind += 1;
+    }
+    const passedAt = this.parts.clock.now().getTime();
+    return { passedAt, transcripts, behind, bytesTotal, bytesIndexed };
   }
 
   /**
@@ -166,7 +206,8 @@ export class TranscriptIndexer {
       this.parts.logger.warn('index_path_refused', { subscription: entry.subscription });
       return undefined;
     }
-    const cursor = this.parts.store.transcriptCursor(entry.path) ?? NEW_TRANSCRIPT;
+    const known = this.parts.store.transcriptCursor(entry.path);
+    const cursor = known ?? NEW_TRANSCRIPT;
     // Nothing appended, and the file is the one the cursor belongs to. A `read` here would cost an
     // open and a stat per transcript per tick to learn the same thing the walk already reported.
     if (cursor.identity !== '' && entry.bytes <= cursor.offset) return undefined;
@@ -174,7 +215,7 @@ export class TranscriptIndexer {
     const slice = await this.parts.files.read(entry.path, cursor);
     if (slice.unreadable || slice.text === '') return undefined;
 
-    const { excerpts, fragment } = readProse(slice.text);
+    const { excerpts, tools, fragment } = readProse(slice.text);
     this.parts.store.indexTranscript({
       path: entry.path,
       subscription: entry.subscription,
@@ -184,8 +225,13 @@ export class TranscriptIndexer {
       // than from the text's length, so a multi-byte character inside it cannot shift the offset.
       cursor: { offset: slice.to - byteLengthOf(fragment), identity: slice.identity },
       at: this.parts.clock.now().getTime(),
-      restarted: slice.restarted,
+      // A file with NO cursor is read as a restart too (P7-T2): whatever the store holds for its
+      // session was not read through a cursor that still exists, and is replaced rather than
+      // appended to. On a genuinely new transcript that deletes nothing. After migration 9 dropped
+      // every cursor, it is what stops the re-read from indexing each excerpt a second time.
+      restarted: slice.restarted || known === undefined,
       excerpts,
+      tools,
     });
     return { excerpts: excerpts.length, behind: entry.bytes > slice.to };
   }
@@ -200,30 +246,38 @@ export class TranscriptIndexer {
  */
 function readProse(text: string): {
   readonly excerpts: readonly TranscriptProse[];
+  /** Every tool the slice's assistant turns called, each once (P7-T2). */
+  readonly tools: readonly string[];
   readonly fragment: string;
 } {
   const lastBreak = text.lastIndexOf('\n');
-  if (lastBreak === -1) return { excerpts: [], fragment: text };
+  if (lastBreak === -1) return { excerpts: [], tools: [], fragment: text };
   const excerpts: TranscriptProse[] = [];
+  const tools = new Set<string>();
   for (const line of text.slice(0, lastBreak).split('\n')) {
-    const prose = proseIn(line);
+    const value = parsed(line);
+    const prose = readTranscriptProse(value);
     if (prose !== undefined) excerpts.push(prose);
+    for (const tool of readToolNames(value)) tools.add(tool);
   }
-  return { excerpts, fragment: text.slice(lastBreak + 1) };
+  return { excerpts, tools: [...tools], fragment: text.slice(lastBreak + 1) };
 }
 
-/** One line's prose, or `undefined` — for an empty line, an oversize one, or one holding none. */
-function proseIn(line: string): TranscriptProse | undefined {
+/**
+ * One line as JSON, or `undefined` — for an empty line, an oversize one, or one that is not JSON.
+ *
+ * Parsed once and read twice, by the prose reader and the tool reader, because the parse is the
+ * expensive half of both.
+ */
+function parsed(line: string): unknown {
   if (line === '' || line.length > MAX_LINE_CHARS) return undefined;
-  let value: unknown;
   try {
-    value = JSON.parse(line);
+    return JSON.parse(line);
   } catch {
     // Not an error and not an alarm: the drift detector is `readTranscriptLine`'s (SPEC §8 R2),
     // and a second one firing on every unparseable fragment would make the first one worthless.
     return undefined;
   }
-  return readTranscriptProse(value);
 }
 
 /**

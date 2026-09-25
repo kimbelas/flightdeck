@@ -33,6 +33,7 @@ import type { ConfigDigest } from '../../contracts/config-snapshot.ts';
 import type { LaunchPreset } from '../../contracts/launch-preset.ts';
 import type { DraftEvent, FdEvent } from '../../contracts/fd-event.ts';
 import type { ProjectRecord } from '../../contracts/project.ts';
+import type { SearchFilters } from '../../contracts/search-filters.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
 import type { TranscriptProse } from '../../contracts/transcript-prose.ts';
 import type { SearchHit } from '../../contracts/transcript-search.ts';
@@ -213,15 +214,32 @@ export interface Store {
   indexTranscript(batch: TranscriptIndexBatch): void;
 
   /**
-   * The sessions whose transcripts match `match`, best first, at most `limit`.
+   * The sessions whose transcripts match `query.match`, best first, at most `query.limit`.
    *
-   * @param match an FTS5 MATCH expression built by `toMatchExpression`, never a raw typed query:
-   * FTS5 has a grammar, and a `"` somebody typed is a syntax error rather than a search
-   * (contracts/transcript-search.ts).
+   * `query.match` is an FTS5 MATCH expression built by `toMatchExpression`, never a raw typed
+   * query: FTS5 has a grammar, and a `"` somebody typed is a syntax error rather than a search
+   * (contracts/transcript-search.ts). The filters narrow the LINES that may match before the
+   * grouping picks one per session (P7-T2), so "since last week" means a matching line written
+   * since last week, not a session that merely existed then.
    * @returns at most one hit per session — the gate asks "where did I do that", and the answer is
    * a conversation to go back to rather than forty lines from inside one.
    */
-  searchTranscripts(match: string, limit: number): readonly SearchHit[];
+  searchTranscripts(query: TranscriptQuery): readonly SearchHit[];
+
+  /**
+   * The tools the indexed sessions called, the most widely used first — P7-T2's `tool` picker.
+   *
+   * Names only (contracts/transcript-tools.ts). What is offered is what the index can answer: a
+   * tool nobody has called is not a filter anybody could get a hit from.
+   */
+  transcriptTools(limit: number): readonly string[];
+}
+
+/** One search, filters and all — P7-T2. */
+export interface TranscriptQuery {
+  readonly match: string;
+  readonly limit: number;
+  readonly filters: SearchFilters;
 }
 
 /** What one pass over one transcript read — P7-T1. See `Store.indexTranscript`. */
@@ -238,6 +256,8 @@ export interface TranscriptIndexBatch {
   readonly at: number;
   readonly restarted: boolean;
   readonly excerpts: readonly TranscriptProse[];
+  /** Every tool this slice's assistant turns called, each once — names, never inputs (P7-T2). */
+  readonly tools: readonly string[];
 }
 
 /**

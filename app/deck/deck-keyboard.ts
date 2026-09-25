@@ -31,6 +31,8 @@ export const SEARCH_INPUT_ID = 'deck-search';
 export const LAUNCH_PROMPT_ID = 'launch-prompt';
 /** Where a project path is typed — the palette's "Import a project" focuses this (P3-T1). */
 export const PROJECT_PATH_ID = 'project-path';
+/** The box that searches every transcript — the palette's "Search every transcript" (P7-T2). */
+export const TRANSCRIPT_SEARCH_ID = 'transcript-search';
 
 /** The session rows' expand buttons, in the order they are on screen. Filtering changes this. */
 const ROW_SELECTOR = '[data-deck-row]';

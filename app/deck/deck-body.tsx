@@ -16,6 +16,7 @@ import { AskPanel } from './ask-panel.tsx';
 import { handoffOffer, handoffRefusalLine, type HandoffOffer } from './handoff-view-model.ts';
 import { SessionList } from './session-list.tsx';
 import { SessionPreviewViewModel } from './session-preview-view-model.ts';
+import { TranscriptSearchPanel } from './transcript-search-panel.tsx';
 import type { SessionRowViewModel } from './session-row-view-model.ts';
 import type { ProjectScope } from './project-scope.ts';
 import type { CurrentProject } from './use-current-project.ts';
@@ -49,6 +50,7 @@ export function DeckBody(props: DeckBodyProps): JSX.Element {
     <div className="deck-body">
       <DeckLeft
         rows={inProject}
+        everyRow={rows}
         state={state}
         now={now}
         scope={scope}
@@ -78,6 +80,8 @@ export function DeckBody(props: DeckBodyProps): JSX.Element {
 
 interface DeckLeftProps {
   readonly rows: readonly SessionRowViewModel[];
+  /** Every session, not the narrowed list: a search hit may be in another project (P7-T2). */
+  readonly everyRow: readonly SessionRowViewModel[];
   readonly state: DeckState;
   readonly now: number;
   readonly scope: ProjectScope;
@@ -103,6 +107,14 @@ function DeckLeft(props: DeckLeftProps): JSX.Element {
         disabled={!state.coreUp}
         onAsk={actions.onAsk}
         onClear={actions.onClearAsk}
+      />
+      {/* P7-T2. Under Ask: both are questions, and this one is about what is NOT on screen. */}
+      <TranscriptSearchPanel
+        projects={state.projects}
+        rows={props.everyRow}
+        now={now}
+        onOpenPane={actions.onOpenPane}
+        onResume={actions.onResume}
       />
       <DeckSessions {...props} />
     </div>

@@ -22,6 +22,7 @@ import { AdoptRoute, type SessionAdopterPort } from './http/adopt-route.ts';
 import { SearchRoute, type TranscriptSearch } from './http/search-route.ts';
 import { OtlpLogsRoute, OtlpMetricsRoute, type OtlpRouteParts } from './http/otlp-routes.ts';
 import { TelemetryRoute } from './http/telemetry-route.ts';
+import { SearchToolsRoute, type TranscriptToolList } from './http/search-tools-route.ts';
 import { HandoffRoute, type SessionForker } from './http/handoff-route.ts';
 import { LaunchRoute } from './http/launch-route.ts';
 import { MutesReadRoute, MutesWriteRoute } from './http/mutes-route.ts';
@@ -72,10 +73,11 @@ export interface RouterParts {
   /**
    * The transcript index, asked a question — P7-T1, SPEC §5.8.
    *
-   * The `Store` narrowed to one method, for `SessionForker`'s reason: a route that took the whole
-   * store could write to the event log, and this one only ever reads.
+   * The `Store` narrowed to its two index reads (the second is P7-T2's tool list), for
+   * `SessionForker`'s reason: a route that took the whole store could write to the event log, and
+   * these only ever read.
    */
-  readonly search: TranscriptSearch;
+  readonly search: TranscriptSearch & TranscriptToolList;
   readonly launcher: SessionLauncher;
   readonly resumer: SessionResumer;
   readonly stopper: SessionStopper;
@@ -137,11 +139,11 @@ export function buildRouter(parts: RouterParts, extra: readonly Route[]): Reques
     new SessionDetailRoute(parts.detail),
     // Its own route and not a field on the detail: a preview spawns `claude.exe` (P5a-T4).
     new PreviewRoute(parts.preview),
-    // P7-T1. A read of the index and nothing else — the filters SPEC §5.8 lists are P7-T2's.
-    new SearchRoute(parts.search),
+    // P7-T1/T2: the index with SPEC §5.8's filters, and how far its hours-long backfill has got.
+    new SearchRoute(parts.search, parts.feeds.indexer),
+    new SearchToolsRoute(parts.search),
     new StatusRoute(parts.report),
-    // P7-T4. The roster, the log's tail and a probe per pid — no process spawned, nothing written.
-    new DaemonRoute(parts.daemons),
+    new DaemonRoute(parts.daemons), // P7-T4 — roster, log tail, a probe per pid; nothing written.
     ...sessionRoutes(parts),
     // P4-T5. The read is a GET and writes no audit row; the two writes are POSTs and do.
     new DoctorRoute(parts.doctor),

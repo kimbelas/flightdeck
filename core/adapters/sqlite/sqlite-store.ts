@@ -29,6 +29,7 @@ import {
   type MutedSession,
   type Store,
   type TranscriptIndexBatch,
+  type TranscriptQuery,
 } from '../../ports/store.ts';
 import type { TranscriptCursor } from '../../ports/transcript-file.ts';
 import type { SearchHit } from '../../../contracts/transcript-search.ts';
@@ -279,7 +280,7 @@ export class SqliteStore implements Store {
     return this.muteRows.selectAll.all().map(toMutedSession);
   }
 
-  /** The search index's three, delegated — P7-T1. See `SqliteTranscriptIndex` for the split. */
+  /** The search index's four, delegated — P7-T1, P7-T2. See `SqliteTranscriptIndex` for the split. */
   public transcriptCursor(path: string): TranscriptCursor | undefined {
     return this.index.transcriptCursor(path);
   }
@@ -288,8 +289,12 @@ export class SqliteStore implements Store {
     this.index.indexTranscript(batch);
   }
 
-  public searchTranscripts(match: string, limit: number): readonly SearchHit[] {
-    return this.index.searchTranscripts(match, limit);
+  public searchTranscripts(query: TranscriptQuery): readonly SearchHit[] {
+    return this.index.searchTranscripts(query);
+  }
+
+  public transcriptTools(limit: number): readonly string[] {
+    return this.index.transcriptTools(limit);
   }
 
   /** Closes the handle. Idempotent, because shutdown is (main.ts `stopCore`). */

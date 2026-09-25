@@ -210,6 +210,11 @@ export function toSearchHit(row: unknown): SearchHit {
   };
 }
 
+/** One row of the tool picker's list — its name, or `''` for a row this build cannot read (P7-T2). */
+export function toToolName(row: unknown): string {
+  return stringAt(asRecord(row) ?? {}, 'tool');
+}
+
 /** What a row this build cannot read at all comes back as. Compares unequal to every real one. */
 const EMPTY_DIGEST: ConfigDigest = {
   instructions: [],

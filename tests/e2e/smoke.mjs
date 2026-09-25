@@ -44,6 +44,7 @@ import { groupChecks } from './smoke/group-checks.mjs';
 import { duplicateCwdChecks } from './smoke/duplicate-cwd-checks.mjs';
 import { handoffChecks } from './smoke/handoff-checks.mjs';
 import { adoptChecks } from './smoke/adopt-checks.mjs';
+import { searchChecks } from './smoke/search-checks.mjs';
 import { securityChecks } from './smoke/security-checks.mjs';
 import { LOOPBACK_ADDRESS, UI_PORT } from '../../contracts/origins.ts';
 
@@ -125,6 +126,9 @@ try {
   await muteChecks(page, report, core);
   // After the shells, because it opens a SESSION pane and closes every other one first (P6-T2).
   await popoutChecks(page, report, core);
+  // Last before security: it imports ledger behind the deck's back and RELOADS the page, so the
+  // registry is in a known state wherever it runs and nothing after it depends on an open pane.
+  await searchChecks(page, report, core);
   if (DEV) devChecks(report, seen);
   else await securityChecks(page, report, core, seen);
   await page.screenshot({ path: SHOT });

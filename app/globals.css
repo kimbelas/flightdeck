@@ -140,11 +140,19 @@ button.ghost {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  overflow-y: auto;
   border-right: 1px solid var(--line);
 }
 
+/* The panels above the list keep their height (P7-T2). Shrunk, their content overflowed onto the
+   session rows below, which then could not be clicked; now a crowded column scrolls instead. */
+.deck-left > :not(.rows) {
+  flex-shrink: 0;
+}
+
+/* Its own scroll while there is room, and never squeezed shut when there is not. */
 .rows {
-  flex: 1;
+  flex: 1 0 320px;
   overflow-y: auto;
 }
 
@@ -1154,6 +1162,104 @@ button.ghost {
   word-break: break-word;
   font-size: 12px;
   line-height: 1.45;
+}
+
+/* ---- search every transcript (P7-T2) ---- */
+
+.transcript-search {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.search-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.search-filters select {
+  flex: 1 1 90px;
+  min-width: 0;
+  font-size: 11px;
+}
+
+.search-index {
+  margin: 0;
+  font-size: 11px;
+  color: var(--warn);
+}
+
+.search-summary {
+  margin: 0;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+/* Bounded, so a page of hits cannot push the session list off the screen — the Ask answer's rule. */
+.search-hits {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: min(420px, 40vh);
+  overflow-y: auto;
+}
+
+.search-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.search-hit-head {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  margin: 0;
+  font-size: 11px;
+}
+
+.search-hit-project {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Model and user text, as text (SEC-UI-2). Wrapped, never interpreted. */
+.search-hit-snippet {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.search-hit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  font-size: 11px;
+}
+
+.search-hit-resume {
+  flex: 1 1 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+  user-select: all;
+  color: var(--dim);
 }
 
 /* ---- the pane area: chooser, then the grid (P5a-T5) ---- */

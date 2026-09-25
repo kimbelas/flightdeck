@@ -248,6 +248,33 @@ export const MIGRATIONS: readonly string[] = [
   `
   ALTER TABLE presets ADD COLUMN agent TEXT;
   `,
+  // 9 — which tools each indexed session called: SPEC §5.8's `tool` filter (P7-T2).
+  //
+  // **Names only** — `Bash`, `WebFetch`, `mcp__github__create_pr` — never a tool's input, which
+  // holds the command or the file and is not read (contracts/transcript-tools.ts, SEC-DATA-1). One
+  // row per session per tool, so the filter is one primary-key probe per candidate hit.
+  //
+  // **Every cursor is dropped, and no excerpt is.** The transcripts P7-T1 already read were read
+  // without their tool calls, so a filter over them would answer "never" for a session that ran
+  // `Bash` forty times. Forgetting the cursors makes the indexer read every file again from the
+  // start, and the indexer treats a file with no cursor as a restart (`transcript-indexer.ts`):
+  // it deletes that session's excerpts before re-inserting them, so nothing is indexed twice.
+  // Excerpts whose transcript `cleanupPeriodDays` has already deleted are never re-read and so are
+  // never deleted — the index is the only durable history (SPEC §5.8), and a migration that threw
+  // it away to add a column would be the one thing it exists to prevent. The price is one more
+  // cold backfill, which the deck says out loud while it runs (contracts/search-reply.ts).
+  `
+  CREATE TABLE transcript_tools (
+    subscription TEXT NOT NULL,
+    session_id   TEXT NOT NULL,
+    tool         TEXT NOT NULL,
+    PRIMARY KEY (subscription, session_id, tool)
+  ) WITHOUT ROWID;
+  -- The picker's question is "which tools, by how many sessions", which reads by tool.
+  CREATE INDEX transcript_tools_by_tool ON transcript_tools (tool);
+
+  DELETE FROM transcript_cursors;
+  `,
 ];
 
 /**
