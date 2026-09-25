@@ -79,10 +79,22 @@ export interface PresetLine {
   /** `claude-isg-orch` pins `--agent orchestrator`, so no select is drawn (`pinsAgent`). */
   readonly pinsAgent: boolean;
   /**
+   * The ticket ids the name box offers — P9-T3. The project's own `specs/` and `state/` names, for
+   * a `ticket` preset only, newest first; empty otherwise, which draws a plain text box. An offer,
+   * not an allowlist: a typed id that is not here is still sent, because its spec may be next.
+   */
+  readonly ticketChoices: readonly string[];
+  /**
    * `skill fix-review` for a draft a workflow-map row opened (P9-T2, `AssetPresets`), `undefined`
    * for a preset core holds. A draft has no row to forget and is not saved until somebody saves it.
    */
   readonly origin?: string | undefined;
+}
+
+/** The two lists a project's workflow map hands its presets. */
+export interface MapLists {
+  readonly roster?: readonly string[];
+  readonly tickets?: readonly string[];
 }
 
 export class PresetsViewModel {
@@ -90,22 +102,25 @@ export class PresetsViewModel {
   private readonly root: string;
   private readonly refusal: PresetRefusal | undefined;
   private readonly roster: readonly string[];
+  private readonly tickets: readonly string[];
 
   /**
    * @param presets every preset the deck holds, for every project. Filtered here rather than by the
    * caller so that the key used to select them is the same one core filed them under.
    * @param projectPath the folder this section belongs to, as the registry spells it.
-   * @param roster the project's agent roster (`agentRoster` over its workflow map) — P9-T1. Empty
-   * before the map has arrived, which draws no select rather than a select with nothing in it.
+   * @param from what the project's workflow map says: its agent roster (`agentRoster`, P9-T1) and
+   * its ticket ids (P9-T3). Both empty before the map has arrived, which draws no select and a
+   * plain name box rather than controls with nothing in them.
    */
   constructor(
     presets: readonly LaunchPreset[],
     projectPath: string,
     refusal?: PresetRefusal,
-    roster: readonly string[] = [],
+    from: MapLists = {},
   ) {
     this.root = projectPath;
-    this.roster = roster;
+    this.roster = from.roster ?? [];
+    this.tickets = from.tickets ?? [];
     const key = projectKey(projectPath);
     this.presets = presets.filter((preset) => preset.projectKey === key);
     this.refusal = refusal;
@@ -129,6 +144,7 @@ export class PresetsViewModel {
       prompt: presetPrompt(preset),
       namesItself: pinsSessionName(preset.profileFn),
       ...this.agentFacts(preset),
+      ticketChoices: preset.promptSource === 'ticket' ? this.tickets : [],
     }));
   }
 

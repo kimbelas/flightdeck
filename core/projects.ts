@@ -24,6 +24,7 @@ import { GitDirectoryLocator } from './application/git-directory-locator.ts';
 import { InstructionStackReader } from './application/instruction-stack-reader.ts';
 import { ProjectGitReader } from './application/project-git-reader.ts';
 import { ProjectStatusReader } from './application/project-status-reader.ts';
+import { ProjectTicketReader } from './application/project-ticket-reader.ts';
 import { WorkflowMapReader } from './application/workflow-map-reader.ts';
 import { WorktreeReader } from './application/worktree-reader.ts';
 import type { AuditLog } from './application/audit-log.ts';
@@ -270,6 +271,7 @@ function buildMapReader(
       },
     }),
     assets: new ClaudeAssetReader({ paths: registry, files }),
+    tickets: new ProjectTicketReader({ paths: registry, files }),
     // Both doors of the same registry: `resolve` for a tree inside a project, `resolveRoot` for
     // one that IS a project — which a main checkout usually is (P3-T4, G.28).
     worktrees: new WorktreeReader({

@@ -13,6 +13,7 @@
 import { waitFor } from './report.mjs';
 import { agentChecks } from './agent-checks.mjs';
 import { mapPresetChecks } from './map-preset-checks.mjs';
+import { ticketChecks } from './ticket-checks.mjs';
 
 export const PROJECT = 'C:\\Users\\belas\\Documents\\development\\app-next';
 const MISSING = 'C:\\nope\\not-here';
@@ -260,6 +261,8 @@ async function presetChecks(page, report, core) {
   await agentChecks(page, report, core, section);
   // P9-T2. After it, for the same reason: it saves one preset and forgets it again.
   await mapPresetChecks(page, report, core, section);
+  // P9-T3. Saves nothing; its two launches go to the fixture core like the ones above.
+  await ticketChecks(page, report, core, section);
 }
 
 /** Pressing `ticket`, typing the id, and watching what actually leaves the page. */

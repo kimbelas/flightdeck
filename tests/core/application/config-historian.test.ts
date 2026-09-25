@@ -36,6 +36,7 @@ function mapOf(over: Partial<WorkflowMap> = {}): WorkflowMap {
     marketplaces: [],
     permissions: { allow: [], deny: [], ask: [], defaultMode: undefined },
     conventions: [],
+    tickets: [],
     worktrees: [],
     gates: undefined,
     configured: true,

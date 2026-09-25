@@ -271,10 +271,14 @@ export class ProjectsViewModel {
     return new AssetPresets({ root, roster, observed: this.observed[key] });
   }
 
-  /** One project's presets, with the agent roster its map carries (`agentRoster`, P9-T1). */
+  /** One project's presets, with the roster (P9-T1) and the ticket ids (P9-T3) its map carries. */
   private presetsFor(path: string, key: string): PresetsViewModel {
-    const roster = agentRoster(this.maps[key]?.assets ?? []);
-    return new PresetsViewModel(this.presets, path, this.presetRefusal, roster);
+    const map = this.maps[key];
+    const roster = agentRoster(map?.assets ?? []);
+    return new PresetsViewModel(this.presets, path, this.presetRefusal, {
+      roster,
+      tickets: map?.tickets ?? [],
+    });
   }
 }
 

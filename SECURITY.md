@@ -150,7 +150,7 @@ Ids are stable; ROADMAP.yaml tasks and PRs cite them.
 | P5a-T8 | SEC-FS-5, and the `paste` row of SEC-HTTP-4 / -6 |
 | P1-T12 | SEC-FS-4, SEC-OPS-3 |
 | P8 | SEC-NET-1 re-proven by `netstat` with the proxy up; SEC-NET-3; SEC-HTTP-1, SEC-HTTP-2 and SEC-WS-1 asserted against the remote pair by the P0-T7 probe; SEC-OPS-3 for the deck's logon task (P8-T1) |
-| P9 | SEC-PROC-1..3 for `--agent` from the roster (P9-T1); SEC-FS-1 and SEC-FS-2 for the `plugins\cache\` subtree (P9-T5) |
+| P9 | SEC-PROC-1..3 for `--agent` from the roster (P9-T1); SEC-FS-1 and SEC-UI-2 for the ticket picker (P9-T3): two directory listings under an imported root, names only, screened against `TICKET_SHAPE` in core and again in the deck before a `<datalist>` draws them; SEC-FS-1 and SEC-FS-2 for the `plugins\cache\` subtree (P9-T5) |
 
 ---
 

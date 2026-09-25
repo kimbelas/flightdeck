@@ -105,6 +105,7 @@ export class AssetPresets {
       agentChoices: roster,
       agentMissing: false,
       pinsAgent: false,
+      ticketChoices: [],
       origin: `${asset.kind} ${asset.name}`,
     };
   }

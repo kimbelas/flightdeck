@@ -43,6 +43,7 @@ function digestOf(over: Partial<WorkflowMap> = {}): ConfigDigest {
       defaultMode: undefined,
     },
     conventions: [],
+    tickets: [],
     worktrees: [],
     gates: undefined,
     configured: true,

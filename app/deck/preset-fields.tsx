@@ -3,7 +3,7 @@
 // The boxes of the preset editor — split out of `presets-panel.tsx` at P9-T2, when the map draft's
 // caret hook pushed that file over its line limit. They return fragments, not wrappers, for the
 // reason that file's header gives: `.preset-editor` is a grid and every control is one of its items.
-import { useEffect, useRef, type JSX } from 'react';
+import { useEffect, useId, useRef, type JSX } from 'react';
 import type { PresetLine } from './presets-view-model.ts';
 
 /** What is currently in the boxes. One object, so one setter threads through the fragments. */
@@ -22,7 +22,13 @@ export interface FieldProps {
   readonly onChange: (patch: Partial<EditorDraft>) => void;
 }
 
-/** The session name and the one button that acts on what is typed — the editor's first row. */
+/**
+ * The session name and the one button that acts on what is typed — the editor's first row.
+ *
+ * On a `ticket` preset whose project keeps specs or state notes, the name box offers their ids as a
+ * `<datalist>` (P9-T3). A datalist rather than a select because it is an offer: an id that is not on
+ * disk yet is typed and sent all the same. The list is hidden, so it takes no cell of the grid.
+ */
 export function PresetStartRow({
   line,
   draft,
@@ -30,17 +36,27 @@ export function PresetStartRow({
   disabled,
   onChange,
 }: FieldProps & { readonly disabled: boolean }): JSX.Element {
+  const listId = useId();
+  const offered = line.ticketChoices.length > 0;
   return (
     <>
       <input
         className="preset-session-name"
         value={draft.sessionName}
         aria-label="session name"
+        list={offered ? listId : undefined}
         placeholder={line.promptSource === 'ticket' ? 'ticket id — XWEB-2019' : 'session name'}
         onChange={(event) => {
           onChange({ sessionName: event.target.value });
         }}
       />
+      {offered && (
+        <datalist id={listId} className="preset-tickets">
+          {line.ticketChoices.map((id) => (
+            <option key={id} value={id} />
+          ))}
+        </datalist>
+      )}
       <button type="submit" className="preset-start" disabled={disabled || prompt.trim() === ''}>
         start
       </button>

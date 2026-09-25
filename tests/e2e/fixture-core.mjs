@@ -1448,6 +1448,8 @@ function workflowMap(project, driftedAt = 0) {
       { folder: 'rules', files: 6 },
       { folder: 'specs', files: 9 },
     ],
+    // P9-T3. Newest first, as `ProjectTicketReader` orders them — the smoke's `FIXTURE_TICKETS`.
+    tickets: ['XWEB-2126', 'XWEB-2113', 'XWEB-1830'],
     // P3-T4. Three trees so the panel has all three cases in one row: the main checkout, a
     // worktree whose branch repeats its name (drawn without the bracket), and one whose branch
     // differs (drawn with it). Sent linked-first so the smoke proves the deck re-orders.

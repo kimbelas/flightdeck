@@ -72,6 +72,7 @@ const MAP: WorkflowMap = {
     { folder: 'reference', files: 0 },
     { folder: 'prompts', files: 0 },
   ],
+  tickets: [],
   worktrees: [
     {
       id: 'main',

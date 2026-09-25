@@ -34,6 +34,7 @@ import {
 import { readHookTimeline, MAX_SETTINGS_BYTES } from '../../contracts/hook-timeline.ts';
 import { INSTRUCTION_SOURCES } from '../../contracts/instruction-stack.ts';
 import { parseProjectGates } from '../../contracts/project-gates.ts';
+import { TICKET_FOLDERS } from '../../contracts/project-tickets.ts';
 import { projectKey, type ProjectRecord } from '../../contracts/project.ts';
 import { childPath } from '../../contracts/windows-path.ts';
 import { CONVENTION_FOLDERS, type WorkflowMap } from '../../contracts/workflow-map.ts';
@@ -43,6 +44,7 @@ import type { FileFacts, ProjectFiles } from '../ports/project-files.ts';
 import type { ClaudeAssetReader } from './claude-asset-reader.ts';
 import type { ProjectPaths } from './git-directory-locator.ts';
 import type { InstructionStackReader } from './instruction-stack-reader.ts';
+import type { ProjectTicketReader } from './project-ticket-reader.ts';
 import type { ProjectSource } from './project-status-reader.ts';
 import { SignatureCache } from './signature-cache.ts';
 import type { WorktreeReader } from './worktree-reader.ts';
@@ -68,6 +70,8 @@ export interface WorkflowMapParts {
   readonly assets: ClaudeAssetReader;
   /** P3-T4. The one reading in the map that is about git rather than about `.claude`. */
   readonly worktrees: WorktreeReader;
+  /** P9-T3. The ticket ids named by `specs/` and `state/` — names only. */
+  readonly tickets: ProjectTicketReader;
   readonly files: ProjectFiles;
   readonly clock: Clock;
   readonly logger: Logger;
@@ -119,22 +123,32 @@ export class WorkflowMapReader {
    * five sources are outside it — see the header.
    */
   private async compose(path: string, root: string, claudeDir: string): Promise<WorkflowMap> {
-    const [instructions, assets, conventions, settings, mcp, gates, worktrees, configured] =
-      await Promise.all([
-        this.parts.instructions.read(root),
-        this.parts.assets.assets(claudeDir),
-        this.parts.assets.conventions(claudeDir),
-        this.json(childPath(claudeDir, SETTINGS_FILE), MAX_SETTINGS_BYTES),
-        this.json(childPath(root, MCP_FILE), MAX_MCP_BYTES),
-        // P3-T6. Through the same door as the other two JSON files, so an unreadable or refused
-        // `gates.json` is `undefined` here and draws "not coached" rather than an error.
-        this.json(childPath(claudeDir, GATES_FILE), MAX_GATES_BYTES),
-        // The stored path, not the resolved root: `WorktreeReader` climbs from it exactly as
-        // `ProjectGitReader` does, and the climb is the part that has to start where the owner
-        // pointed rather than one `realpath` further in.
-        this.parts.worktrees.read(path),
-        this.isDirectory(claudeDir),
-      ]);
+    const [
+      instructions,
+      assets,
+      conventions,
+      tickets,
+      settings,
+      mcp,
+      gates,
+      worktrees,
+      configured,
+    ] = await Promise.all([
+      this.parts.instructions.read(root),
+      this.parts.assets.assets(claudeDir),
+      this.parts.assets.conventions(claudeDir),
+      this.parts.tickets.tickets(claudeDir),
+      this.json(childPath(claudeDir, SETTINGS_FILE), MAX_SETTINGS_BYTES),
+      this.json(childPath(root, MCP_FILE), MAX_MCP_BYTES),
+      // P3-T6. Through the same door as the other two JSON files, so an unreadable or refused
+      // `gates.json` is `undefined` here and draws "not coached" rather than an error.
+      this.json(childPath(claudeDir, GATES_FILE), MAX_GATES_BYTES),
+      // The stored path, not the resolved root: `WorktreeReader` climbs from it exactly as
+      // `ProjectGitReader` does, and the climb is the part that has to start where the owner
+      // pointed rather than one `realpath` further in.
+      this.parts.worktrees.read(path),
+      this.isDirectory(claudeDir),
+    ]);
     return {
       path,
       at: this.parts.clock.now().getTime(),
@@ -146,6 +160,7 @@ export class WorkflowMapReader {
       marketplaces: readMarketplaces(settings),
       permissions: readPermissions(settings),
       conventions,
+      tickets,
       worktrees,
       gates: parseProjectGates(gates),
       configured,
@@ -161,16 +176,20 @@ export class WorkflowMapReader {
    * signature stops being empty.
    */
   private async signature(claudeDir: string, projectPath: string): Promise<string> {
-    const [directory, settings, worktrees] = await Promise.all([
+    const [directory, settings, worktrees, ...tickets] = await Promise.all([
       this.facts(claudeDir),
       this.facts(childPath(claudeDir, SETTINGS_FILE)),
       // P3-T4's third stat, and it is a third stat rather than a third cache: the trees are part
       // of the same map and a `SignatureCache` of their own would recompute them on a clock the
       // panel never sees. `WorktreeReader` says what it observes and why that is the cheap thing.
       this.parts.worktrees.signature(projectPath),
+      // P9-T3. A spec written for a new ticket moves `specs/`'s mtime and not `.claude`'s, and the
+      // picker should offer it on the next read rather than five minutes later.
+      ...TICKET_FOLDERS.map(({ folder }) => this.facts(childPath(claudeDir, folder))),
     ]);
     if (directory === undefined && settings === undefined && worktrees === '') return '';
-    return `${String(directory?.modifiedAt ?? 0)}:${String(settings?.modifiedAt ?? 0)}:${String(settings?.sizeBytes ?? 0)}:${worktrees}`;
+    const folders = tickets.map((facts) => String(facts?.modifiedAt ?? 0)).join(':');
+    return `${String(directory?.modifiedAt ?? 0)}:${String(settings?.modifiedAt ?? 0)}:${String(settings?.sizeBytes ?? 0)}:${worktrees}:${folders}`;
   }
 
   /**
@@ -223,6 +242,7 @@ export class WorkflowMapReader {
       marketplaces: [],
       permissions: { allow: [], deny: [], ask: [], defaultMode: undefined },
       conventions: CONVENTION_FOLDERS.map((folder) => ({ folder, files: 0 })),
+      tickets: [],
       // A root core cannot resolve is one it cannot climb from either, so there is nothing to
       // report rather than nothing to say — the same answer as a folder outside a repository.
       worktrees: [],

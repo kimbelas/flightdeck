@@ -4135,10 +4135,54 @@ phases:
           kind against the fixture map.
       - id: P9-T3
         title: The ticket picker — ids read from the project's own spec and state folders
-        status: todo
+        status: done
+        done_on: 2026-09-25
         depends_on: [P9-T1]
         security: [SEC-FS-1, SEC-UI-2]
+        deliverables:
+          [
+            contracts/project-tickets.ts,
+            contracts/ticket-prompt.ts,
+            contracts/workflow-map.ts,
+            core/application/project-ticket-reader.ts,
+            core/application/workflow-map-reader.ts,
+            core/projects.ts,
+            app/deck/preset-fields.tsx,
+            app/deck/presets-view-model.ts,
+            app/deck/projects-view-model.ts,
+            app/deck/asset-presets.ts,
+            tests/contracts/project-tickets.test.ts,
+            tests/core/application/project-ticket-reader.test.ts,
+            tests/core/application/workflow-map-reader.test.ts,
+            tests/app/presets-view-model.test.ts,
+            tests/e2e/smoke/ticket-checks.mjs,
+            SECURITY.md P9,
+          ]
         notes: >-
+          **Done 2026-09-25. Verified against the real core and the real deck on xpert-new.** `GET
+          /projects/map` carries 19 ids for xpert-new: the 3 spec folders (XWEB-2113, XWEB-2114,
+          XWEB-2126) and the 16 ticket-shaped `.md` notes in `state/`, which is what a separate
+          count on disk gives. Nothing is in both folders today, so the dedupe rule is proved by
+          unit tests only. It keeps the later mtime. None of RESUME-PROMPT.md, XWEB-1871-r2.patch,
+          XWEB-1871-r2-files/, XWEB-1881-findings.md, archive/ or commit-msg-1339-app.txt came
+          through. claude-kit and pdf-editor answer `tickets: []`, and their ticket box has no
+          `list` attribute. A headless browser on the real deck read the 19 ids out of the datalist.
+          It typed XWEB-9999, which is on disk nowhere, and start was enabled with the prompt
+          naming it. No POST was sent. **Top-level only:** `specs/completed/` (73 old tickets) and
+          `state/archive/` are not descended into, because they hold finished work. A finished id
+          can still be typed. **The kind is checked as well as the name.** A spec counts only as a
+          folder and a state note only as a `.md` file, which are the two paths the plan-first
+          prompt names. Core screens names against `TICKET_SHAPE` (now exported from
+          `ticket-prompt.ts`) before it `stat`s anything. The deck screens them again in
+          `parseTicketList` before the `<datalist>` draws them. Nothing is opened and nothing is
+          written. **The map's cache signature gained two stats**, the mtimes of `specs/` and
+          `state/`. A new spec folder does not move `.claude`'s own mtime, so without them it would
+          have waited out the five-minute TTL. `PresetsViewModel`'s fourth parameter became `{
+          roster, tickets }` because a fifth would have broken `max-params`. Smoke grew 6 checks
+          (460 in all), including the datalist wiring and the unlisted id still being sent. DP5
+          (a tracker outside the repository) stays open.
+
+          *The task as planned:*
           The plan-first prompt sends Claude to `.claude/specs/<TICKET>/` or
           `.claude/state/<TICKET>.md`, so the ids a project can plan against are already ON DISK
           in two of the folders `CONVENTION_FOLDERS` counts. `FsProjectFiles` lists them — names

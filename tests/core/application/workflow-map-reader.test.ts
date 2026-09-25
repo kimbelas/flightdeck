@@ -10,6 +10,7 @@
 // with no `.claude` degrades to an instruction stack and nothing else.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ClaudeAssetReader } from '../../../core/application/claude-asset-reader.ts';
+import { ProjectTicketReader } from '../../../core/application/project-ticket-reader.ts';
 import { GitDirectoryLocator } from '../../../core/application/git-directory-locator.ts';
 import { InstructionStackReader } from '../../../core/application/instruction-stack-reader.ts';
 import { WorkflowMapReader } from '../../../core/application/workflow-map-reader.ts';
@@ -75,6 +76,7 @@ function build(records: ProjectRecord[]): Harness {
       configDirs: { '365': C365, isg: ISG },
     }),
     assets: new ClaudeAssetReader({ paths, files }),
+    tickets: new ProjectTicketReader({ paths, files }),
     // The real reader over the real locator, not a fake of either — G.26's lesson, and the one
     // P3-T3 paid for again in G.27: a fake that agreed with the source would have agreed with the
     // bug too. With no `.git` in the little filesystem below it answers `[]`, which is what a
@@ -198,6 +200,27 @@ describe('the cache', () => {
     harness.files.touch(childPath(APP, '.claude'), 77);
     await harness.reader.readAll();
     expect(harness.files.listed.length).toBeGreaterThan(after);
+  });
+
+  it('re-reads when a spec is written for a new ticket, which moves only specs/', async () => {
+    // P9-T3. `.claude`'s own mtime does not move when a folder is added two levels down.
+    populate(harness.files);
+    const specs = childPath(childPath(APP, '.claude'), 'specs');
+    harness.files.directory(specs, [], 5);
+    expect((await harness.reader.readAll())[0]?.tickets).toEqual([]);
+    harness.files.directory(specs, ['XWEB-2126'], 66);
+    harness.files.directory(childPath(specs, 'XWEB-2126'), [], 66);
+    expect((await harness.reader.readAll())[0]?.tickets).toEqual(['XWEB-2126']);
+  });
+
+  it('re-reads when a state note is written, which moves only state/', async () => {
+    populate(harness.files);
+    const state = childPath(childPath(APP, '.claude'), 'state');
+    harness.files.directory(state, [], 5);
+    await harness.reader.readAll();
+    harness.files.directory(state, ['XWEB-1830.md'], 67);
+    harness.files.file(childPath(state, 'XWEB-1830.md'), 'notes', 67);
+    expect((await harness.reader.readAll())[0]?.tickets).toEqual(['XWEB-1830']);
   });
 
   it('re-reads once the TTL lapses, for the edit no stat can see', async () => {
