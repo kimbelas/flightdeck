@@ -30,6 +30,8 @@ const ROW: SessionRow = {
   status: undefined,
   attachable: false,
   notAttachableBecause: 'That terminal has closed.',
+  endReason: 'unknown',
+  retireReason: undefined,
 };
 
 /** The stream is not under test here, so the transport does nothing and is never connected. */

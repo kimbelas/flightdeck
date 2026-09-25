@@ -1803,7 +1803,8 @@ attached to it — there is only one notifier, which is the arrangement the spli
 **One thing it cannot yet tell apart, said out loud.** A daemon-retired session and a finished one
 both read `state: done`, and only `daemon.log` separates them (F.2.3, P7-T4). So an idle retirement
 raises the "finished" toast. That is a wrong word rather than a wrong toast — the session did stop —
-and a heuristic guessing which it was would be worse than the word.
+and a heuristic guessing which it was would be worse than the word. *(Closed by D62: the row now
+carries the log's ending, and the toast says it.)*
 
 ## D59 — phone access and one-press dispatch are in scope; D12 and D44 amended (decided 2026-09-25, P8 · P9)
 
@@ -1899,6 +1900,7 @@ background sessions and not a month. And one gap is deliberately left: the rows 
 `EndReason: unknown` — the reconciler does not yet consult the log, so an idle retirement still
 raises the "finished" toast D58 described. The endings are on the panel, where they can be read;
 putting them on the row is a change to the reconciler's sweep and is left for a task that owns it.
+*(Done in D62.)*
 
 ## D61 — spend is an increment per run, read by a ledger with its own cursors (decided 2026-09-25, P7-T3)
 
@@ -1938,3 +1940,32 @@ what makes a worktree under `.claude\worktrees` match its project.
 **Not done, deliberately.** No per-model split (the tokens are summed across models; `modelUsage` is
 there when a panel wants it), no pricing for `hasUnknownModelCost` lines (four on this machine, all
 isg — D5's table is for sanity checks), and no poll: the panel reads when opened and on refresh.
+
+## D62 — the row carries the log's ending, read inside the sweep (decided 2026-09-25, follows P7-T4)
+
+**The gap D58 and D60 both named.** `agents --json` reads `state: done` for a stop, a finish and a
+retirement (F.2.3), and a session retired while blocked keeps `blocked` with no `pid` (F.2.15). So
+every row said `EndReason: unknown`, and an idle retirement raised "Session finished" — including
+the `idle-prompt` one, which is an unanswered request for attention and the opposite of finished.
+
+**Verdict: `SessionRow` gains `endReason` and `retireReason`, filled by the reconciler from
+`daemon.log`.** `EndingBook` holds the endings; the sweep calls it before recording rows, so the
+frame that says a session stopped already says why, and the toast reads the right word the first
+time. It uses the SAME `DaemonLogSource` instance `GET /daemon` uses (one adapter, built in
+`buildFeeds`) and `DaemonHistory`'s new `latestEndingFor`, which is uncapped (the panel's twenty is
+a display budget) and counts a `bg retire` whose `bg settled` is not written yet (they are 1.1 s
+apart and the reason is only in the first).
+
+**Cheap by rule, not by hope.** No timer of its own: the log is read only on a sweep that holds a
+stopped background row with no ending yet, once per subscription however many rows need it, at most
+three sweeps per stop — `--all` lists a background session forever, and one whose ending scrolled
+out of the 64 KiB window must not cost a read every ten seconds for ever. An ending counts only if it
+is newer than the last sweep that saw the session running, because a respawn keeps the id and the
+log still holds the previous run's ending until the new one is written.
+
+**The words live in `contracts/session-ending.ts`**, read by the deck's state label and by the toast,
+for `needsAttention`'s reason. `idle-prompt` is "retired while waiting for you": a needs-you toast
+with its own title, remembered as its own condition so it still fires after the needs-you toast of
+the wait it ends. `settled`, `empty-idle`, `killed` and `(done)` get their own completed titles; a
+completion nobody can name says "Session ended", which is true, rather than "finished". The row stays
+`tone-ended` and out of the attention sort: G.24 still holds — the words change, the rank does not.

@@ -27,6 +27,11 @@
 // for one disappearing. That is why an interactive session lingers here as an ENDED row rather
 // than being announced gone: the terminal has closed, the conversation has not, and SPEC §4.3
 // says the deck offers to adopt it at exactly this moment.
+//
+// **A background session's ENDING comes from `daemon.log`, inside the same sweep** — D62. The
+// listing reads `state: done` for a stop, a finish and a retirement alike (F.2.3); `EndingBook`
+// reads the log's tail for the one subscription that has an ending to explain, and only then, so
+// the sweep stays the only timer and the log is read at an edge rather than on every tick.
 import type { DraftEvent } from '../../contracts/fd-event.ts';
 import {
   byAttentionThenAge,
@@ -41,6 +46,7 @@ import type { EventSink } from '../ports/event-sink.ts';
 import type { Logger } from '../ports/logger.ts';
 import type { Scheduler } from '../ports/scheduler.ts';
 import type { SessionSource, Sweep } from '../ports/session-source.ts';
+import { EndingBook } from './ending-book.ts';
 import { sameRow, toEndedRow, toSessionRow } from './session-rows.ts';
 
 /** RESEARCH.md B.2: ~763 ms per config dir, so a shorter interval spends the machine on itself. */
@@ -86,6 +92,11 @@ export interface ReconcilerParts {
   readonly watcher: DirectoryWatcher;
   readonly clock: Clock;
   readonly logger: Logger;
+  /**
+   * How background sessions ended, from `daemon.log` (D62). Optional so a test about sweeps and
+   * absences need not supply a log; without one every ending reads `unknown`, as it did before.
+   */
+  readonly endings?: EndingBook;
 }
 
 export class Reconciler {
@@ -95,6 +106,7 @@ export class Reconciler {
   private readonly watcher: DirectoryWatcher;
   private readonly clock: Clock;
   private readonly logger: Logger;
+  private readonly endings: EndingBook;
 
   private readonly known = new Map<string, SessionRow>();
   private readonly absences = new Map<string, number>();
@@ -115,6 +127,7 @@ export class Reconciler {
     this.watcher = parts.watcher;
     this.clock = parts.clock;
     this.logger = parts.logger;
+    this.endings = parts.endings ?? new EndingBook();
   }
 
   /** Every session known to be, or to have been, running — the newest observation of each. */
@@ -151,6 +164,15 @@ export class Reconciler {
   public rowFor(subscription: SubscriptionId, sessionId: string): SessionRow | undefined {
     const row = this.known.get(sessionId);
     return row?.subscription === subscription ? row : undefined;
+  }
+
+  /**
+   * The row with the ending core has read for it, if any — for `DeckQuery`, whose fresh sweep
+   * cannot know one. The same book the stream's rows came from, so a refresh cannot disagree
+   * with the frame before it (D62).
+   */
+  public explain(row: SessionRow): SessionRow {
+    return this.endings.explain(row);
   }
 
   /**
@@ -258,6 +280,10 @@ export class Reconciler {
   private async sweepAll(): Promise<void> {
     const sweeps = await Promise.all(SUBSCRIPTION_IDS.map((id) => this.source.sweep(id)));
     const at = this.clock.now().getTime();
+    // Before the rows are recorded, so the frame that says a session stopped already says why —
+    // one `changed`, and the toast reads the right word the first time (D58, D62).
+    const swept = sweeps.flatMap((sweep) => (sweep.failed ? [] : sweep.sessions));
+    await this.endings.learn(swept.map(toSessionRow), at);
     for (const sweep of sweeps) this.apply(sweep, at);
   }
 
@@ -272,7 +298,7 @@ export class Reconciler {
 
     const present = new Set<string>();
     for (const session of sweep.sessions) {
-      const row = toSessionRow(session);
+      const row = this.endings.explain(toSessionRow(session));
       present.add(row.sessionId);
       this.absences.delete(row.sessionId);
       // An adopted session comes back under its OWN id as a background job (G.55), so a row that
@@ -306,6 +332,7 @@ export class Reconciler {
     }
     for (const row of ended) this.endInteractive(row, at);
     for (const row of gone) {
+      this.endings.forget(row);
       this.absences.delete(row.sessionId);
       this.lingering.delete(row.sessionId);
       this.known.delete(row.sessionId);

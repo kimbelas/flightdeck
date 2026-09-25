@@ -40,6 +40,8 @@ const ROW: SessionRow = {
   status: undefined,
   attachable: true,
   notAttachableBecause: undefined,
+  endReason: 'unknown',
+  retireReason: undefined,
 };
 
 /** The stream is not under test here, so the transport does nothing and is never connected. */

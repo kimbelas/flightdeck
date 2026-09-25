@@ -44,6 +44,8 @@ function row(overrides: Partial<SessionRow> = {}): SessionRow {
     status: 'busy',
     attachable: true,
     notAttachableBecause: undefined,
+    endReason: 'unknown',
+    retireReason: undefined,
     ...overrides,
   };
 }

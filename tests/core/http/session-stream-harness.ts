@@ -64,6 +64,8 @@ export const ROW: SessionRow = {
   status: undefined,
   attachable: true,
   notAttachableBecause: undefined,
+  endReason: 'unknown',
+  retireReason: undefined,
 };
 
 export function snapshotOf(rows: readonly SessionRow[] = [ROW]): DeckSnapshot {

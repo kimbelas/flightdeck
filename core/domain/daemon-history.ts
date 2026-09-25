@@ -25,13 +25,19 @@ export interface SupervisorRun {
   readonly exitCause: string | undefined;
 }
 
+/** Every ending in the window, in file order, and the newest one for each short id. */
+interface EndingLedger {
+  readonly endings: readonly DaemonEnding[];
+  readonly latest: ReadonlyMap<string, DaemonEnding>;
+}
+
 export class DaemonHistory {
   private readonly runs: readonly SupervisorRun[];
-  private readonly endingList: readonly DaemonEnding[];
+  private readonly ledger: EndingLedger;
 
-  private constructor(runs: readonly SupervisorRun[], endings: readonly DaemonEnding[]) {
+  private constructor(runs: readonly SupervisorRun[], ledger: EndingLedger) {
     this.runs = runs;
-    this.endingList = endings;
+    this.ledger = ledger;
   }
 
   /** The most recent supervisor the log saw start, or `undefined` when the tail holds none. */
@@ -41,12 +47,25 @@ export class DaemonHistory {
 
   /** How background sessions ended, newest first, spares excluded — see `endingsOf`. */
   public get endings(): readonly DaemonEnding[] {
-    return this.endingList;
+    return [...this.ledger.endings].reverse().slice(0, MAX_ENDINGS);
   }
 
   /** Folds a log's events, in file order, into the two answers above. @throws never. */
   public static of(events: readonly DaemonLogEvent[]): DaemonHistory {
-    return new DaemonHistory(runsOf(events), endingsOf(events));
+    return new DaemonHistory(runsOf(events), ledgerOf(events));
+  }
+
+  /**
+   * The newest ending the window holds for one session, or `undefined` — what the reconciler puts
+   * on the row (D62).
+   *
+   * Not capped at `MAX_ENDINGS`, which is the panel's budget and not a fact about the log. And it
+   * counts a `bg retire` whose `bg settled` has not been written yet: the two lines are ~1.1 s
+   * apart (F.2.15), the reason is only in the first, and a sweep landing between them would
+   * otherwise read a retirement as nothing at all.
+   */
+  public latestEndingFor(shortId: string): DaemonEnding | undefined {
+    return this.ledger.latest.get(shortId);
   }
 
   /** The latest run the log recorded for this pid, or `undefined` when the tail holds none. */
@@ -121,7 +140,7 @@ function closeLast(
  * session and its `killed` is not the owner stopping anything, so it is left out rather than
  * reported as a stop nobody made.
  */
-function endingsOf(events: readonly DaemonLogEvent[]): readonly DaemonEnding[] {
+function ledgerOf(events: readonly DaemonLogEvent[]): EndingLedger {
   const spares = new Set<string>();
   const retiring = new Map<string, Extract<DaemonLogEvent, { kind: 'retired' }>>();
   const endings: DaemonEnding[] = [];
@@ -136,22 +155,46 @@ function endingsOf(events: readonly DaemonLogEvent[]): readonly DaemonEnding[] {
       retiring.delete(event.shortId);
     }
   }
-  return endings.reverse().slice(0, MAX_ENDINGS);
+  return { endings, latest: latestOf(endings, [...retiring.values()]) };
+}
+
+/**
+ * The newest ending per short id. A retirement still waiting for its `bg settled` is newer than
+ * any ending already written for that id, so it goes in last.
+ */
+function latestOf(
+  endings: readonly DaemonEnding[],
+  retiring: readonly Extract<DaemonLogEvent, { kind: 'retired' }>[],
+): ReadonlyMap<string, DaemonEnding> {
+  const latest = new Map<string, DaemonEnding>();
+  for (const ending of endings) latest.set(ending.shortId, ending);
+  for (const retired of retiring) latest.set(retired.shortId, retirementOf(retired));
+  return latest;
 }
 
 function endingOf(
   settled: Extract<DaemonLogEvent, { kind: 'settled' }>,
   retired: Extract<DaemonLogEvent, { kind: 'retired' }> | undefined,
 ): DaemonEnding {
-  const base = { shortId: settled.shortId, at: settled.at };
-  if (retired !== undefined) {
-    return {
-      ...base,
-      reason: 'retired',
-      retireReason: retired.reason,
-      idleMinutes: retired.idleMinutes,
-      lowMemory: retired.lowMemory,
-    };
-  }
-  return { ...base, reason: settled.outcome === 'killed' ? 'stopped' : 'finished' };
+  if (retired !== undefined) return retirementOf(retired, settled.at);
+  return {
+    shortId: settled.shortId,
+    at: settled.at,
+    reason: settled.outcome === 'killed' ? 'stopped' : 'finished',
+  };
+}
+
+/** A retirement, dated by its `bg settled` when there is one and by the `bg retire` until then. */
+function retirementOf(
+  retired: Extract<DaemonLogEvent, { kind: 'retired' }>,
+  at: number = retired.at,
+): DaemonEnding {
+  return {
+    shortId: retired.shortId,
+    at,
+    reason: 'retired',
+    retireReason: retired.reason,
+    idleMinutes: retired.idleMinutes,
+    lowMemory: retired.lowMemory,
+  };
 }

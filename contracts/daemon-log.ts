@@ -16,8 +16,11 @@
 // Plain functions over strings, because the same parse serves core's reader and the fixture tests
 // and neither should need the other's filesystem.
 
-/** A retirement's reason word. The three observed; any other is carried as the word it was. */
-export const RETIRE_REASONS = ['settled', 'idle-prompt', 'empty-idle'] as const;
+/**
+ * A retirement's reason word. The three observed live in contracts/session.ts beside `EndReason`;
+ * any other is carried as the word it was.
+ */
+export { RETIRE_REASONS } from './session.ts';
 
 export type DaemonLogEvent =
   /** `─── daemon start ─── version=… pid=… origin=…` — a supervisor came up. */

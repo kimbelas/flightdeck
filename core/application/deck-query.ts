@@ -31,7 +31,15 @@ import { toSessionRow } from './session-rows.ts';
  */
 export interface EndedSessions {
   readonly ended: readonly SessionRow[];
+  /**
+   * The row with the ending the reconciler read off `daemon.log` for it (D62). A fresh sweep says
+   * `state: done` and nothing more; without this a refresh would turn "retired while waiting for
+   * you" back into "done" until the next stream frame.
+   */
+  explain(row: SessionRow): SessionRow;
 }
+
+const NOTHING_REMEMBERED: EndedSessions = { ended: [], explain: (row) => row };
 
 export class DeckQuery {
   private readonly source: SessionSource;
@@ -42,7 +50,7 @@ export class DeckQuery {
    * @param memory what a sweep cannot see. Defaulted to nothing so a caller that only wants the
    * listing — every test of this class before P6-T7 — does not have to supply an empty one.
    */
-  constructor(source: SessionSource, clock: Clock, memory: EndedSessions = { ended: [] }) {
+  constructor(source: SessionSource, clock: Clock, memory: EndedSessions = NOTHING_REMEMBERED) {
     this.source = source;
     this.clock = clock;
     this.memory = memory;
@@ -57,7 +65,7 @@ export class DeckQuery {
     for (const sweep of sweeps) {
       if (sweep.failed) unreadable.push(sweep.subscription);
       for (const session of sweep.sessions) {
-        const row = toSessionRow(session);
+        const row = this.memory.explain(toSessionRow(session));
         swept.add(sessionKey(row));
         rows.push(row);
       }

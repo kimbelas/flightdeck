@@ -44,7 +44,10 @@ function deckOf(sweeps: Map<SubscriptionId, Sweep>, ended: SessionRow[] = []): D
   const source = new FakeSessionSource();
   for (const sweep of sweeps.values()) source.willSweep(sweep);
   // The same instant the inline FixedClock used, so every ordering assertion below is unchanged.
-  return new DeckQuery(source, new FakeClock(1_700_000_000_000), { ended });
+  return new DeckQuery(source, new FakeClock(1_700_000_000_000), {
+    ended,
+    explain: (row) => row,
+  });
 }
 
 /** An ended interactive row, as `Reconciler` holds one — P6-T7. */
@@ -62,6 +65,8 @@ function endedRow(over: Partial<SessionRow> = {}): SessionRow {
     status: undefined,
     attachable: false,
     notAttachableBecause: ENDED_ADOPTABLE,
+    endReason: 'unknown',
+    retireReason: undefined,
     ...over,
   };
 }

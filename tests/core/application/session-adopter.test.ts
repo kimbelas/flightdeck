@@ -51,6 +51,8 @@ function endedRow(over: Partial<SessionRow> = {}): SessionRow {
     status: undefined,
     attachable: false,
     notAttachableBecause: 'That terminal has closed.',
+    endReason: 'unknown',
+    retireReason: undefined,
     ...over,
   };
 }

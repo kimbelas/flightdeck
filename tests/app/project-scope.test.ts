@@ -68,6 +68,8 @@ function row(cwd: string, live = true, startedAt = 1000): SessionRow {
     status: undefined,
     attachable: live,
     notAttachableBecause: undefined,
+    endReason: 'unknown',
+    retireReason: undefined,
   };
 }
 

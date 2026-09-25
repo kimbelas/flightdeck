@@ -23,10 +23,16 @@
 // right answer for a different reason than the rules: an interactive session is bound to a
 // terminal the owner is looking at.
 //
-// **One thing this cannot yet tell apart, said out loud.** A daemon-retired session and a finished
-// one both read `state: done`, and only `daemon.log` separates them (F.2.3, P7-T4). So an idle
-// retirement raises the "finished" toast. That is a wrong word rather than a wrong toast — the
-// session did stop — and inventing a heuristic to guess which it was would be worse than the word.
+// **How a session ended is the log's word, not a guess** — D62, closing the gap D58 said out loud.
+// A retired session and a finished one both read `state: done` (F.2.3); the reconciler now puts
+// `daemon.log`'s ending on the row, so a stop says "stopped", a retirement says "retired", and a
+// retirement taken while the session was BLOCKED on the owner (`idle-prompt`, F.2.15) is not a
+// completion at all. It is the owner's unanswered request lapsing, so it is a needs-you toast in
+// its own words, and it is its own CONDITION: the session was already "needs you" while it
+// waited, and an edge compared on the kind alone would swallow the one toast that says the wait
+// is over. A row whose ending nobody knows says "Session ended", which is true, rather than
+// "finished", which may not be.
+import { endingOf, type SessionEnding } from '../../contracts/session-ending.ts';
 import { needsAttention, parseSessionRow, sessionKey } from '../../contracts/session-row.ts';
 import type { SessionRow } from '../../contracts/session-row.ts';
 import type { DraftEvent } from '../../contracts/fd-event.ts';
@@ -39,12 +45,35 @@ import type { MuteBook } from './mute-book.ts';
 /** The three D16 named. Closed, because a fourth is a decision and not a new hook name. */
 export type ToastKind = 'needs-you' | 'completed' | 'errored';
 
-/** What each kind says. The title is bold in a Windows toast; the body carries the session. */
-const TITLES: Readonly<Record<ToastKind, string>> = {
+/**
+ * What the announcer remembers per session, so a toast is an edge. Finer than `ToastKind` by one:
+ * `retired-waiting` is a needs-you toast that must fire after the needs-you it follows.
+ */
+type Condition = ToastKind | 'retired-waiting';
+
+const KIND_OF: Readonly<Record<Condition, ToastKind>> = {
+  'needs-you': 'needs-you',
+  'retired-waiting': 'needs-you',
+  completed: 'completed',
+  errored: 'errored',
+};
+
+/** The title is bold in a Windows toast; the body carries the session. */
+const TITLES: Readonly<Record<Exclude<Condition, 'completed'>, string>> = {
   'needs-you': 'Claude needs you',
-  completed: 'Session finished',
+  'retired-waiting': 'Retired while waiting for you',
   errored: 'Session failed',
 };
+
+/** A completion in the log's words (D62); `ended` when nothing says which ending it was. */
+const COMPLETED_TITLES: Readonly<Record<Exclude<SessionEnding, 'retired-waiting'>, string>> = {
+  finished: 'Session finished',
+  stopped: 'Session stopped',
+  'retired-finished': 'Session retired after finishing',
+  'retired-unused': 'Session retired before its first turn',
+  retired: 'Session retired',
+};
+const COMPLETED_UNKNOWN = 'Session ended';
 
 /**
  * What a body may contain.
@@ -68,7 +97,7 @@ export interface ToastAnnouncerParts {
 export class ToastAnnouncer {
   private readonly parts: ToastAnnouncerParts;
   /** Keyed by `sessionKey`. The last toastable condition seen, so a toast can be an edge. */
-  private readonly condition = new Map<string, ToastKind | undefined>();
+  private readonly condition = new Map<string, Condition | undefined>();
   private listening: Cancellation | undefined;
 
   constructor(parts: ToastAnnouncerParts) {
@@ -110,14 +139,14 @@ export class ToastAnnouncer {
       this.condition.delete(key);
       return;
     }
-    const kind = kindOf(row);
+    const condition = conditionOf(row);
     const previous = this.condition.get(key);
     const known = this.condition.has(key);
-    this.condition.set(key, kind);
+    this.condition.set(key, condition);
     // `seen` sets the baseline and says nothing; an unchanged condition is not an edge.
     if (event.type !== 'changed' || !known) return;
-    if (kind === undefined || kind === previous) return;
-    this.raise(kind, row);
+    if (condition === undefined || condition === previous) return;
+    this.raise(condition, row);
   }
 
   /**
@@ -128,10 +157,11 @@ export class ToastAnnouncer {
    * when, not how many did. It is also the only record that survives the toast, which lives for
    * six seconds and then belongs to the Action Center.
    */
-  private raise(kind: ToastKind, row: SessionRow): void {
+  private raise(condition: Condition, row: SessionRow): void {
     if (this.parts.mutes.isMuted(row)) return;
+    const kind = KIND_OF[condition];
     this.parts.notifier.notify({
-      title: TITLES[kind],
+      title: titleOf(condition, row),
       body: bodyOf(row),
       sessionId: row.sessionId,
     });
@@ -147,12 +177,26 @@ export class ToastAnnouncer {
  * `errored` first, because a session that failed is not one that finished even though both stopped
  * running. `needs-you` is `needsAttention`, exported from `contracts/session-row.ts` so that what
  * toasts and what sorts to the top of the deck are the same sentence (G.24).
+ *
+ * A retirement is a completion even when the listing still reads `blocked` — the daemon leaves the
+ * state it retired the session in, with no `pid` (F.2.15) — so a known ending counts as well as
+ * `done` does. The one exception is the one D62 exists for: retired while waiting for you.
  */
-function kindOf(row: SessionRow): ToastKind | undefined {
+function conditionOf(row: SessionRow): Condition | undefined {
   if (row.runState === 'failed') return 'errored';
   if (needsAttention(row)) return 'needs-you';
-  if (!row.live && row.runState === 'done') return 'completed';
+  const ending = endingOf(row);
+  if (ending === 'retired-waiting') return 'retired-waiting';
+  if (!row.live && (row.runState === 'done' || ending !== undefined)) return 'completed';
   return undefined;
+}
+
+function titleOf(condition: Condition, row: SessionRow): string {
+  if (condition !== 'completed') return TITLES[condition];
+  const ending = endingOf(row);
+  return ending === undefined || ending === 'retired-waiting'
+    ? COMPLETED_UNKNOWN
+    : COMPLETED_TITLES[ending];
 }
 
 /** The session, as a person would name it: its name if it has one, its short id if not. */

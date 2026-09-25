@@ -26,6 +26,8 @@ const ROW: SessionRow = {
   status: undefined,
   attachable: true,
   notAttachableBecause: undefined,
+  endReason: 'unknown',
+  retireReason: undefined,
 };
 
 const OTHER: SessionRow = {
