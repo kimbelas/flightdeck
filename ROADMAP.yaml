@@ -3748,8 +3748,65 @@ phases:
           a dead daemon (F.2.16, F.7.7).
       - id: P7-T5
         title: Optional OTLP http/json receiver
-        status: todo
+        status: done
+        done_on: 2026-09-25
         depends_on: [P9]
+        security: [SEC-NET-1, SEC-HTTP-4, SEC-HTTP-7, SEC-FS-3]
+        deliverables:
+          [
+            contracts/otlp-values.ts,
+            contracts/otlp-metrics.ts,
+            contracts/otlp-logs.ts,
+            contracts/otlp-receiver.ts,
+            contracts/session-telemetry.ts,
+            core/application/telemetry-tally.ts,
+            core/http/otlp-routes.ts,
+            core/http/telemetry-route.ts,
+            core/http/loopback-guard.ts,
+            core/http/route.ts,
+            core/adapters/node/http-core-client.ts,
+            core/feeds.ts,
+            core/routes.ts,
+            scripts/otel-headers.ts,
+            scripts/otlp-setup.ts,
+            scripts/otlp-cli.ts,
+            package.json,
+            tests/contracts/otlp-payloads.ts,
+            tests/contracts/otlp-metrics.test.ts,
+            tests/contracts/otlp-logs.test.ts,
+            tests/contracts/otlp-receiver.test.ts,
+            tests/core/application/telemetry-tally.test.ts,
+            tests/core/http/otlp-routes.test.ts,
+            tests/scripts/otlp-setup.test.ts,
+            SECURITY.md SEC-HTTP-3 SEC-HTTP-7,
+          ]
+        notes: >-
+          RESEARCH.md D.7's third feed, **off unless core starts with `FLIGHTDECK_OTLP=1`** — without
+          it `/v1/metrics` and `/v1/logs` are not rows in the router, so no request reaches them.
+          **No new bind** (SEC-NET-1): two routes on core's own 127.0.0.1:4950 behind the unchanged
+          screen, `http/json` only — protobuf is a 415 from SEC-HTTP-4 before any route. **The
+          credential is the ingest key, carried by `otelHeadersHelper`** (`scripts/otel-headers.ts`
+          reads the key file when Claude Code runs it, at start and every 29 minutes), because an
+          exporter, like a hook, cannot follow a per-boot token across a restart; SEC-HTTP-7 is
+          widened to the two routes and says so. **Flightdeck writes no Claude config for it** —
+          `npm run otlp` prints the `env` block and helper line for the owner to merge by hand
+          (SEC-FS-3). What is read is a projection: six of Claude Code's metrics by documented name
+          (cost, tokens, active time, lines, commits, PRs), summed as deltas — Claude Code's default;
+          cumulative points are counted as skipped, never summed — and six event names counted per
+          session; only `session.id`, `type`, `model` and `event.name` are read, so `user.email`,
+          account ids and any opted-in prompt or response text never enter core. Sums are held in
+          memory like the vitals (200 sessions, least recently heard evicted) and answered on
+          `GET /telemetry`, which says `enabled: false` when off; cost-state stays the record (D5).
+          Shapes are from code.claude.com/docs/en/monitoring-usage, 2026-09-25; the test bodies are
+          written from them, not captured. **Live, with flightdeck.cmd, no Claude session started:**
+          off, `/v1/metrics` was 404 with the token and 401 with the key and `/telemetry` said
+          `enabled: false`; on, a documented-shape body posted twice with the ingest key summed to
+          $0.84 and 2 400 input tokens, a log record counted one `api_request`, and neither the
+          `user.email` nor the `prompt` attribute appeared in the answer; no auth was 401, protobuf
+          415, a foreign `Origin` 403, the key on `/telemetry` 401; `netstat` showed both ports on
+          127.0.0.1 and nothing new. **Not yet proven end to end:** a real exporter through the
+          helper on Windows — capture its first body as a fixture when the owner turns it on.
+          `npm run check` 242 files / 3 146 tests; smoke 477, unchanged (no deck UI).
 
   - id: P8
     name: Always on, and on the phone
