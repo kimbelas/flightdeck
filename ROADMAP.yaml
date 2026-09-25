@@ -3885,7 +3885,8 @@ phases:
           corpus**: `projectSlug` did not turn `.` into `-`, so no worktree under
           `.claude\worktrees` ever matched its project (fixed, moved to `contracts/`); and the P7-T1
           indexer pins its cursor to the first byte of a line longer than its 1 MB slice (a 3.2 MB
-          one exists) — the ledger steps over such lines, the indexer's copy is still open.
+          one exists) — the ledger steps over such lines, and the indexer took the same rule in
+          fix/indexer-long-lines, which freed four cursors pinned on this machine.
           **Merged after P7-T2 and P7-T4, so renumbered at the rebase:** its migration 9 became 10,
           its D60 became D61, and its G.58 became G.59 — P7-T4's daemon note had landed as a second
           G.57 beside P8-T1's and is G.58 now. **Live, with flightdeck.cmd, the store backed up

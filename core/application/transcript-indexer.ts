@@ -11,6 +11,10 @@
 // a core that stopped between two writes resume inside a line and turn one record into an
 // unparseable fragment on every restart. So the trailing partial line is dropped and the cursor
 // stops at the last newline — the same bytes are read again next pass, which costs nothing.
+// **Unless the partial line is already past `MAX_LINE_CHARS`**, which would never be parsed: a line
+// longer than one 1 MB read (a 3.2 MB one exists here, found by P7-T3) began and ended every slice,
+// so the cursor sat on its first byte for good and nothing after it was indexed. It is stepped
+// over, the spend ledger's rule; the next slice's first "line" is its tail, which does not parse.
 //
 // **A budget per tick, not a loop to completion.** `FsTranscriptFile` caps a read at 1 MB, so a
 // 50 MB transcript takes fifty reads; doing them all in one tick would hold the event loop for
@@ -223,7 +227,7 @@ export class TranscriptIndexer {
       projectKey: entry.projectKey,
       // Only past the last newline — see the header. Derived from the slice's own span rather
       // than from the text's length, so a multi-byte character inside it cannot shift the offset.
-      cursor: { offset: slice.to - byteLengthOf(fragment), identity: slice.identity },
+      cursor: { offset: slice.to - unreadTail(fragment), identity: slice.identity },
       at: this.parts.clock.now().getTime(),
       // A file with NO cursor is read as a restart too (P7-T2): whatever the store holds for its
       // session was not read through a cursor that still exists, and is replaced rather than
@@ -281,11 +285,14 @@ function parsed(line: string): unknown {
 }
 
 /**
- * UTF-8 bytes, because the cursor is a byte offset and the slice is a string.
+ * How many bytes at the end of the slice the cursor leaves to be read again: the trailing partial
+ * line, in UTF-8 bytes because the cursor is a byte offset and the slice is a string — or none, for
+ * a line already too long to be parsed (see the header).
  *
  * `TextEncoder` rather than `Buffer` so this file stays free of `node:*`, and it is only ever run
  * over the trailing fragment — at most one line — rather than over the whole megabyte.
  */
-function byteLengthOf(text: string): number {
-  return new TextEncoder().encode(text).length;
+function unreadTail(fragment: string): number {
+  if (fragment.length > MAX_LINE_CHARS) return 0;
+  return new TextEncoder().encode(fragment).length;
 }

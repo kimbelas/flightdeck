@@ -123,6 +123,44 @@ describe('TranscriptIndexer — the cursor', () => {
   });
 });
 
+/**
+ * A line longer than one read — the 3.2 MB single line on this machine (P7-T3 found it).
+ *
+ * Every slice that begins inside it also ends inside it, so "stop at the last newline" never
+ * moves: the cursor sat on the line's first byte for good and nothing after it was ever indexed.
+ * A line that long is past `MAX_LINE_CHARS` and would not have been parsed anyway, so the cursor
+ * steps over it — the spend ledger's rule, now the indexer's too.
+ */
+describe('TranscriptIndexer — a line longer than one read', () => {
+  const READ = 200_000;
+  const huge = `{"type":"user","message":{"content":"${'x'.repeat(3 * READ)}"}}`;
+
+  it('steps over it rather than pinning the cursor to its first byte', async () => {
+    const { indexer, store, files } = build();
+    files.readsAtMost(READ);
+    files.holds(`${huge}
+${line('after the paste')}
+`);
+
+    for (let pass = 0; pass < 5; pass += 1) await indexer.index();
+
+    expect(store.indexed.flatMap((batch) => batch.excerpts.map((prose) => prose.text))).toEqual([
+      'after the paste',
+    ]);
+  });
+
+  it('still waits on a partial line short enough to be a record', async () => {
+    const { indexer, store, files } = build();
+    const whole = `${line('hello')}
+`;
+    files.holds(`${whole}${line('the rest').slice(0, 30)}`);
+
+    await indexer.index();
+
+    expect(store.indexed[0]?.cursor.offset).toBe(Buffer.byteLength(whole, 'utf8'));
+  });
+});
+
 describe('TranscriptIndexer — a transcript that was replaced', () => {
   // `--bg --resume` writes a fresh transcript at a path already indexed. Everything held from the
   // old one describes a conversation that is not there any more.

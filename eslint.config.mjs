@@ -65,7 +65,19 @@ const DOMAIN_FORBIDDEN_IMPORTS = [
 ];
 
 export default tseslint.config(
-  { ignores: ['node_modules/', '.next/', 'coverage/', 'dist/', 'out/', 'src-tauri/', '**/*.d.ts'] },
+  // `.claude/worktrees/` holds agents' worktrees: whole checkouts, mid-task, that are not this tree.
+  {
+    ignores: [
+      'node_modules/',
+      '.next/',
+      'coverage/',
+      'dist/',
+      'out/',
+      'src-tauri/',
+      '.claude/worktrees/',
+      '**/*.d.ts',
+    ],
+  },
 
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
