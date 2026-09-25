@@ -12,6 +12,7 @@ import { DeckQuery } from './application/deck-query.ts';
 import { IngestKeyIssuer } from './application/ingest-key-issuer.ts';
 import { PaneRegistry } from './application/pane-registry.ts';
 import { type Reconciler } from './application/reconciler.ts';
+import { type TranscriptIndexer } from './application/transcript-indexer.ts';
 import { AuditLog } from './application/audit-log.ts';
 import { StatusReport } from './application/status-report.ts';
 import { type ToastAnnouncer } from './application/toast-announcer.ts';
@@ -24,6 +25,7 @@ import { ClaudeInstall } from './adapters/claude-cli/claude-install.ts';
 import { ExecFileProcessRunner } from './adapters/claude-cli/execfile-process-runner.ts';
 import { ConsoleLogger } from './adapters/console-logger.ts';
 import { SqliteStore } from './adapters/sqlite/sqlite-store.ts';
+import type { Store } from './ports/store.ts';
 import { NodePtyHost } from './adapters/node-pty/node-pty-host.ts';
 import { WindowsPtyCommands } from './adapters/windows/windows-pty-commands.ts';
 import { WindowsFileAcl } from './adapters/windows/windows-file-acl.ts';
@@ -83,6 +85,11 @@ export interface Core {
    */
   readonly toasts: ToastAnnouncer;
   /**
+   * The transcript search index — P7-T1. Started by `startCore` for `transcripts`' reason: it
+   * owns a five-minute timer, and one nobody started is a search box that finds nothing.
+   */
+  readonly indexer: TranscriptIndexer;
+  /**
    * The durable log (P1-T8). Closed by `shutdown`.
    *
    * The only thing here that outlives both the process and the transcripts it describes:
@@ -127,14 +134,7 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
   restrictDataDirectory();
   const { tokenFile, issuer, token, ingestKey } = issueSecrets();
 
-  // One install, shared: the panes attach with the same config dir the listing was read with, or
-  // the deck shows a session a pane cannot find.
-  const install = new ClaudeInstall();
-  const runner = new ExecFileProcessRunner();
-  const clock = new SystemClock();
-  // One source for both readers: the deck's on-demand snapshot and the reconciler's timer must
-  // not be able to disagree about what `--all` means or which config dir they read.
-  const sessions = new ClaudeCliSessionSource(install, runner, logger);
+  const { install, runner, clock, sessions } = buildAdapters(logger);
   // Opened before the feeds, because they are constructed around it — and before `listen`, so a
   // store that cannot be opened stops core at boot rather than on the first hook.
   const store = new SqliteStore(storeFile());
@@ -158,6 +158,7 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
     version,
     report: buildReport({ version, store, audit, feeds, tokenFile, install }),
     sessions,
+    store,
     runner,
     clock,
     install,
@@ -169,6 +170,7 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
     vitals: feeds.vitals,
     transcripts: feeds.transcripts,
     toasts: feeds.toasts,
+    indexer: feeds.indexer,
     store,
     logger,
     tokenPath: tokenFile.location(),
@@ -243,6 +245,31 @@ interface HttpSide {
   readonly tickets: TicketOffice;
 }
 
+/**
+ * The four adapters every layer below shares.
+ *
+ * **One install**: the panes attach with the same config dir the listing was read with, or the
+ * deck shows a session a pane cannot find. **One session source**: the deck's on-demand snapshot
+ * and the reconciler's timer must not be able to disagree about what `--all` means or which config
+ * directory they read. Lifted out of `buildCore` for its forty-line limit, and they belong
+ * together — none of the four has a decision in it.
+ */
+function buildAdapters(logger: Logger): {
+  readonly install: ClaudeInstall;
+  readonly runner: ExecFileProcessRunner;
+  readonly clock: SystemClock;
+  readonly sessions: ClaudeCliSessionSource;
+} {
+  const install = new ClaudeInstall();
+  const runner = new ExecFileProcessRunner();
+  return {
+    install,
+    runner,
+    clock: new SystemClock(),
+    sessions: new ClaudeCliSessionSource(install, runner, logger),
+  };
+}
+
 interface HttpParts {
   readonly guard: LoopbackGuard;
   readonly feeds: Feeds;
@@ -257,6 +284,8 @@ interface HttpParts {
   readonly version: string;
   readonly report: StatusReport;
   readonly sessions: ClaudeCliSessionSource;
+  /** The durable store. P7-T1's search route reads the transcript index out of it. */
+  readonly store: Store;
   readonly runner: ExecFileProcessRunner;
   readonly clock: SystemClock;
   readonly install: ClaudeInstall;
@@ -299,6 +328,8 @@ function buildHttp(parts: HttpParts): HttpSide {
         // P6-T7. The third argument is the reconciler's memory of ended interactive
         // sessions — a sweep cannot see one, which is why it is held (`DeckQuery`).
         deck: new DeckQuery(parts.sessions, clock, feeds.reconciler),
+        // P7-T1. The store, narrowed to the one method a search needs.
+        search: parts.store,
         // P6-T7. `directory` is the reconciler's memory of where each session was seen — an
         // adoption runs in that folder, and the browser never names one (SEC-FS-1).
         ...sessionSlice({ ...parts, directory: feeds.reconciler }, panes),

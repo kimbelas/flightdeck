@@ -3672,8 +3672,61 @@ phases:
     tasks:
       - id: P7-T1
         title: FTS5 indexer over both subscriptions' transcripts, incremental by byte offset
-        status: todo
+        status: done
+        done_on: 2026-09-25
         security: [SEC-DATA-1]
+        deliverables:
+          [
+            contracts/transcript-prose.ts,
+            contracts/transcript-search.ts,
+            core/ports/transcript-catalogue.ts,
+            core/ports/store.ts,
+            core/application/transcript-indexer.ts,
+            core/adapters/node/fs-transcript-catalogue.ts,
+            core/adapters/sqlite/schema.ts,
+            core/adapters/sqlite/rows.ts,
+            core/adapters/sqlite/sqlite-store.ts,
+            core/adapters/sqlite/search-statements.ts,
+            core/adapters/sqlite/sqlite-transcript-index.ts,
+            core/http/search-route.ts,
+            core/feeds.ts,
+            core/routes.ts,
+            core/main.ts,
+            core/shutdown.ts,
+            tests/contracts/transcript-prose.test.ts,
+            tests/contracts/transcript-search.test.ts,
+            tests/core/adapters/fs-transcript-catalogue.test.ts,
+            tests/core/adapters/sqlite-search.test.ts,
+            tests/core/application/transcript-indexer.test.ts,
+            tests/core/application/transcript-indexer-cursor.test.ts,
+            tests/core/application/transcript-indexer-harness.ts,
+            tests/core/http/search-route.test.ts,
+            tests/core/lifecycle.test.ts,
+            tests/fakes/fake-store.ts,
+            RESEARCH.md G.56,
+          ]
+        notes: >-
+          SPEC 5.8's index, as a core job rather than a feed (D3): it reads files nobody posted
+          about and publishes nothing. One cursor per transcript in the store (migration 7),
+          advanced only past a newline, so a core stopped mid-write resumes at a line boundary;
+          excerpts and cursor commit in one transaction. **What goes in is
+          contracts/transcript-prose.ts, a second projection beside transcript-record.ts** — typed
+          turns, assistant text blocks (never thinking), titles and away summaries, capped at 8 KB
+          each. That is 1.4 % of the 1.76 GB on this machine (G.56); tool results and pasted files
+          are never read (SEC-DATA-1). `GET /search` is token-gated, turns the query into a quoted
+          FTS5 match expression (a bound parameter, never SQL), and answers an empty query with 200
+          and no hits. **The one red test was real:** userText fell back to JSON.stringify for the
+          array form of message.content, so every tool_result fed back as a user record would have
+          been indexed as something the owner typed — it now returns undefined. **Running it
+          corrected the comments' arithmetic.** They were written from a sixteen-file sample (374
+          files, 1.2 GB, caught up "in a couple of minutes"); the real corpus is 1 041 transcripts
+          and 1.76 GB, so at 32 MB a tick every five minutes the cold backfill is at least
+          fifty-five ticks, about four and a half hours — once per machine, since cursors survive a
+          restart. Behaviour kept as designed; P7-T2 should show that the index is still filling.
+          Verified live with flightdeck.cmd: the first pass walked both subscriptions (23
+          transcripts from 365, 9 from isg), the route answered in 3–6 ms with hits from both, 401
+          without the token, both ports on 127.0.0.1, zero tool_result excerpts in the store. `npm
+          run check` 226 files / 2 930 tests.
       - id: P7-T2
         title: Search UI with filters (project, subscription, date, tool, session)
         status: todo

@@ -3719,3 +3719,33 @@ Three consequences, and the feature needs all three:
 The adopted session reads `state: blocked` while it waits for a prompt, so the deck flags it
 **needs-you** and P6-T3 toasts it — G.54's last paragraph again, and right for the same reason.
 
+
+### G.56 What a transcript index costs, measured against the whole corpus (P7-T1, 2026-09-25)
+
+Every figure the indexer's comments leaned on had been taken from a sixteen-transcript sample. Read
+off all of them on this machine, through `readTranscriptProse` itself:
+
+| | transcripts | on disk | largest | lines | typed turns | assistant turns | prose | read + parse |
+|---|---|---|---|---|---|---|---|---|
+| 365 | 532 | 854 MB | 14.2 MB | 246 469 | 2 725 | 13 118 | 11.1 MB (1.30 %) | 17.4 s |
+| isg | 509 | 904 MB | 23.3 MB | 263 021 | 3 425 | 16 584 | 14.1 MB (1.56 %) | 18.4 s |
+
+**The index is 1.4 % of the bytes** — 25 MB of text for 1.76 GB. The other 98.6 % is tool results,
+attachments and pasted files, which `transcript-prose.ts` never reads (SEC-DATA-1).
+
+**The cold start is hours, not minutes.** The sample put the corpus at 374 files and 1.2 GB and the
+backfill at "a couple of minutes of ticks". At 32 slices of at most 1 MB every five minutes, 1.76 GB
+is at least fifty-five ticks — about four and a half hours. Observed on the first live boot: one
+pass indexed 32 transcripts (23 from 365, 9 from isg; 23 MB of cursor), then waited. That is the
+budget working as designed — it keeps a pass near 650 ms while the deck is connecting — and it is
+paid once per machine, because the cursors survive a restart. A search UI (P7-T2) should say the
+index is still filling rather than let a missing hit read as "never happened".
+
+**The one bug running it could have hidden, the unit suite found first.** `userText` fell back to
+`JSON.stringify(content)` for the array form of `message.content`, so every `tool_result` fed back
+as a `user` record — the bulk of them, 19 294 in one surveyed file — would have been indexed as
+something the owner typed. It now returns `undefined`; after the live pass, zero excerpts in the
+store begin with a `tool_result` array.
+
+`GET /search` answered in 3–6 ms on the partial index, with hits from both subscriptions, and 401
+without the token.

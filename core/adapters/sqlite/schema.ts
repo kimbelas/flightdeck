@@ -1,5 +1,9 @@
 // The schema, as a list of steps — P1-T8, SEC-DATA-3.
 //
+// The migration RUNNER lives here too, beside the list it walks: `sqlite-store.ts` has a 250-line
+// limit it has been split for twice, and of what that file does, "bring the file up to
+// MIGRATIONS.length" is the piece that is about this list rather than about any table.
+//
 // **Migrations are an append-only array and `user_version` is the index into it.** No migration
 // table, no filenames, no timestamps: SQLite already carries an integer per database for exactly
 // this, and a list whose length IS the target version cannot disagree with itself the way a table
@@ -13,6 +17,9 @@
 // **Payloads are TEXT holding JSON, not BLOB.** They are read back by `JSON.parse` and never by
 // SQLite, and TEXT is what makes the file greppable when something is wrong — which for a
 // single-user local store is worth more than the bytes.
+
+import type { DatabaseSync } from 'node:sqlite';
+import { asRecord } from './rows.ts';
 
 /**
  * One migration per entry. **Append only; never edit one that has shipped.**
@@ -159,6 +166,75 @@ export const MIGRATIONS: readonly string[] = [
     PRIMARY KEY (subscription, session_id)
   );
   `,
+  // 7 — the search index: transcript excerpts, and FTS5 over them (P7-T1, SEC-DATA-1).
+  //
+  // **This is the one table in the file that holds the owner's prose**, which is what SEC-DATA-1
+  // is about: it is the same sensitivity as the transcripts themselves, so it lives in the store
+  // under SEC-FS-4's ACL and is never copied into the repo, a fixture or a cloud. What goes in is
+  // decided by `contracts/transcript-prose.ts` and is 1.7 % of a transcript's bytes — the other
+  // 98 % is tool results and pasted files, which is not searched because it is not read.
+  //
+  // **An EXTERNAL-CONTENT FTS5 table**, so the text is stored once rather than twice. `content=`
+  // points FTS5 at the row it indexes and `content_rowid=` at the key; the triggers below are what
+  // keep the two in step, and they are the documented shape for this rather than a clever one —
+  // a delete has to be posted to FTS5 with the OLD text, because a contentless index cannot go and
+  // read it back.
+  //
+  // **`unicode61 remove_diacritics 2`** rather than the default tokenizer's `1`: `2` is the form
+  // that handles characters outside the Basic Multilingual Plane correctly, and this corpus has
+  // German UI strings and emoji in it.
+  //
+  // **`transcript_cursors` is what makes the index incremental.** One row per file, holding how
+  // far into it the indexer has read and WHICH file that offset belongs to — `TranscriptCursor`'s
+  // `dev:ino:birthtime`, because a resumed session writes a fresh transcript at a path already
+  // indexed, and a size comparison cannot see a same-length replacement. It survives a restart,
+  // which is the whole point: a first pass over 1.2 GB is seconds, and every pass after it is the
+  // bytes appended since.
+  //
+  // **The cursor points at a record boundary, never mid-line.** The indexer advances it only past
+  // the last newline it consumed, so a core that stops between two writes resumes at the start of
+  // a line rather than in the middle of one — which would otherwise turn one record into an
+  // unparseable fragment on every restart.
+  `
+  CREATE TABLE transcript_excerpts (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    subscription TEXT    NOT NULL,
+    session_id   TEXT    NOT NULL,
+    project_key  TEXT    NOT NULL,
+    kind         TEXT    NOT NULL,
+    at           INTEGER NOT NULL,
+    text         TEXT    NOT NULL
+  );
+  -- Every read of this table that is not the FTS index is "everything from this file", which is
+  -- what a re-index deletes before it re-reads a transcript that restarted.
+  CREATE INDEX transcript_excerpts_session
+    ON transcript_excerpts (subscription, session_id, id);
+
+  CREATE VIRTUAL TABLE transcript_fts USING fts5(
+    text,
+    content = 'transcript_excerpts',
+    content_rowid = 'id',
+    tokenize = 'unicode61 remove_diacritics 2'
+  );
+
+  CREATE TRIGGER transcript_excerpts_ai AFTER INSERT ON transcript_excerpts BEGIN
+    INSERT INTO transcript_fts (rowid, text) VALUES (new.id, new.text);
+  END;
+  CREATE TRIGGER transcript_excerpts_ad AFTER DELETE ON transcript_excerpts BEGIN
+    INSERT INTO transcript_fts (transcript_fts, rowid, text)
+      VALUES ('delete', old.id, old.text);
+  END;
+
+  CREATE TABLE transcript_cursors (
+    path         TEXT PRIMARY KEY,
+    subscription TEXT    NOT NULL,
+    session_id   TEXT    NOT NULL,
+    project_key  TEXT    NOT NULL,
+    offset_bytes INTEGER NOT NULL,
+    identity     TEXT    NOT NULL,
+    indexed_at   INTEGER NOT NULL
+  );
+  `,
 ];
 
 /**
@@ -181,3 +257,35 @@ export const PRAGMAS: readonly string[] = [
   // on every hook (SEC-ING-2's budget is 5 ms).
   'PRAGMA synchronous = NORMAL',
 ];
+
+/**
+ * Brings the file up to `MIGRATIONS.length`, one transaction per step.
+ *
+ * A database ahead of this build is left alone rather than downgraded: an older core opening a
+ * newer file is a mistake to report, not to fix by deleting columns.
+ */
+export function migrate(db: DatabaseSync): void {
+  const from = versionOf(db);
+  if (from >= MIGRATIONS.length) return;
+  for (let version = from; version < MIGRATIONS.length; version += 1) {
+    const step = MIGRATIONS[version];
+    if (step === undefined) continue;
+    db.exec('BEGIN');
+    try {
+      db.exec(step);
+      // Not a parameter: PRAGMA does not take one, and `version` is a loop counter over an array
+      // in this file, never anything from outside it (SEC-DATA-3 is about untrusted values).
+      db.exec(`PRAGMA user_version = ${String(version + 1)}`);
+      db.exec('COMMIT');
+    } catch (cause) {
+      db.exec('ROLLBACK');
+      throw new Error(`migration ${String(version + 1)} failed`, { cause });
+    }
+  }
+}
+
+export function versionOf(db: DatabaseSync): number {
+  const row: unknown = db.prepare('PRAGMA user_version').get();
+  const value = asRecord(row)?.['user_version'];
+  return typeof value === 'number' ? value : 0;
+}
