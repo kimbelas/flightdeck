@@ -33,6 +33,7 @@ import { devChecks } from './smoke/dev-checks.mjs';
 import { keyboardChecks, keyboardHelperChecks } from './smoke/keyboard-checks.mjs';
 import { paneChecks } from './smoke/pane-checks.mjs';
 import { layoutGridChecks } from './smoke/layout-grid-checks.mjs';
+import { boardChecks, boardOpeningChecks, chooseView } from './smoke/board-checks.mjs';
 import { paneControlChecks } from './smoke/pane-control-checks.mjs';
 import { projectChecks } from './smoke/project-checks.mjs';
 import { projectViewChecks } from './smoke/project-view-checks.mjs';
@@ -87,6 +88,9 @@ try {
   const seen = watch(page);
 
   await page.goto(DECK, { waitUntil: 'domcontentloaded' });
+  // P10-T1. The deck opens on the State board; this checks that and hands every group after it
+  // the Panes view, which is the deck they were written against. The board has its own group.
+  await boardOpeningChecks(page, report, core);
   await deckChecks(page, report, core);
   await askChecks(page, report, core);
   await installChecks(page, report, core);
@@ -137,11 +141,15 @@ try {
   // After the pop-out, and it closes whatever that left open: it fills the grid with nine SHELLS,
   // which need no session and no project, and closes all of them on the way out (layout bug fix).
   await layoutGridChecks(page, report, core);
+  // P10-T1. After the grid, which leaves no pane open: the board opens its own shells and a
+  // session pane, measures the dock and the columns, and hands back the Panes view.
+  await boardChecks(page, report, core);
   // Last before security: it imports ledger behind the deck's back and RELOADS the page, so the
   // registry is in a known state wherever it runs and nothing after it depends on an open pane.
   await searchChecks(page, report, core);
   if (DEV) devChecks(report, seen);
   else await securityChecks(page, report, core, seen);
+  await chooseView(page, 'board');
   await page.screenshot({ path: SHOT });
   console.log(`\nscreenshot: ${SHOT}`);
 } finally {

@@ -18,6 +18,7 @@ import type { SessionDetailViewModel } from './session-detail-view-model.ts';
 import type { SessionPreviewViewModel } from './session-preview-view-model.ts';
 import { SessionPreviewView } from './session-preview-view.tsx';
 import type { SessionRowViewModel } from './session-row-view-model.ts';
+import { startRowDrag } from './row-drag.ts';
 
 export interface SessionRowCardProps {
   readonly row: SessionRowViewModel;
@@ -33,6 +34,8 @@ export interface SessionRowCardProps {
   readonly handoff: HandoffOffer;
   /** Why the last handoff pressed on THIS row was refused, in English. `undefined` for silence. */
   readonly handoffRefusal: string | undefined;
+  /** The pane this session is in, 1-based, or `undefined` — P10-T1. */
+  readonly inPane: number | undefined;
   readonly onToggle: () => void;
   readonly onOpen: () => void;
   readonly onResume: () => void;
@@ -46,7 +49,14 @@ export interface SessionRowCardProps {
 export function SessionRowCard(props: SessionRowCardProps): JSX.Element {
   const { row, now, expanded } = props;
   return (
-    <article className={`row tone-${row.tone}${expanded ? ' row-open' : ''}`}>
+    // Draggable only where a pane can open, so a drop can never be a refused attach (P10-T1).
+    <article
+      className={`row tone-${row.tone}${expanded ? ' row-open' : ''}`}
+      draggable={row.canOpenPane}
+      onDragStart={(event) => {
+        startRowDrag(event, row.key);
+      }}
+    >
       <div className="row-main">
         <RowToggle
           rowKey={row.key}
@@ -54,19 +64,7 @@ export function SessionRowCard(props: SessionRowCardProps): JSX.Element {
           expanded={expanded}
           onToggle={props.onToggle}
         />
-        <span className="tag">{row.subscriptionLabel}</span>
-        <span className="tag">{row.kindLabel}</span>
-        {/*
-          P6-T5, SPEC §5.6. On the collapsed row rather than inside the expansion, because the
-          whole point is that nobody is looking for it: `claude agents` reads one config directory,
-          so neither account's listing mentions the other's session in the folder. A warning you
-          have to open a row to find is one this never reaches.
-        */}
-        {row.sharesWorkingTree && (
-          <span className="tag tag-warn" data-row-shared-tree title={row.sharedTreeWarning}>
-            shared folder
-          </span>
-        )}
+        <RowTags row={row} inPane={props.inPane} />
       </div>
       <div className="row-meta">
         <span>{row.project}</span>
@@ -82,6 +80,38 @@ export function SessionRowCard(props: SessionRowCardProps): JSX.Element {
       />
       {expanded && <RowOpen {...props} />}
     </article>
+  );
+}
+
+/** Which account, which kind, and the two facts a collapsed row must not hide. */
+function RowTags({
+  row,
+  inPane,
+}: {
+  readonly row: SessionRowViewModel;
+  readonly inPane: number | undefined;
+}): JSX.Element {
+  return (
+    <>
+      <span className="tag">{row.subscriptionLabel}</span>
+      <span className="tag">{row.kindLabel}</span>
+      {/*
+        P6-T5, SPEC §5.6. On the collapsed row rather than inside the expansion, because the
+        whole point is that nobody is looking for it: `claude agents` reads one config directory,
+        so neither account's listing mentions the other's session in the folder. A warning you
+        have to open a row to find is one this never reaches.
+      */}
+      {row.sharesWorkingTree && (
+        <span className="tag tag-warn" data-row-shared-tree title={row.sharedTreeWarning}>
+          shared folder
+        </span>
+      )}
+      {inPane !== undefined && (
+        <span className="tag tag-pane" data-row-in-pane={inPane}>
+          in pane {inPane}
+        </span>
+      )}
+    </>
   );
 }
 

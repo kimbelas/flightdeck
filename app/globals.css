@@ -88,7 +88,8 @@ button.ghost {
 
 .deck-head {
   display: flex;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 6px 10px;
   align-items: center;
   padding: 8px 12px;
   border-bottom: 1px solid var(--line);
@@ -130,7 +131,7 @@ button.ghost {
    A first draft of it took `flex` and `min-height` with it when the rule was split out, which left
    `.deck-body` without the two properties that make it fill the window — and the smoke went on
    passing, because nothing it measures depends on them (RESEARCH.md G.38). */
-.deck-body:has(.detail-preview pre) {
+.deck-body.view-panes:has(.deck-left .detail-preview pre) {
   grid-template-columns: minmax(260px, 560px) 1fr;
 }
 
@@ -145,9 +146,249 @@ button.ghost {
 }
 
 /* The panels above the list keep their height (P7-T2). Shrunk, their content overflowed onto the
-   session rows below, which then could not be clicked; now a crowded column scrolls instead. */
-.deck-left > :not(.rows) {
+   session rows below, which then could not be clicked; now a crowded column scrolls instead.
+   Since P10-T1 they sit in `.rail-panels`, which is `display: contents` while unfolded so they are
+   still the column's own flex items — and `hidden` while folded, which `[hidden]` keeps honest. */
+.rail-panels:not([hidden]) {
+  display: contents;
+}
+
+.rail-panels > :not(.rows) {
   flex-shrink: 0;
+}
+
+/* The fold control sits at the top of the rail and stays there folded, as the strip's one thing. */
+.rail-toggle {
+  flex-shrink: 0;
+  align-self: flex-end;
+  margin: 4px 6px 0;
+  padding: 0 6px;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.deck-body.rail-folded {
+  grid-template-columns: 32px 1fr;
+}
+
+.deck-left.is-folded .rail-toggle {
+  align-self: center;
+}
+
+/* ---- P10-T1: the State board, and the dock under it ---- */
+
+/* The board, or nothing, then the pane area — one column, so the dock can sit under the board. */
+.deck-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.deck-main > .pane-area {
+  flex: 1;
+}
+
+/* The dock: a fixed strip, so the board above it keeps the rest of the height. */
+.deck-main > .pane-area.is-dock {
+  flex: 0 0 280px;
+  border-top: 1px solid var(--line);
+}
+
+.board {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.board-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  align-items: center;
+  padding: 8px 12px 0;
+}
+
+.board-tools .search {
+  flex: 0 1 360px;
+}
+
+.board-columns {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  padding: 10px 12px 12px;
+  flex: 1;
+  min-height: 0;
+}
+
+.board-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 70%, var(--bg));
+}
+
+.board-col-needs-you {
+  border-color: color-mix(in srgb, var(--bad) 35%, var(--line));
+  background: color-mix(in srgb, var(--bad) 5%, var(--bg));
+}
+
+.board-col-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 0 4px 8px;
+  font-weight: 600;
+}
+
+.board-col-needs-you .board-col-head {
+  color: var(--bad);
+}
+
+.board-col.is-muted .board-col-head {
+  color: var(--dim);
+}
+
+.board-col-count {
+  margin-left: auto;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.board-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--dim);
+}
+
+.board-col-needs-you .board-dot {
+  background: var(--bad);
+}
+
+.board-col-working .board-dot {
+  background: var(--good);
+}
+
+.board-col-shells .board-dot {
+  background: var(--accent);
+}
+
+.board-col-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* A card is the list's row with a card's edges. The row's own 3px tone edge stays: it is how the
+   needs-you and working cards read at a glance, in both views. */
+.board .row {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.board .row-main {
+  flex-wrap: wrap;
+}
+
+.board .row-blocked-line {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.board-col.is-muted .row:not(.row-open) {
+  background: transparent;
+}
+
+.board-col.is-muted .row-title {
+  color: var(--dim);
+}
+
+.board .row[draggable='true'] {
+  cursor: grab;
+}
+
+.board-more {
+  align-self: flex-start;
+  color: var(--accent);
+  border-color: transparent;
+}
+
+.tag-pane {
+  color: var(--good);
+  border-color: color-mix(in srgb, var(--good) 45%, var(--line));
+}
+
+/* The header's half of it: the switch, the line saying what the board is grouped by, spend. */
+.view-switch {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.view-switch button {
+  border-color: transparent;
+  background: transparent;
+  color: var(--dim);
+  padding: 2px 10px;
+}
+
+.view-switch button.is-on {
+  color: var(--fg);
+  background: var(--line);
+}
+
+.group-line {
+  font-size: 12px;
+}
+
+.group-line b {
+  color: var(--fg);
+}
+
+.week-spend {
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.new-session {
+  color: var(--bg);
+  background: var(--good);
+  border-color: var(--good);
+  font-weight: 600;
+}
+
+.dock-title {
+  font-weight: 600;
+}
+
+/* The dock is one row whatever the chooser says: a card per open pane, side by side, scrolling
+   sideways past the width rather than squeezing a terminal under a usable size. No layout class is
+   on it, so none of the grid or focus rules below reach it (`pane-grid.tsx`). */
+.panes.is-dock {
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(420px, 1fr);
+  grid-template-rows: 100%;
+  grid-auto-rows: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 /* Its own scroll while there is room, and never squeezed shut when there is not. */
@@ -1856,8 +2097,19 @@ kbd {
 }
 
 @media (max-width: 900px) {
-  .deck-body {
+  .deck-body,
+  .deck-body.rail-folded {
     grid-template-columns: 1fr;
+  }
+
+  /* Five columns do not fit a phone: they stack, and the page scrolls down rather than across. */
+  .board-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .quotas {
+    flex-wrap: wrap;
+    gap: 8px;
   }
 
   .sheet-body {

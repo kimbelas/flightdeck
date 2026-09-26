@@ -105,6 +105,16 @@ export class SpendViewModel {
     }));
   }
 
+  /**
+   * This week, both accounts — the header's figure on the State board (P10-T1).
+   *
+   * The newest week the summary carries, which is the one that contains its `at`: the summary
+   * always ends on the current week, empty or not, because a gap is data (`SPEND_WEEKS`).
+   */
+  public get thisWeek(): string {
+    return money(cost(this.summary.weeks.at(-1)?.subscriptions ?? []));
+  }
+
   /** The whole window, both accounts. */
   public get total(): string {
     return money(this.summary.weeks.reduce((sum, week) => sum + cost(week.subscriptions), 0));
