@@ -24,6 +24,7 @@ import type { AskRequest } from '../../contracts/ask-run.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
 import type { PresetDraft, PresetLaunch, PresetRef } from '../../contracts/launch-preset.ts';
 import { PANE_LAYOUTS, type PaneLayout } from '../../contracts/pane-layout.ts';
+import { BUILT_VIEWS, VIEW_LABELS, type DeckViewMode } from '../../contracts/deck-view.ts';
 import {
   focusControl,
   focusRow,
@@ -202,6 +203,8 @@ export interface CommandTargets extends DeckActions, PresetCommandTargets {
   /** The preset groups there are to press — P6-T4. Empty until a preset is given a group name. */
   readonly groups: readonly GroupTarget[];
   readonly onChooseProject: (key: string | undefined) => void;
+  /** Not on `DeckActions` either: which view is on screen is this browser's (`useDeckView`). */
+  readonly onView: (view: DeckViewMode) => void;
 }
 
 /**
@@ -219,6 +222,7 @@ export function deckCommands(targets: CommandTargets, query = ''): readonly Deck
     ...groupCommands(targets),
     ...presetCommands(targets),
     ...layoutCommands(targets),
+    ...viewCommands(targets),
     ...targets.rows.flatMap((row) => rowCommands(row, targets)),
   ];
 }
@@ -307,6 +311,24 @@ function layoutCommands(targets: CommandTargets): readonly DeckCommand[] {
     hint: layout === 'focus' ? 'panes · one large, the rest as thumbnails' : 'panes · grid',
     run: () => {
       targets.onLayout(layout);
+    },
+  }));
+}
+
+/**
+ * The views that are built — P10-T1. Table is not here: an entry that switched to a view that draws
+ * nothing would be the no-op this file's header says teaches people to distrust the palette.
+ */
+function viewCommands(targets: CommandTargets): readonly DeckCommand[] {
+  return BUILT_VIEWS.map((view) => ({
+    id: `view-${view}`,
+    label: `View: ${VIEW_LABELS[view]}`,
+    hint:
+      view === 'board'
+        ? 'deck · sessions by state, terminals docked'
+        : 'deck · the panes, full size',
+    run: () => {
+      targets.onView(view);
     },
   }));
 }

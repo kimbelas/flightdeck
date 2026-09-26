@@ -1,26 +1,31 @@
 'use client';
 
-// The deck's two columns — the list on the left, the panes on the right (P5a-T5).
+// The deck's body — the rail on the left, and the board or the grid beside it (P5a-T5, P10-T1).
 //
 // Out of `deck-view.tsx` for its 250-line limit, and the seam is a real one: `DeckView` composes
 // and holds state, and this arranges. Nothing here fetches and nothing here decides.
+//
+// **The grid is at the same place in the tree in both views**, with the same key: the board is the
+// slot BEFORE it, present or not, and the Board view docks the grid by a class (`dock`). Moving the
+// grid into another container for the dock would remount every pane, and a remount closes its
+// socket (`pane-grid.tsx`). `data-pane-mount` is how the smoke proves it did not happen.
 import { useState, type JSX } from 'react';
 import type { DeckActions } from './deck-commands.ts';
 import { sessionKey } from '../../contracts/session-row.ts';
+import { projectKey } from '../../contracts/project.ts';
 import type { DeckState } from './deck-store.ts';
+import { DeckRail } from './deck-rail.tsx';
 import { PaneGrid } from './pane-grid.tsx';
-import { ProjectsPanel } from './projects-panel.tsx';
-import { ProjectsViewModel } from './projects-view-model.ts';
 import { SessionDetailViewModel } from './session-detail-view-model.ts';
-import { AskPanel } from './ask-panel.tsx';
-import { SpendPanel } from './spend-panel.tsx';
 import { handoffOffer, handoffRefusalLine, type HandoffOffer } from './handoff-view-model.ts';
-import { SessionList } from './session-list.tsx';
+import type { SessionListProps } from './session-list.tsx';
 import { SessionPreviewViewModel } from './session-preview-view-model.ts';
-import { TranscriptSearchPanel } from './transcript-search-panel.tsx';
+import { StateBoard } from './state-board.tsx';
+import { StateBoardViewModel } from './state-board-view-model.ts';
 import type { SessionRowViewModel } from './session-row-view-model.ts';
 import type { ProjectScope } from './project-scope.ts';
 import type { CurrentProject } from './use-current-project.ts';
+import type { DeckView } from './use-deck-view.ts';
 import type { PaneGridState } from './use-pane-grid.ts';
 
 export interface DeckBodyProps {
@@ -34,137 +39,115 @@ export interface DeckBodyProps {
   readonly expanded: ReadonlySet<string>;
   readonly actions: DeckActions;
   readonly onToggle: (row: SessionRowViewModel) => void;
+  readonly deckView: DeckView;
 }
 
-/** The two columns. What each of them draws is a child's business — see `DeckSessions`. */
 export function DeckBody(props: DeckBodyProps): JSX.Element {
-  const { rows, state, now, grid, scope, project, expanded, actions, onToggle } = props;
-  // P3-T6. The current project narrows the LIST and nothing else: the header still counts every
-  // session, the palette still reaches every session, and the panes on the right are whatever was
-  // open. The same shape `/`’s filter already has.
-  // Matched by KEY rather than by re-deriving from the view model: `ProjectScope` answers about
-  // `SessionRow`, which is what carries a `cwd`, and a second path rule on the presentation side
-  // would be a second opinion about which project a session is in.
-  const keep = new Set(scope.rowsIn(project.key, state.rows).map(sessionKey));
-  const inProject = rows.filter((row) => keep.has(row.key));
+  const { rows, state, now, grid, scope, project, actions, deckView } = props;
+  // `/`'s filter is a fact about the cards, whichever view draws them; the header still counts
+  // every session and the palette still reaches every session (P2-T5).
+  const [search, setSearch] = useState('');
+  const list = listProps(props, search, setSearch);
+  const { view } = deckView;
   return (
-    <div className="deck-body">
-      <DeckLeft
-        rows={inProject}
+    <div className={`deck-body view-${view}${deckView.railFolded ? ' rail-folded' : ''}`}>
+      <DeckRail
+        view={view}
+        folded={deckView.railFolded}
+        onFold={deckView.setRailFolded}
+        list={list}
         everyRow={rows}
         state={state}
         now={now}
         scope={scope}
         project={project}
-        expanded={expanded}
         actions={actions}
-        onToggle={onToggle}
       />
-      <PaneGrid
-        panes={grid.panes}
-        rows={rows}
-        layout={grid.layout}
-        focusedKey={grid.focusedKey}
-        onLayout={grid.setLayout}
-        onFocused={grid.setFocused}
-        onRename={grid.renamePane}
-        onStop={actions.onStop}
-        onPopOut={actions.onPopOut}
-        muted={state.muted}
-        onMute={actions.onMute}
-        onRespawn={actions.onRespawnOne}
-        onClose={grid.closePane}
-      />
+      <div className="deck-main">
+        {view === 'board' ? (
+          <StateBoard
+            key="board"
+            list={list}
+            panes={grid.panes}
+            project={projectName(state, project.key)}
+            onOpenShell={actions.onOpenShell}
+          />
+        ) : null}
+        <DeckPanes key="panes" dock={view === 'board'} {...props} />
+      </div>
     </div>
   );
 }
 
-interface DeckLeftProps {
-  readonly rows: readonly SessionRowViewModel[];
-  /** Every session, not the narrowed list: a search hit may be in another project (P7-T2). */
-  readonly everyRow: readonly SessionRowViewModel[];
-  readonly state: DeckState;
-  readonly now: number;
-  readonly scope: ProjectScope;
-  readonly project: CurrentProject;
-  readonly expanded: ReadonlySet<string>;
-  readonly actions: DeckActions;
-  readonly onToggle: (row: SessionRowViewModel) => void;
-}
-
-/** The projects panel, the Ask box and the session list. */
-function DeckLeft(props: DeckLeftProps): JSX.Element {
-  const { state, now, actions } = props;
+/** The grid, docked under the board or given the screen — one element either way. */
+function DeckPanes(props: DeckBodyProps & { readonly dock: boolean }): JSX.Element {
+  const { rows, state, grid, actions } = props;
   return (
-    <div className="deck-left">
-      <DeckProjects state={state} actions={actions} scope={props.scope} project={props.project} />
-      {/* P7-T3. Under the projects, because what it answers is where the money went by folder. */}
-      <SpendPanel
-        spend={state.spend}
-        projects={state.projects}
-        disabled={!state.coreUp}
-        onRead={actions.onReadSpend}
-      />
-      {/* P4-T4. Above the session list: a question is a thing you START, like a launch, and the
-          answer belongs beside the sessions rather than inside one of them. */}
-      <AskPanel
-        run={state.ask}
-        refusal={state.askRefusal}
-        quota={state.quota}
-        now={now}
-        disabled={!state.coreUp}
-        onAsk={actions.onAsk}
-        onClear={actions.onClearAsk}
-      />
-      {/* P7-T2. Under Ask: both are questions, and this one is about what is NOT on screen. */}
-      <TranscriptSearchPanel
-        projects={state.projects}
-        rows={props.everyRow}
-        now={now}
-        onOpenPane={actions.onOpenPane}
-        onResume={actions.onResume}
-      />
-      <DeckSessions {...props} />
-    </div>
+    <PaneGrid
+      dock={props.dock}
+      panes={grid.panes}
+      rows={rows}
+      layout={grid.layout}
+      focusedKey={grid.focusedKey}
+      onLayout={grid.setLayout}
+      onFocused={grid.setFocused}
+      onRename={grid.renamePane}
+      onStop={actions.onStop}
+      onPopOut={actions.onPopOut}
+      muted={state.muted}
+      onMute={actions.onMute}
+      onRespawn={actions.onRespawnOne}
+      onClose={grid.closePane}
+      onOpenPane={actions.onOpenPane}
+    />
   );
+}
+
+/** The current project's name, for the board's "Group by state · …" line. */
+function projectName(state: DeckState, key: string | undefined): string | undefined {
+  return state.projects.find((record) => projectKey(record.path) === key)?.name;
 }
 
 /**
- * The list, and the one piece of state that belongs to it rather than to the deck.
+ * What the cards are given, in either view — the list's props, built once.
  *
- * `/`'s filter lives here because it is a fact about the list — the header still counts every
- * session and the palette still reaches every session, and neither has to know a box is filled in.
- * The keyboard does not know either: `/` focuses this box by id (deck-keyboard.ts), which is why
- * nothing above had to thread the query down or a setter back up.
+ * P3-T6: the current project narrows the CARDS and nothing else. Matched by KEY rather than by
+ * re-deriving from the view model: `ProjectScope` answers about `SessionRow`, which is what carries
+ * a `cwd`, and a second path rule on the presentation side would be a second opinion.
  */
-function DeckSessions(props: DeckLeftProps): JSX.Element {
-  const { rows, state, now, expanded, actions, onToggle } = props;
-  const [search, setSearch] = useState('');
-  return (
-    <SessionList
-      rows={rows.filter((row) => row.matches(search))}
-      now={now}
-      loading={state.loading}
-      coreUp={state.coreUp}
-      quota={state.quota}
-      search={search}
-      expanded={expanded}
-      details={detailViewModels(state.details)}
-      previews={previewViewModels(state.previews)}
-      offers={handoffOffers(rows, props.scope, state.maps)}
-      handoffRefusal={handoffRefusalFor(state.handoffRefusal)}
-      onSearch={setSearch}
-      onToggle={onToggle}
-      onLaunch={actions.onLaunch}
-      onOpen={actions.onOpenPane}
-      onResume={actions.onResume}
-      onAdopt={actions.onAdopt}
-      onStop={actions.onStop}
-      onRemove={actions.onRemove}
-      onPreview={actions.onPreview}
-      onHandOff={actions.onHandOff}
-    />
-  );
+function listProps(
+  props: DeckBodyProps,
+  search: string,
+  onSearch: (value: string) => void,
+): SessionListProps {
+  const { rows, state, now, scope, project, actions } = props;
+  const keep = new Set(scope.rowsIn(project.key, state.rows).map(sessionKey));
+  const inProject = rows.filter((row) => keep.has(row.key));
+  const board = new StateBoardViewModel([], props.grid.panes);
+  return {
+    rows: inProject.filter((row) => row.matches(search)),
+    now,
+    loading: state.loading,
+    coreUp: state.coreUp,
+    quota: state.quota,
+    search,
+    expanded: props.expanded,
+    details: detailViewModels(state.details),
+    previews: previewViewModels(state.previews),
+    offers: handoffOffers(inProject, scope, state.maps),
+    handoffRefusal: handoffRefusalFor(state.handoffRefusal),
+    paneOf: (key) => board.paneNumber(key),
+    onSearch,
+    onToggle: props.onToggle,
+    onLaunch: actions.onLaunch,
+    onOpen: actions.onOpenPane,
+    onResume: actions.onResume,
+    onAdopt: actions.onAdopt,
+    onStop: actions.onStop,
+    onRemove: actions.onRemove,
+    onPreview: actions.onPreview,
+    onHandOff: actions.onHandOff,
+  };
 }
 
 /** The last refused handoff as a sentence, still carrying the row it was about — P6-T6. */
@@ -235,52 +218,5 @@ function previewViewModels(
       key,
       preview === undefined ? undefined : new SessionPreviewViewModel(preview),
     ]),
-  );
-}
-
-/**
- * The projects panel and everything it draws from — split out for `DeckLeft`'s line count.
- *
- * The view model is built here rather than in the store, which holds wire values: a view model is
- * presentation and the store is state (CODING-STANDARDS §3).
- */
-function DeckProjects({
-  state,
-  actions,
-  scope,
-  project,
-}: {
-  readonly state: DeckState;
-  readonly actions: DeckActions;
-  readonly scope: ProjectScope;
-  readonly project: CurrentProject;
-}): JSX.Element {
-  return (
-    <ProjectsPanel
-      model={
-        new ProjectsViewModel({
-          projects: state.projects,
-          refusal: state.importRefusal,
-          statuses: state.statuses,
-          maps: state.maps,
-          presets: state.presets,
-          presetRefusal: state.presetRefusal,
-          activity: scope.activity(state.rows),
-          current: project.key,
-          unassigned: scope.unassigned(state.rows),
-          observed: state.observed,
-          drifts: state.drifts,
-          // The one age the projects panel prints (P3-T7). Read at render, which is what
-          // makes `changed 3d ago` become `4d` without a fetch.
-          now: Date.now(),
-        })
-      }
-      disabled={!state.coreUp}
-      onImport={actions.onImportProject}
-      onForget={actions.onForgetProject}
-      onChoose={project.choose}
-      onObserve={actions.onObserveProject}
-      presets={actions}
-    />
   );
 }

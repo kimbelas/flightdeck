@@ -87,7 +87,7 @@ async function gridChecks(page, report, core, layout) {
  * The last clause is the one the page cannot show: xterm refitting without a `resize` frame leaves
  * Claude drawing for the old width, which LOOKS fine until the TUI redraws.
  */
-async function fitChecks(page, report, core, label) {
+export async function fitChecks(page, report, core, label) {
   const fits = await waitFor(async () => (await terminalFits(page)).every((fit) => fit.ok));
   report.check(
     `${label}: every terminal fits inside its card, right edge and bottom`,
@@ -248,7 +248,7 @@ async function capChecks(page, report) {
   );
 }
 
-async function openShells(page, report, want) {
+export async function openShells(page, report, want) {
   while ((await page.locator('.pane-card').count()) < want) {
     const count = await page.locator('.pane-card').count();
     await shellButton(page).click();
@@ -269,7 +269,7 @@ function shellButton(page) {
   return page.locator('.deck-head button', { hasText: 'shell' }).first();
 }
 
-async function closeEveryPane(page) {
+export async function closeEveryPane(page) {
   for (let guard = 0; guard < 20; guard += 1) {
     const button = page.locator('.pane-card [data-pane-close]').first();
     if ((await button.count()) === 0) return;
@@ -277,7 +277,7 @@ async function closeEveryPane(page) {
   }
 }
 
-async function chooseLayout(page, option) {
+export async function chooseLayout(page, option) {
   await page.locator(`[data-pane-layout-option="${option}"]`).click();
   await page.waitForFunction(
     (want) => document.querySelector('.panes')?.dataset['paneLayout'] === want,
@@ -304,7 +304,7 @@ function gridViewport(page) {
   });
 }
 
-function cardBoxes(page) {
+export function cardBoxes(page) {
   return page.locator('.pane-card').evaluateAll((cards) =>
     cards.map((card) => {
       const box = card.getBoundingClientRect();
@@ -320,7 +320,7 @@ function cardBoxes(page) {
 }
 
 /** Two cards in one column whose boxes intersect — the 87px-card-around-a-240px-terminal bug. */
-function overlaps(cards) {
+export function overlaps(cards) {
   return cards.some((a, i) =>
     cards.some(
       (b, j) =>
@@ -334,7 +334,7 @@ function overlaps(cards) {
 }
 
 /** The painted screen against its card, and at least three rows of it. */
-function terminalFits(page) {
+export function terminalFits(page) {
   return page.locator('.pane-card').evaluateAll((cards) =>
     cards.map((card, index) => {
       const outer = card.getBoundingClientRect();
@@ -374,7 +374,7 @@ function stageIndex(page) {
   });
 }
 
-function paneMounts(page) {
+export function paneMounts(page) {
   return page
     .locator('.pane-card')
     .evaluateAll((cards) => cards.map((card) => card.dataset['paneMount']));

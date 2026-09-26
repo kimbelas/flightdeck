@@ -12,7 +12,7 @@ import type { SessionPreviewViewModel } from './session-preview-view-model.ts';
 import { SessionRowCard, type SessionRowCardProps } from './session-row-card.tsx';
 import type { SessionRowViewModel } from './session-row-view-model.ts';
 
-interface SessionListProps {
+export interface SessionListProps {
   /** Already filtered — `search` is here only so the empty state can say which kind of empty. */
   readonly rows: readonly SessionRowViewModel[];
   readonly now: number;
@@ -43,6 +43,8 @@ interface SessionListProps {
   readonly offers: Readonly<Record<string, HandoffOffer>>;
   /** The last refused handoff, as a sentence and the row it was about. `undefined` for silence. */
   readonly handoffRefusal: { readonly key: string; readonly text: string } | undefined;
+  /** Which pane a session is in, 1-based, or `undefined` — P10-T1's "in pane N". */
+  readonly paneOf: (key: string) => number | undefined;
   readonly onSearch: (value: string) => void;
   readonly onToggle: (row: SessionRowViewModel) => void;
   readonly onLaunch: (request: PresetLaunch) => void;
@@ -94,7 +96,7 @@ function SessionRows(props: SessionListProps): JSX.Element {
   return (
     <>
       {props.rows.map((row) => (
-        <Row key={row.key} row={row} list={props} />
+        <BoundRow key={row.key} row={row} list={props} />
       ))}
     </>
   );
@@ -108,7 +110,7 @@ function SessionRows(props: SessionListProps): JSX.Element {
  * one is given. Nothing is memoised — the whole list re-renders on a stream frame anyway, which
  * is P2-T4's shape and what keeps the row a pure function of its view model.
  */
-function Row({
+export function BoundRow({
   row,
   list,
 }: {
@@ -125,6 +127,7 @@ function Row({
       previewAsked={row.key in list.previews}
       handoff={list.offers[row.key] ?? NOWHERE}
       handoffRefusal={refusalFor(list.handoffRefusal, row.key)}
+      inPane={list.paneOf(row.key)}
       {...handlersFor(row, list)}
     />
   );
@@ -193,7 +196,7 @@ interface SessionSearchProps {
  * keyboard's job here is to put focus in a control, not to create one. The id is how it does that
  * (deck-keyboard.ts); the hint on the right is the only place the deck advertises a key.
  */
-function SessionSearch({ search, onSearch }: SessionSearchProps): JSX.Element {
+export function SessionSearch({ search, onSearch }: SessionSearchProps): JSX.Element {
   return (
     <div className="search">
       <input
