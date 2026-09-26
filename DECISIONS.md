@@ -2013,3 +2013,13 @@ modal is the card's expanded state drawn wider, not a second piece of state, and
 column draws no inline detail. Opening it reads the screen once with no second press: here the
 press on the card is the ask. There is still no timer, and `read again` stays the refresh. Esc
 closes it, as the step after the palette and the sheet in `dismiss`.
+
+**And again, at the owner's second ask ("I should be able to prompt inside there"):** on a live
+background card, opening the modal attaches, as `open pane` does. It evicts any other attach
+(F.2.6); the owner chose that over a separate "type here" press. The terminal is the session's own
+pane, pinned over the modal's stage with the class `is-modal` and `position: fixed`. The modal
+measures the stage and publishes its box as `--card-stage-*` custom properties through the CSSOM:
+SEC-UI-1 refuses a `style` attribute, not a property set from script. The pane is never rendered
+inside the modal, so closing the modal leaves the same terminal in the dock, unremounted. An
+interactive card still shows the read-only screen. `claude attach` takes `--bg` sessions only, and
+that is SPEC §5.2's permanent constraint, not a gap here.

@@ -185,15 +185,16 @@ async function placementChecks(page, report) {
 }
 
 /**
- * Pressing a card opens it as a modal, big enough to read its screen — and the screen is read
- * without a second press, once per opening.
+ * Pressing a card opens it as a modal. An interactive one cannot be attached (SPEC §5.2), so it
+ * shows the session's screen, read without a second press, once per opening.
  */
 async function modalChecks(page, report, core) {
-  const alpha = core.fixture.snapshot.rows.find((row) => row.name === 'fixture-alpha');
-  const reads = () => core.previewed.filter((id) => id === alpha.sessionId).length;
+  const delta = core.fixture.snapshot.rows.find((row) => row.name === 'fixture-delta');
+  const reads = () => core.previewed.filter((id) => id === delta.sessionId).length;
   const before = reads();
   const modal = page.locator('[data-card-modal]');
-  await card(page, 'fixture-alpha').locator('.row-toggle').click();
+  const panes = await page.locator('.pane-card').count();
+  await card(page, 'fixture-delta').locator('.row-toggle').click();
   const opened = await waitFor(async () => (await modal.count()) === 1);
   const box = await modal.boundingBox();
   const view = page.viewportSize();
@@ -208,8 +209,11 @@ async function modalChecks(page, report, core) {
   );
   const screen = await waitFor(async () => (await modal.locator('pre').count()) === 1);
   report.check(
-    'and it reads the session’s screen without another press, once',
-    screen && reads() === before + 1 && (await modal.locator('pre').innerText()).trim() !== '',
+    'an interactive card reads its screen without another press, once, and attaches nothing',
+    screen &&
+      reads() === before + 1 &&
+      (await modal.locator('pre').innerText()).trim() !== '' &&
+      (await page.locator('.pane-card').count()) === panes,
     `${String(reads() - before)} read(s)`,
   );
   const pre = await modal.locator('pre').boundingBox();
@@ -220,14 +224,13 @@ async function modalChecks(page, report, core) {
   );
   report.check(
     'the card in the column does not draw its detail a second time',
-    (await card(page, 'fixture-alpha').locator('.detail-preview').count()) === 0 &&
-      (await card(page, 'fixture-alpha').locator('.row-toggle').getAttribute('aria-expanded')) ===
+    (await card(page, 'fixture-delta').locator('.detail-preview').count()) === 0 &&
+      (await card(page, 'fixture-delta').locator('.row-toggle').getAttribute('aria-expanded')) ===
         'true',
   );
   report.check(
-    'the modal carries the card’s verbs and its detail',
-    (await modal.locator('button', { hasText: 'open pane' }).count()) === 1 &&
-      (await modal.locator('.row-delete').count()) === 1,
+    'and it says why there is no terminal to type into',
+    (await modal.locator('.row-blocked').innerText()).includes('Only background sessions'),
   );
 
   await page.keyboard.press('Escape');
@@ -235,12 +238,12 @@ async function modalChecks(page, report, core) {
   const back = await waitFor(() =>
     page.evaluate(
       (key) => document.activeElement?.getAttribute('data-deck-row') === key,
-      `${alpha.subscription}:${alpha.sessionId}`,
+      `${delta.subscription}:${delta.sessionId}`,
     ),
   );
   report.check('Esc closes it and puts the caret back on the card', shut && back);
 
-  await card(page, 'fixture-alpha').locator('.row-toggle').click();
+  await card(page, 'fixture-delta').locator('.row-toggle').click();
   await waitFor(async () => (await modal.count()) === 1);
   await page.mouse.click(5, (view?.height ?? 900) - 5);
   const outside = await waitFor(async () => (await modal.count()) === 0);
@@ -249,6 +252,69 @@ async function modalChecks(page, report, core) {
     outside && reads() === before + 2,
     `${String(reads() - before)} read(s)`,
   );
+  await liveModalChecks(page, report);
+}
+
+/**
+ * A live background card attaches on open, and its own pane is drawn over the modal to type into
+ * — pinned there by a class, never moved, so closing the modal leaves the same terminal docked.
+ */
+async function liveModalChecks(page, report) {
+  const modal = page.locator('[data-card-modal]');
+  await card(page, 'fixture-bravo').locator('.row-toggle').click();
+  const live = page.locator('.pane-card.is-modal');
+  const attached = await waitFor(async () => (await live.locator('.chip-live').count()) === 1, {
+    timeout: 20_000,
+  });
+  report.check(
+    'a live background card attaches on open, and its pane is live over the modal',
+    attached && (await live.locator('.pane-title').innerText()) === 'fixture-bravo',
+  );
+  const stage = await page.locator('[data-card-stage]').boundingBox();
+  const pane = await live.boundingBox();
+  report.check(
+    'the pane covers the modal’s stage exactly',
+    stage !== null &&
+      pane !== null &&
+      ['x', 'y', 'width', 'height'].every((side) => Math.abs(stage[side] - pane[side]) <= 2),
+    JSON.stringify({ stage, pane }),
+  );
+  const typing = await waitFor(() =>
+    page.evaluate(() => document.activeElement?.closest('.pane-card.is-modal') !== null),
+  );
+  report.check('the caret is in its terminal, so typing starts at once', typing);
+  await page.keyboard.type('modal-typed');
+  const echoed = await waitFor(async () =>
+    ((await live.locator('.xterm-rows').textContent()) ?? '').includes('modal-typed'),
+  );
+  report.check('what is typed there reaches the session', echoed);
+  const fits = await waitFor(async () => {
+    const box = await live.locator('.xterm-screen').boundingBox();
+    const host = await live.locator('.pane-host').boundingBox();
+    return (
+      box !== null &&
+      host !== null &&
+      box.x + box.width <= host.x + host.width + 1 &&
+      box.y + box.height <= host.y + host.height + 1 &&
+      box.height > 300
+    );
+  });
+  report.check('and the terminal is drawn at the modal’s size, inside its card', fits);
+
+  const mount = await live.getAttribute('data-pane-mount');
+  await modal.locator('[data-card-modal-close]').click();
+  const closed = await waitFor(async () => (await modal.count()) === 0);
+  const docked = page.locator('.pane-card', {
+    has: page.locator('.pane-title', { hasText: 'fixture-bravo' }),
+  });
+  report.check(
+    'closing the modal leaves the same terminal docked — no remount, still live',
+    closed &&
+      (await page.locator('.pane-card.is-modal').count()) === 0 &&
+      (await docked.getAttribute('data-pane-mount')) === mount &&
+      (await docked.locator('.chip-live').count()) === 1,
+  );
+  await closeEveryPane(page);
 }
 
 /** Seven more idle sessions: the column draws five and says how many it is holding back. */

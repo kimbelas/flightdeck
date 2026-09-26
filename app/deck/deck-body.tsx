@@ -21,7 +21,7 @@ import { handoffOffer, handoffRefusalLine, type HandoffOffer } from './handoff-v
 import type { SessionListProps } from './session-list.tsx';
 import { SessionPreviewViewModel } from './session-preview-view-model.ts';
 import { StateBoard } from './state-board.tsx';
-import { StateBoardViewModel } from './state-board-view-model.ts';
+import { openRowOf, StateBoardViewModel } from './state-board-view-model.ts';
 import type { SessionRowViewModel } from './session-row-view-model.ts';
 import type { ProjectScope } from './project-scope.ts';
 import type { CurrentProject } from './use-current-project.ts';
@@ -73,14 +73,21 @@ export function DeckBody(props: DeckBodyProps): JSX.Element {
             onOpenShell={actions.onOpenShell}
           />
         ) : null}
-        <DeckPanes key="panes" dock={view === 'board'} {...props} />
+        <DeckPanes
+          key="panes"
+          dock={view === 'board'}
+          modalKey={view === 'board' ? modalKeyOf(list) : undefined}
+          {...props}
+        />
       </div>
     </div>
   );
 }
 
 /** The grid, docked under the board or given the screen — one element either way. */
-function DeckPanes(props: DeckBodyProps & { readonly dock: boolean }): JSX.Element {
+function DeckPanes(
+  props: DeckBodyProps & { readonly dock: boolean; readonly modalKey: string | undefined },
+): JSX.Element {
   const { rows, state, grid, actions } = props;
   return (
     <PaneGrid
@@ -99,8 +106,15 @@ function DeckPanes(props: DeckBodyProps & { readonly dock: boolean }): JSX.Eleme
       onRespawn={actions.onRespawnOne}
       onClose={grid.closePane}
       onOpenPane={actions.onOpenPane}
+      modalKey={props.modalKey}
     />
   );
+}
+
+/** The pane to draw over the board's open card: its own, when its session can be attached. */
+function modalKeyOf(list: SessionListProps): string | undefined {
+  const open = openRowOf(list.rows, list.expanded);
+  return open?.canOpenPane === true ? open.key : undefined;
 }
 
 /** The current project's name, for the board's "Group by state · …" line. */
