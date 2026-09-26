@@ -12,7 +12,7 @@
 // would unmount it — and unmounting a pane disposes its terminal and closes its socket, which for
 // an attached session means killing a PTY because somebody clicked a layout button. So focus mode
 // is grid placement, not a different tree, and the only thing a layout changes is a class name.
-import type { JSX } from 'react';
+import type { HTMLAttributes, JSX } from 'react';
 import {
   layoutClass,
   layoutRows,
@@ -22,6 +22,7 @@ import {
 import type { OpenPane } from './open-pane.ts';
 import type { PaneControls } from './pane-head.tsx';
 import { PaneView } from './pane-view.tsx';
+import { droppedRowKey, isRowDrag } from './row-drag.ts';
 import type { SessionRowViewModel } from './session-row-view-model.ts';
 
 interface PaneGridProps {
@@ -54,50 +55,101 @@ interface PaneGridProps {
   readonly onMute: (row: SessionRowViewModel, muted: boolean) => void;
   readonly onRespawn: (row: SessionRowViewModel) => void;
   readonly onClose: (key: string) => void;
+  /** Docked under the State board rather than given the screen — P10-T1. */
+  readonly dock: boolean;
+  /** What a session card dropped here does: the card's own `open pane` (P10-T1). */
+  readonly onOpenPane: (row: SessionRowViewModel) => void;
 }
 
 export function PaneGrid(props: PaneGridProps): JSX.Element {
-  const { panes, layout, focusedKey, onLayout, onFocused, onClose } = props;
-  const byKey = new Map(props.rows.map((row) => [row.key, row]));
-  const stage = stageKey(panes, focusedKey);
+  const { panes, layout, dock } = props;
+  const drop = dropTarget(props);
   return (
-    <div className="pane-area">
-      <PaneBar layout={layout} count={panes.length} onLayout={onLayout} />
+    <div className={`pane-area${dock ? ' is-dock' : ''}`} {...drop}>
+      {dock ? (
+        <DockBar count={panes.length} />
+      ) : (
+        <PaneBar layout={layout} count={panes.length} onLayout={props.onLayout} />
+      )}
       <section
-        className={`panes ${layoutClass(layout)}`}
+        className={dock ? 'panes is-dock' : `panes ${layoutClass(layout)}`}
         data-pane-layout={String(layout)}
+        data-pane-dock={dock || undefined}
         // A data attribute and not an inline style: the policy has no `'unsafe-inline'` for
         // styles, and the server-rendered `style=""` would be refused on first paint (SEC-UI-1).
-        data-pane-rows={rowsAttribute(layout, panes.length)}
+        // The dock is one row whatever the layout says, so it carries no row count.
+        data-pane-rows={dock ? undefined : rowsAttribute(layout, panes.length)}
         aria-label="terminal panes"
       >
-        {/* No grid-wide credential check any more: each pane mints its own ticket and reports its
-            own refusal, so core being down shows on the pane that asked rather than on all of them
-            (DECISIONS.md D32). */}
-        {panes.map((pane, index) => (
-          <PaneView
-            key={pane.key}
-            index={index}
-            target={pane.target}
-            title={pane.title}
-            focused={pane.key === focusedKey}
-            thumbnail={layout === 'focus' && pane.key !== stage}
-            controls={paneControls(byKey.get(pane.key), props)}
-            onFocused={() => {
-              onFocused(pane.key);
-            }}
-            onRename={(title) => {
-              props.onRename(pane.key, title);
-            }}
-            onClose={() => {
-              onClose(pane.key);
-            }}
-          />
-        ))}
+        <PaneCards {...props} />
         {panes.length === 0 && <EmptyPanes />}
       </section>
     </div>
   );
+}
+
+/**
+ * The cards, each a direct child of `section.panes` — the rule at the top of this file.
+ *
+ * No grid-wide credential check: each pane mints its own ticket and reports its own refusal, so
+ * core being down shows on the pane that asked rather than on all of them (DECISIONS.md D32).
+ * The dock draws no thumbnails: focus mode is a way of cutting the whole screen, and the dock is a
+ * strip under the board whatever the chooser was last set to.
+ */
+function PaneCards(props: PaneGridProps): JSX.Element {
+  const { panes, layout, focusedKey, onFocused, onClose, dock } = props;
+  const byKey = new Map(props.rows.map((row) => [row.key, row]));
+  const stage = stageKey(panes, focusedKey);
+  return (
+    <>
+      {panes.map((pane, index) => (
+        <PaneView
+          key={pane.key}
+          index={index}
+          target={pane.target}
+          title={pane.title}
+          focused={pane.key === focusedKey}
+          thumbnail={!dock && layout === 'focus' && pane.key !== stage}
+          controls={paneControls(byKey.get(pane.key), props)}
+          onFocused={() => {
+            onFocused(pane.key);
+          }}
+          onRename={(title) => {
+            props.onRename(pane.key, title);
+          }}
+          onClose={() => {
+            onClose(pane.key);
+          }}
+        />
+      ))}
+    </>
+  );
+}
+
+/**
+ * A session card dropped on the panes opens its pane — P10-T1.
+ *
+ * Through `onOpenPane` with the row the deck is drawing, which is what the card's own button calls,
+ * and only for a row that can open one: the card is draggable only then, and this checks again
+ * rather than trusting where a drag came from. Anything else dropped here is left alone.
+ */
+function dropTarget(
+  props: PaneGridProps,
+): Pick<HTMLAttributes<HTMLDivElement>, 'onDragOver' | 'onDrop'> {
+  return {
+    onDragOver: (event) => {
+      if (!isRowDrag(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'link';
+    },
+    onDrop: (event) => {
+      const key = droppedRowKey(event);
+      const row = props.rows.find((each) => each.key === key);
+      if (!row?.canOpenPane) return;
+      event.preventDefault();
+      props.onOpenPane(row);
+    },
+  };
 }
 
 /**
@@ -156,6 +208,23 @@ function EmptyPanes(): JSX.Element {
       No panes open. Only background sessions can be attached — an interactive session is already
       bound to the terminal you started it in.
     </p>
+  );
+}
+
+/**
+ * The dock's head: what it is, how many are in it, and that a card can be dragged in.
+ *
+ * No chooser: the dock is one row, and the layout it would choose is the Panes view's.
+ */
+function DockBar({ count }: { readonly count: number }): JSX.Element {
+  return (
+    <div className="pane-bar dock-bar">
+      <span className="dock-title">Docked panes</span>
+      <span className="muted" data-dock-count>
+        {count === 0 ? 'none open' : `${String(count)} open`}
+      </span>
+      <span className="pane-bar-count muted">Drag a card here to attach</span>
+    </div>
   );
 }
 

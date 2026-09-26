@@ -17,7 +17,7 @@ import type { PresetLaunch } from '../../contracts/launch-preset.ts';
 import { BrowserDeckApi } from './browser-deck-api.ts';
 import { BrowserStreamTransport } from './browser-stream-transport.ts';
 import { CommandPalette } from './command-palette.tsx';
-import { DeckBody } from './deck-body.tsx';
+import { DeckBody, type DeckBodyProps } from './deck-body.tsx';
 import { installActions } from './deck-install.tsx';
 import {
   askActions,
@@ -41,6 +41,7 @@ import type { OpenPane } from './open-pane.ts';
 import { nextShellPane } from './shell-pane.ts';
 import { projectKey, type ProjectRecord } from '../../contracts/project.ts';
 import { useDeckKeys, type DeckKeys } from './use-deck-keys.ts';
+import { useDeckView } from './use-deck-view.ts';
 
 const AGE_TICK_MS = 10_000;
 
@@ -62,6 +63,7 @@ export function DeckView(): JSX.Element {
   const grid = usePaneGrid(state.rows, state.coreUp, project.key);
   const { expanded, toggle } = useExpandedRows(store);
   const now = useTickingClock();
+  const deckView = useDeckView();
   // Which subscription's installation panel is open, or `undefined` — P4-T5. Component state
   // rather than store state: nothing outside this page cares, and the reading it triggers is in
   // the store where it belongs.
@@ -77,30 +79,51 @@ export function DeckView(): JSX.Element {
   const rows = state.rows.map((row) => new SessionRowViewModel(row, shared));
   // `onLayout` comes from the grid rather than from `useDeckActions`: the palette's six layout
   // entries and the chooser's six buttons must be the same call, or one of them gets the next fix.
-  const targets = { rows, ...actions, onLayout: grid.setLayout, onChooseProject: project.choose };
+  const targets = { rows, ...actions, onLayout: grid.setLayout, onChooseProject: project.choose, onView: deckView.setView }; // prettier-ignore
   const palette = { ...targets, ...paletteSources(state, scope, project.key, now) };
   const keys = useDeckKeys(commandsFor(palette), { onMovePane: grid.movePaneBy });
 
+  return (
+    <DeckScreen
+      page={{
+        state,
+        now,
+        rows,
+        grid,
+        scope,
+        project,
+        expanded,
+        actions,
+        onToggle: toggle,
+        deckView,
+      }}
+      install={install !== undefined}
+      keys={keys}
+    />
+  );
+}
+
+interface DeckScreenProps {
+  /** Everything the body is given, which is also most of what the header is given. */
+  readonly page: DeckBodyProps;
+  readonly install: boolean;
+  readonly keys: DeckKeys;
+}
+
+/** The page's three layers — header, body, overlays. Arranges and holds nothing. */
+function DeckScreen({ page, install, keys }: DeckScreenProps): JSX.Element {
+  const { state, now, rows, actions, deckView } = page;
   return (
     <main className="deck">
       <DeckTop
         state={state}
         now={now}
         count={rows.length}
-        install={install !== undefined}
+        install={install}
         actions={actions}
+        deckView={deckView}
       />
-      <DeckBody
-        rows={rows}
-        state={state}
-        now={now}
-        grid={grid}
-        scope={scope}
-        project={project}
-        expanded={expanded}
-        actions={actions}
-        onToggle={toggle}
-      />
+      <DeckBody {...page} />
       <DeckOverlays keys={keys} />
     </main>
   );

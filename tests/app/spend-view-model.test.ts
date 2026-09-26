@@ -102,6 +102,11 @@ describe('SpendViewModel — totals', () => {
     expect(model.total).toBe('$15.00');
   });
 
+  it('says what this week cost, both accounts — the State board header (P10-T1)', () => {
+    expect(new SpendViewModel(summary(), []).thisWeek).toBe('$10.00');
+    expect(new SpendViewModel(summary({ weeks: [] }), []).thisWeek).toBe('$0.00');
+  });
+
   it('is empty only when no week has anything in it', () => {
     expect(new SpendViewModel(summary(), []).empty).toBe(false);
     expect(
