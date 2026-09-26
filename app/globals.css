@@ -2290,3 +2290,115 @@ button.chip-version {
   color: var(--bad);
   font-size: 11px;
 }
+
+/* ---- P10-T1: a board card, opened as a modal ---- */
+
+/* Over everything, the panes included: a card is opened to be read, and the dock under it would
+   otherwise paint its terminals through the scrim. */
+.card-scrim {
+  z-index: 20;
+  align-items: center;
+  padding: 24px;
+}
+
+.card-modal {
+  width: min(1320px, 100%);
+  height: min(86vh, 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.card-modal.tone-needs-you {
+  border-left-color: var(--warn);
+}
+
+.card-modal.tone-working {
+  border-left-color: var(--accent);
+}
+
+.card-modal-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: baseline;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.card-modal-head .row-title {
+  font-size: 15px;
+}
+
+.card-modal-close {
+  margin-left: auto;
+  border-color: transparent;
+}
+
+.card-modal-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* The screen gets the room. It scrolls both ways inside its own box and is never re-wrapped: a
+   `claude logs` frame is 200 columns and its alignment is the one Claude Code drew. */
+.card-modal-screen {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px 14px;
+}
+
+.card-modal-screen .detail-preview {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
+}
+
+.card-modal-screen pre {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.4;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.card-modal-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 14px;
+  border-left: 1px solid var(--line);
+}
+
+@media (max-width: 900px) {
+  .card-modal-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(240px, 1fr) auto;
+    overflow-y: auto;
+  }
+
+  .card-modal-side {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}

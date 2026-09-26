@@ -175,6 +175,19 @@ export function focusRow(key: string): void {
   row?.scrollIntoView({ block: 'nearest' });
 }
 
+/**
+ * Closes the board's open card, if one is open — `Esc`'s step after the palette and the sheet.
+ *
+ * By the modal's own close button, so there is one way to close it and it also puts the caret back
+ * on the card it came from (`card-modal.tsx`).
+ */
+export function closeCardModal(): boolean {
+  const close = document.querySelector<HTMLElement>('[data-card-modal] [data-card-modal-close]');
+  if (close === null) return false;
+  close.click();
+  return true;
+}
+
 /** What `Esc` does in a text field: hands the keyboard back to the deck. */
 export function blurActive(): void {
   const active = document.activeElement;

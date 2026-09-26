@@ -137,6 +137,7 @@ function listProps(
     offers: handoffOffers(inProject, scope, state.maps),
     handoffRefusal: handoffRefusalFor(state.handoffRefusal),
     paneOf: (key) => board.paneNumber(key),
+    detailInline: props.deckView.view !== 'board',
     onSearch,
     onToggle: props.onToggle,
     onLaunch: actions.onLaunch,

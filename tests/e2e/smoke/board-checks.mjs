@@ -66,6 +66,7 @@ export async function boardChecks(page, report, core) {
 
   await columnChecks(page, report);
   await placementChecks(page, report);
+  await modalChecks(page, report, core);
   await moreChecks(page, report, core);
   await dockChecks(page, report, core);
   await dragChecks(page, report);
@@ -180,6 +181,73 @@ async function placementChecks(page, report) {
   report.check(
     'an ended background card offers resume',
     (await card(page, 'fixture-foxtrot').locator('button', { hasText: 'resume' }).count()) === 1,
+  );
+}
+
+/**
+ * Pressing a card opens it as a modal, big enough to read its screen — and the screen is read
+ * without a second press, once per opening.
+ */
+async function modalChecks(page, report, core) {
+  const alpha = core.fixture.snapshot.rows.find((row) => row.name === 'fixture-alpha');
+  const reads = () => core.previewed.filter((id) => id === alpha.sessionId).length;
+  const before = reads();
+  const modal = page.locator('[data-card-modal]');
+  await card(page, 'fixture-alpha').locator('.row-toggle').click();
+  const opened = await waitFor(async () => (await modal.count()) === 1);
+  const box = await modal.boundingBox();
+  const view = page.viewportSize();
+  report.check(
+    'pressing a card opens it as a modal, most of the window',
+    opened &&
+      box !== null &&
+      view !== null &&
+      box.width >= view.width * 0.8 &&
+      box.height >= view.height * 0.6,
+    JSON.stringify({ box, view }),
+  );
+  const screen = await waitFor(async () => (await modal.locator('pre').count()) === 1);
+  report.check(
+    'and it reads the session’s screen without another press, once',
+    screen && reads() === before + 1 && (await modal.locator('pre').innerText()).trim() !== '',
+    `${String(reads() - before)} read(s)`,
+  );
+  const pre = await modal.locator('pre').boundingBox();
+  report.check(
+    'the screen gets the room: wider than a column, and most of the modal’s height',
+    pre !== null && box !== null && pre.width >= box.width * 0.6 && pre.height >= box.height * 0.5,
+    JSON.stringify(pre),
+  );
+  report.check(
+    'the card in the column does not draw its detail a second time',
+    (await card(page, 'fixture-alpha').locator('.detail-preview').count()) === 0 &&
+      (await card(page, 'fixture-alpha').locator('.row-toggle').getAttribute('aria-expanded')) ===
+        'true',
+  );
+  report.check(
+    'the modal carries the card’s verbs and its detail',
+    (await modal.locator('button', { hasText: 'open pane' }).count()) === 1 &&
+      (await modal.locator('.row-delete').count()) === 1,
+  );
+
+  await page.keyboard.press('Escape');
+  const shut = await waitFor(async () => (await modal.count()) === 0);
+  const back = await waitFor(() =>
+    page.evaluate(
+      (key) => document.activeElement?.getAttribute('data-deck-row') === key,
+      `${alpha.subscription}:${alpha.sessionId}`,
+    ),
+  );
+  report.check('Esc closes it and puts the caret back on the card', shut && back);
+
+  await card(page, 'fixture-alpha').locator('.row-toggle').click();
+  await waitFor(async () => (await modal.count()) === 1);
+  await page.mouse.click(5, (view?.height ?? 900) - 5);
+  const outside = await waitFor(async () => (await modal.count()) === 0);
+  report.check(
+    'a press outside the card closes it too, and a reopening read the screen again',
+    outside && reads() === before + 2,
+    `${String(reads() - before)} read(s)`,
   );
 }
 
@@ -386,6 +454,10 @@ async function spendChecks(page, report, core) {
   const before = reads();
   await page.locator('[data-week-spend]').click();
   const read = await waitFor(() => reads() === before + 1);
+  // The count moves when the request is made; the label when the answer lands.
+  await waitFor(async () =>
+    /^\$\d+\.\d{2} this week$/u.test(await page.locator('[data-week-spend]').innerText()),
+  );
   const label = await page.locator('[data-week-spend]').innerText();
   report.check(
     'the week figure reads the summary when pressed, and says what this week cost',

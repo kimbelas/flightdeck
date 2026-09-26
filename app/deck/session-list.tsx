@@ -45,6 +45,8 @@ export interface SessionListProps {
   readonly handoffRefusal: { readonly key: string; readonly text: string } | undefined;
   /** Which pane a session is in, 1-based, or `undefined` — P10-T1's "in pane N". */
   readonly paneOf: (key: string) => number | undefined;
+  /** Whether an open card draws its detail in place; the board opens a modal instead. */
+  readonly detailInline: boolean;
   readonly onSearch: (value: string) => void;
   readonly onToggle: (row: SessionRowViewModel) => void;
   readonly onLaunch: (request: PresetLaunch) => void;
@@ -69,6 +71,11 @@ const NOWHERE: HandoffOffer = {
   nothingBecause: 'Nothing is known about this session’s worktrees.',
   suggestedName: '',
 };
+
+/** Where one row could be handed to, and "nowhere" for a row nobody computed an offer for. */
+export function offerFor(list: SessionListProps, key: string): HandoffOffer {
+  return list.offers[key] ?? NOWHERE;
+}
 
 export function SessionList(props: SessionListProps): JSX.Element {
   return (
@@ -125,9 +132,10 @@ export function BoundRow({
       detail={list.details[row.key]}
       preview={list.previews[row.key]}
       previewAsked={row.key in list.previews}
-      handoff={list.offers[row.key] ?? NOWHERE}
+      handoff={offerFor(list, row.key)}
       handoffRefusal={refusalFor(list.handoffRefusal, row.key)}
       inPane={list.paneOf(row.key)}
+      detailInline={list.detailInline}
       {...handlersFor(row, list)}
     />
   );
@@ -140,7 +148,7 @@ export function BoundRow({
  * above is now what the row IS, and this is what pressing anything on it does. The list's own
  * callbacks all take the row, so binding is the whole of the work.
  */
-function handlersFor(
+export function handlersFor(
   row: SessionRowViewModel,
   list: SessionListProps,
 ): Pick<
@@ -179,7 +187,10 @@ function handlersFor(
  * Several rows can be open at once (P2-T4), and a code with no row on it would put "that folder is
  * gone" under a session nobody pressed — a sentence that is false about that row (`HandoffSlice`).
  */
-function refusalFor(refusal: SessionListProps['handoffRefusal'], key: string): string | undefined {
+export function refusalFor(
+  refusal: SessionListProps['handoffRefusal'],
+  key: string,
+): string | undefined {
   return refusal?.key === key ? refusal.text : undefined;
 }
 
