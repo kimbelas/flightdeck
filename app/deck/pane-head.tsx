@@ -94,7 +94,7 @@ export function PaneHead(props: PaneHeadProps): JSX.Element {
           reattach
         </button>
       )}
-      <button type="button" className="ghost" onClick={props.onClose}>
+      <button type="button" className="ghost" data-pane-close onClick={props.onClose}>
         close
       </button>
     </header>

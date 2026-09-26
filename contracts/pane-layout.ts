@@ -42,6 +42,31 @@ export function layoutCapacity(layout: PaneLayout): number {
   return layout === 'focus' ? MAX_PANES : layout;
 }
 
+/** Columns and rows a grid layout is cut into — what one screen of it holds. */
+const GRID_SHAPES: Readonly<Record<Exclude<PaneLayout, 'focus'>, readonly [number, number]>> = {
+  1: [1, 1],
+  2: [2, 1],
+  4: [2, 2],
+  6: [3, 2],
+  9: [3, 3],
+};
+
+/**
+ * How many rows share the screen's height — the number the stylesheet divides it by.
+ *
+ * `grid-auto-rows: 1fr` alone was wrong in both directions, measured with nine panes open: 1-up
+ * gave each of them a ninth of the screen, so every card was 87px around a 240px terminal and they
+ * painted over each other. A layout is a promise about ONE screen — 1-up is one pane that fills
+ * it, and the rest scroll — so a row is the screen divided by the layout's rows. With fewer panes
+ * than that the rows that exist share it instead, so a 9-up holding four still fills the screen.
+ * Focus mode is not a grid and answers `undefined`: its stage and strip size themselves.
+ */
+export function layoutRows(layout: PaneLayout, count: number): number | undefined {
+  if (layout === 'focus') return undefined;
+  const [columns, rows] = GRID_SHAPES[layout];
+  return Math.max(1, Math.min(rows, Math.ceil(count / columns)));
+}
+
 /**
  * The layout to draw when nobody has chosen one — the smallest grid the open panes fit in.
  *
