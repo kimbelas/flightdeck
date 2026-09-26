@@ -13,7 +13,12 @@
 // an attached session means killing a PTY because somebody clicked a layout button. So focus mode
 // is grid placement, not a different tree, and the only thing a layout changes is a class name.
 import type { JSX } from 'react';
-import { layoutClass, PANE_LAYOUTS, type PaneLayout } from '../../contracts/pane-layout.ts';
+import {
+  layoutClass,
+  layoutRows,
+  PANE_LAYOUTS,
+  type PaneLayout,
+} from '../../contracts/pane-layout.ts';
 import type { OpenPane } from './open-pane.ts';
 import type { PaneControls } from './pane-head.tsx';
 import { PaneView } from './pane-view.tsx';
@@ -54,12 +59,16 @@ interface PaneGridProps {
 export function PaneGrid(props: PaneGridProps): JSX.Element {
   const { panes, layout, focusedKey, onLayout, onFocused, onClose } = props;
   const byKey = new Map(props.rows.map((row) => [row.key, row]));
+  const stage = stageKey(panes, focusedKey);
   return (
     <div className="pane-area">
       <PaneBar layout={layout} count={panes.length} onLayout={onLayout} />
       <section
         className={`panes ${layoutClass(layout)}`}
         data-pane-layout={String(layout)}
+        // A data attribute and not an inline style: the policy has no `'unsafe-inline'` for
+        // styles, and the server-rendered `style=""` would be refused on first paint (SEC-UI-1).
+        data-pane-rows={rowsAttribute(layout, panes.length)}
         aria-label="terminal panes"
       >
         {/* No grid-wide credential check any more: each pane mints its own ticket and reports its
@@ -72,6 +81,7 @@ export function PaneGrid(props: PaneGridProps): JSX.Element {
             target={pane.target}
             title={pane.title}
             focused={pane.key === focusedKey}
+            thumbnail={layout === 'focus' && pane.key !== stage}
             controls={paneControls(byKey.get(pane.key), props)}
             onFocused={() => {
               onFocused(pane.key);
@@ -88,6 +98,23 @@ export function PaneGrid(props: PaneGridProps): JSX.Element {
       </section>
     </div>
   );
+}
+
+/**
+ * Which pane focus mode puts on the stage: the focused one, or the first while none is.
+ *
+ * The same rule as the stylesheet's `:has` fallback, and it has to be — the CSS decides where the
+ * card goes and this decides what it shows, so a disagreement would draw a thumbnail on the stage.
+ */
+function stageKey(panes: readonly OpenPane[], focusedKey: string | undefined): string | undefined {
+  if (panes.some((pane) => pane.key === focusedKey)) return focusedKey;
+  return panes[0]?.key;
+}
+
+/** `layoutRows` as the stylesheet reads it; absent in focus mode, which is not a grid. */
+function rowsAttribute(layout: PaneLayout, count: number): string | undefined {
+  const rows = layoutRows(layout, count);
+  return rows === undefined ? undefined : String(rows);
 }
 
 /**

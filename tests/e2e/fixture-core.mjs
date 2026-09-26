@@ -353,6 +353,12 @@ export class FixtureCore {
     this.connectWrites = [];
     /** Every `input` frame the PTY socket received, so a check can ask what the pane SENT. */
     this.typed = [];
+    /**
+     * The last size each PTY socket was told, keyed by target id — the half of a layout change the
+     * page cannot see. A terminal that LOOKS refitted but never sent `resize` leaves Claude drawing
+     * for the old width (layout-grid-checks.mjs).
+     */
+    this.sizes = new Map();
     /** Which target each open PTY socket is attached to, so `stop` can end the right one. */
     this.attached = new Map();
     /**
@@ -1330,6 +1336,8 @@ export class FixtureCore {
         // makes a typed line readable in `.xterm-rows` rather than overprinting itself.
         client.send(encode({ type: 'output', data: frame.data.replaceAll('\r', '\r\n') }));
       }
+      if (frame.type === 'resize')
+        this.sizes.set(target.id, { cols: frame.cols, rows: frame.rows });
     });
   }
 
