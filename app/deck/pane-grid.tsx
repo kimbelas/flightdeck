@@ -59,6 +59,8 @@ interface PaneGridProps {
   readonly dock: boolean;
   /** What a session card dropped here does: the card's own `open pane` (P10-T1). */
   readonly onOpenPane: (row: SessionRowViewModel) => void;
+  /** The pane drawn over the board's open card, if its session is attachable (P10-T1). */
+  readonly modalKey: string | undefined;
 }
 
 export function PaneGrid(props: PaneGridProps): JSX.Element {
@@ -110,6 +112,7 @@ function PaneCards(props: PaneGridProps): JSX.Element {
           title={pane.title}
           focused={pane.key === focusedKey}
           thumbnail={!dock && layout === 'focus' && pane.key !== stage}
+          enlarged={pane.key === props.modalKey}
           controls={paneControls(byKey.get(pane.key), props)}
           onFocused={() => {
             onFocused(pane.key);

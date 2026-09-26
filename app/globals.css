@@ -2402,3 +2402,22 @@ button.chip-version {
     border-top: 1px solid var(--line);
   }
 }
+
+/* The live pane over an open card: pinned to the modal's stage (`--card-stage-*`, measured by the
+   modal) and above the scrim. It stays where it is in the grid, which is why this is `fixed`. */
+.pane-card.is-modal {
+  position: fixed;
+  left: var(--card-stage-left);
+  top: var(--card-stage-top);
+  width: var(--card-stage-width);
+  height: var(--card-stage-height);
+  z-index: 21;
+}
+
+.card-modal-stage {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+}
