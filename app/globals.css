@@ -1425,17 +1425,28 @@ button.ghost {
   font-size: 11px;
 }
 
-/* Layouts 1/2/4/6/9 plus focus — SPEC §5.3. `grid-auto-rows: 1fr` rather than a fixed row count
-   per layout: a 9-up holding four panes should give them the two rows they need and not leave a
-   third of the screen empty, and `1fr` on auto rows is what makes every row share the height. */
+/* Layouts 1/2/4/6/9 plus focus — SPEC §5.3. A layout is a promise about ONE screen: a row is
+   the screen's height divided by `data-pane-rows` (`layoutRows`), and panes past what the layout
+   holds scroll. `1fr` on auto rows was the old rule and it divided the screen by EVERY row — nine
+   panes in 1-up were 87px cards around 240px terminals, painted over each other. The floor keeps a
+   terminal usable in a short window; past it the grid scrolls rather than crushing the text. */
 .panes {
+  --pane-row-floor: 160px;
   display: grid;
   gap: 8px;
   padding: 8px;
   overflow: auto;
   min-height: 0;
   flex: 1;
-  grid-auto-rows: 1fr;
+  grid-auto-rows: max(var(--pane-row-floor), 100%);
+}
+
+.panes[data-pane-rows='2'] {
+  grid-auto-rows: max(var(--pane-row-floor), calc((100% - 8px) / 2));
+}
+
+.panes[data-pane-rows='3'] {
+  grid-auto-rows: max(var(--pane-row-floor), calc((100% - 16px) / 3));
 }
 
 .panes-1 {
@@ -1558,7 +1569,21 @@ button.danger:hover:not(:disabled) {
 
 .pane-title {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A focus-mode thumbnail: which pane, whether it is live, and a way to close it. Everything else
+   waits until it is on the stage — at 136px wide the footer alone wrapped to four lines and left
+   the terminal 8px tall. Clicking into the thumbnail focuses it, which is what puts it there. */
+.pane-card.is-thumb .pane-foot,
+.pane-card.is-thumb .pane-detail,
+.pane-card.is-thumb .pane-note,
+.pane-card.is-thumb .pane-head button:not([data-pane-close]) {
+  display: none;
 }
 
 /* P5a-T6. The rename box replaces the title in place, so the head does not change height. */
@@ -1633,8 +1658,18 @@ button.danger:hover:not(:disabled) {
 /* The terminal host must have a real size for fit() to measure — see .pane above. */
 .pane-host {
   flex: 1;
-  min-height: 240px;
+  /* Zero, and the ROW decides: a 240px floor here overflowed every card shorter than it, which is
+     every card in a 9-up on a laptop and every thumbnail in focus mode. */
+  min-height: 0;
   overflow: hidden;
+}
+
+/* The inset lives on xterm's element and not on the host, and that is FitAddon's rule rather than
+   taste: it sizes the terminal to the host's computed `height`, which under `border-box` includes
+   the host's padding — so 4px of host padding put the last row 7px under the card's edge. The
+   terminal element's own padding is the one it subtracts. */
+.pane-host > .xterm {
+  height: 100%;
   padding: 4px;
 }
 
@@ -1829,11 +1864,14 @@ kbd {
     grid-template-columns: 1fr;
   }
 
-  .panes-2,
-  .panes-3,
-  .panes-4 {
+  .panes.panes-2,
+  .panes.panes-3,
+  .panes.panes-4 {
     grid-template-columns: 1fr;
     grid-template-rows: none;
+    /* One column now, so the row count the layout was cut for no longer holds; a fixed height
+       that scrolls is the honest answer. */
+    grid-auto-rows: 360px;
   }
 }
 

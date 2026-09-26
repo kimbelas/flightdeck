@@ -32,6 +32,7 @@ import { daemonChecks } from './smoke/daemon-checks.mjs';
 import { devChecks } from './smoke/dev-checks.mjs';
 import { keyboardChecks, keyboardHelperChecks } from './smoke/keyboard-checks.mjs';
 import { paneChecks } from './smoke/pane-checks.mjs';
+import { layoutGridChecks } from './smoke/layout-grid-checks.mjs';
 import { paneControlChecks } from './smoke/pane-control-checks.mjs';
 import { projectChecks } from './smoke/project-checks.mjs';
 import { projectViewChecks } from './smoke/project-view-checks.mjs';
@@ -133,6 +134,9 @@ try {
   await muteChecks(page, report, core);
   // After the shells, because it opens a SESSION pane and closes every other one first (P6-T2).
   await popoutChecks(page, report, core);
+  // After the pop-out, and it closes whatever that left open: it fills the grid with nine SHELLS,
+  // which need no session and no project, and closes all of them on the way out (layout bug fix).
+  await layoutGridChecks(page, report, core);
   // Last before security: it imports ledger behind the deck's back and RELOADS the page, so the
   // registry is in a known state wherever it runs and nothing after it depends on an open pane.
   await searchChecks(page, report, core);

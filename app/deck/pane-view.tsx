@@ -14,7 +14,15 @@
 // (G.29). The import belongs next to the component that mounts a terminal rather than in
 // `layout.tsx`, so a deck with no pane open does not pay for it.
 import '@xterm/xterm/css/xterm.css';
-import { useCallback, useEffect, useRef, useState, type JSX, type RefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FocusEvent,
+  type JSX,
+  type RefObject,
+} from 'react';
 import type { PtyTarget } from '../../contracts/pty-protocol.ts';
 import { ImagePaste } from '../panes/image-paste.ts';
 import { PaneSocket } from '../panes/pane-socket.ts';
@@ -28,6 +36,13 @@ interface PaneViewProps {
   readonly target: PtyTarget;
   readonly title: string;
   readonly focused: boolean;
+  /**
+   * A focus-mode thumbnail rather than a pane with room — a class, and only a class.
+   *
+   * The card is never moved or re-parented for it: a different position in the tree is a remount,
+   * and a remount closes the socket (see `pane-grid.tsx`).
+   */
+  readonly thumbnail: boolean;
   /** What the session behind this pane can be asked to do — P5a-T6. A shell has no session. */
   readonly controls: PaneControls | undefined;
   readonly onFocused: () => void;
@@ -83,16 +98,18 @@ function mountPane(
     onNote: note,
   }).attach(host);
 
-  // The PTY only learns the real size from us, so a window resize has to reach it.
-  const onResize = (): void => {
+  // The PTY only learns the real size from us, so every change to the HOST's size has to reach it
+  // — not just a window resize. Switching the layout (1 → 6) shrinks the pane with the window
+  // untouched, and a `resize` listener never fired: the terminal kept the columns it had in the
+  // wider layout and was clipped on the right and at the bottom. A ResizeObserver sees both.
+  const stopWatching = watchSize(host, () => {
     socket.resize();
-  };
-  window.addEventListener('resize', onResize);
+  });
 
   return {
     socket,
     dispose: () => {
-      window.removeEventListener('resize', onResize);
+      stopWatching();
       detachPaste();
       // Closing a pane detaches; it never stops the session (RESEARCH.md F.2.6).
       socket.close();
@@ -101,11 +118,36 @@ function mountPane(
   };
 }
 
+/**
+ * Calls `onChange` once per frame while `host` changes size, and never while it has none.
+ *
+ * Coalesced to one animation frame because a layout switch resizes every pane at once and a drag
+ * of the window fires dozens of entries a second, and each call ends in a `resize` frame the PTY
+ * redraws for. A zero-size host is a pane that is not laid out yet (or is hidden); fitting it
+ * would propose a 1×1 terminal and send Claude that size.
+ */
+function watchSize(host: HTMLElement, onChange: () => void): () => void {
+  let frame = 0;
+  const observer = new ResizeObserver(() => {
+    if (frame !== 0) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      if (host.clientWidth > 0 && host.clientHeight > 0) onChange();
+    });
+  });
+  observer.observe(host);
+  return () => {
+    observer.disconnect();
+    if (frame !== 0) cancelAnimationFrame(frame);
+  };
+}
+
 export function PaneView({
   index,
   target,
   title,
   focused,
+  thumbnail,
   controls,
   onFocused,
   onRename,
@@ -125,11 +167,11 @@ export function PaneView({
     // `onFocus` is React's delegated `focusin`, so it fires for xterm's hidden textarea inside —
     // clicking into a pane and pressing its digit both mark it focused, and `[`/`]` move that one.
     <section
-      className={focused ? 'pane-card is-focused' : 'pane-card'}
+      className={cardClass(focused, thumbnail)}
       data-deck-pane={index}
       data-pane-attempt={attempt}
       data-pane-mount={mount}
-      onFocus={onFocused}
+      onFocus={unlessInHead(onFocused)}
       aria-label={`terminal for ${title}`}
     >
       <PaneHead
@@ -145,6 +187,27 @@ export function PaneView({
       <footer className="pane-foot">{closingNote(target)}</footer>
     </section>
   );
+}
+
+/**
+ * Whether focus landed on the pane's own title bar rather than in its terminal.
+ *
+ * Those do not pick the pane, and in focus mode that is the difference between a button working
+ * and not: pressing a thumbnail's `close` focused the button, the focus promoted the thumbnail to
+ * the stage, the grid moved under the pointer, and the click that followed landed on another card.
+ * Clicking into the terminal is what chooses a pane; the buttons act on it where it is.
+ */
+function unlessInHead(onFocused: () => void): (event: FocusEvent) => void {
+  return (event) => {
+    const inHead = event.target instanceof Element && event.target.closest('.pane-head') !== null;
+    if (!inHead) onFocused();
+  };
+}
+
+function cardClass(focused: boolean, thumbnail: boolean): string {
+  return ['pane-card', focused ? 'is-focused' : '', thumbnail ? 'is-thumb' : '']
+    .filter((name) => name !== '')
+    .join(' ');
 }
 
 /**

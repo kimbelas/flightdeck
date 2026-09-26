@@ -5,6 +5,7 @@ import {
   isPaneLayout,
   layoutCapacity,
   layoutClass,
+  layoutRows,
   MAX_PANES,
   movePane,
   PANE_LAYOUTS,
@@ -33,6 +34,29 @@ describe('the layouts on offer', () => {
 
   it('reports each grids capacity, and focus modes as the maximum', () => {
     expect(PANE_LAYOUTS.map(layoutCapacity)).toEqual([1, 2, 4, 6, 9, 9]);
+  });
+});
+
+describe('how many rows share one screen', () => {
+  const grids: readonly PaneLayout[] = [1, 2, 4, 6, 9];
+
+  it('is the rows a full grid is cut into, whatever is open past that', () => {
+    expect(grids.map((layout) => layoutRows(layout, 9))).toEqual([1, 1, 2, 2, 3]);
+  });
+
+  it('is only the rows that exist when fewer panes are open, so they fill the screen', () => {
+    expect(layoutRows(9, 4)).toBe(2);
+    expect(layoutRows(9, 3)).toBe(1);
+    expect(layoutRows(6, 2)).toBe(1);
+    expect(layoutRows(4, 3)).toBe(2);
+  });
+
+  it('is one row with nothing open, never zero', () => {
+    for (const layout of grids) expect(layoutRows(layout, 0)).toBe(1);
+  });
+
+  it('has no answer for focus mode, which is not a grid', () => {
+    expect(layoutRows('focus', 9)).toBeUndefined();
   });
 });
 

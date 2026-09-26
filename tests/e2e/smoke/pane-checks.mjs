@@ -98,6 +98,8 @@ async function layoutChecks(page, report) {
     JSON.stringify(twoUp),
   );
 
+  await fitChecks(page, report, '2-up');
+
   await chooseLayout(page, '1');
   const oneUp = await cardBoxes(page);
   report.check(
@@ -119,6 +121,34 @@ async function layoutChecks(page, report) {
   await movementChecks(page, report);
   await persistenceChecks(page, report);
   await reattachChecks(page, report);
+}
+
+/**
+ * Every terminal fits inside its card after a layout change — the window never resized.
+ *
+ * The bug this is for: the pane re-fitted only on a WINDOW resize, so going from a wide layout to
+ * a narrow one left the terminal at its old column count, clipped on the right and at the bottom.
+ * Measured as geometry for this file's reason — the painted screen against the card around it.
+ */
+async function fitChecks(page, report, layout) {
+  const fits = await waitFor(async () => {
+    const sizes = await terminalFits(page);
+    return sizes.length > 0 && sizes.every((size) => size.screen <= size.card + 1);
+  });
+  report.check(
+    `after switching to ${layout}, every terminal is refitted to its pane`,
+    fits,
+    JSON.stringify(await terminalFits(page)),
+  );
+}
+
+function terminalFits(page) {
+  return page.locator('.pane-card').evaluateAll((cards) =>
+    cards.map((card) => ({
+      screen: card.querySelector('.xterm-screen')?.getBoundingClientRect().right ?? 0,
+      card: card.getBoundingClientRect().right,
+    })),
+  );
 }
 
 /** A second pane, so a layout has something to arrange. */
