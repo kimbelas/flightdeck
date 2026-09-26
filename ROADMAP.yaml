@@ -4665,6 +4665,7 @@ phases:
             contracts/deck-view.ts,
             app/deck/state-board-view-model.ts,
             app/deck/state-board.tsx,
+            app/deck/card-modal.tsx,
             app/deck/deck-rail.tsx,
             app/deck/view-switch.tsx,
             app/deck/use-deck-view.ts,
@@ -4692,4 +4693,7 @@ phases:
           such ending exists). The rule the dock rests on is `pane-grid.tsx`'s: the dock and the
           Panes view are the SAME `section.panes` at the same place in the tree, with a class
           between them, because a remount kills the PTY. `data-pane-mount` proves it in the smoke.
-          The Table view is a disabled placeholder.
+          The Table view is a disabled placeholder. **A pressed card opens as a modal** (the owner's
+          ask after the first look): most of the window, the screen read on open with no second press
+          and shown large, the card's verbs and detail beside it. `Esc`, a press outside or the close
+          button collapse it, and the caret goes back to the card.

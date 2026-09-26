@@ -36,6 +36,12 @@ export interface SessionRowCardProps {
   readonly handoffRefusal: string | undefined;
   /** The pane this session is in, 1-based, or `undefined` — P10-T1. */
   readonly inPane: number | undefined;
+  /**
+   * Whether an expanded card draws its detail under itself. The list does; the board does not,
+   * because a column is too narrow to read a screen in — it opens the card as a modal instead
+   * (`card-modal.tsx`), and the card in the column only says it is the open one.
+   */
+  readonly detailInline: boolean;
   readonly onToggle: () => void;
   readonly onOpen: () => void;
   readonly onResume: () => void;
@@ -78,13 +84,13 @@ export function SessionRowCard(props: SessionRowCardProps): JSX.Element {
         onAdopt={props.onAdopt}
         onStop={props.onStop}
       />
-      {expanded && <RowOpen {...props} />}
+      {expanded && props.detailInline && <RowOpen {...props} />}
     </article>
   );
 }
 
 /** Which account, which kind, and the two facts a collapsed row must not hide. */
-function RowTags({
+export function RowTags({
   row,
   inPane,
 }: {
@@ -175,7 +181,7 @@ interface RowDeleteProps {
  * this browser tab and this moment; putting it in `DeckState` would make it survive a re-render
  * from an unrelated stream frame, which is the one thing it must not do.
  */
-function RowDelete({ row, onRemove }: RowDeleteProps): JSX.Element | undefined {
+export function RowDelete({ row, onRemove }: RowDeleteProps): JSX.Element | undefined {
   const [armed, setArmed] = useState(false);
   if (!row.canRemove) return undefined;
   if (!armed) {
@@ -253,7 +259,7 @@ interface RowActionProps {
  * there on purpose, and it is what makes the button make sense — "Not running. Resume it to
  * attach." and "That terminal has closed." are each half of their own control.
  */
-function RowAction({ row, onOpen, onResume, onAdopt, onStop }: RowActionProps): JSX.Element {
+export function RowAction({ row, onOpen, onResume, onAdopt, onStop }: RowActionProps): JSX.Element {
   if (!row.canOpenPane) return <RowBlocked row={row} onResume={onResume} onAdopt={onAdopt} />;
   return (
     <div className="row-actions">

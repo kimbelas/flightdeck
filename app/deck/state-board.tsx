@@ -8,6 +8,7 @@
 // Which column a card is in and what "Show N more" holds back are `StateBoardViewModel`'s.
 import { useState, type JSX } from 'react';
 import { focusPane } from './deck-keyboard.ts';
+import { CardModal } from './card-modal.tsx';
 import { BoundRow, SessionSearch, type SessionListProps } from './session-list.tsx';
 import {
   StateBoardViewModel,
@@ -30,6 +31,7 @@ interface StateBoardProps {
 export function StateBoard({ list, panes, project, onOpenShell }: StateBoardProps): JSX.Element {
   const [revealed, setRevealed] = useState<ReadonlySet<BoardColumnId>>(() => new Set());
   const board = new StateBoardViewModel(list.rows, panes, revealed);
+  const open = openRow(list);
   const reveal = (id: BoardColumnId): void => {
     setRevealed((current) => new Set([...current, id]));
   };
@@ -50,8 +52,25 @@ export function StateBoard({ list, panes, project, onOpenShell }: StateBoardProp
           />
         ))}
       </div>
+      {open !== undefined && <CardModal key={open.key} row={open} list={list} />}
     </section>
   );
+}
+
+/**
+ * The card the modal shows: the most recently opened one still on the board.
+ *
+ * Expansion is a set because the list can hold several open rows (P2-T4); the board draws one at a
+ * time, and the newest is the one just pressed. A card hidden behind "Show N more" still counts —
+ * the palette's "jump to" can open one.
+ */
+function openRow(list: SessionListProps): SessionListProps['rows'][number] | undefined {
+  const open = [...list.expanded].reverse();
+  for (const key of open) {
+    const row = list.rows.find((each) => each.key === key);
+    if (row !== undefined) return row;
+  }
+  return undefined;
 }
 
 interface BoardColumnViewProps {

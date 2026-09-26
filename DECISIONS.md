@@ -2006,3 +2006,10 @@ and the launch form folds away. It is `hidden`, not unmounted, and `focusControl
 focusing a control inside it, so the palette's "launch" and the header's New session still land.
 A card dragged onto the panes opens through `onOpenPane`, the button's own call, and only for a row
 that can open one.
+
+**Amended the same day, after the owner's first look:** a pressed card on the board opens as a
+**modal**, because a 200px column is too narrow to read a 200-column `claude logs` screen. The
+modal is the card's expanded state drawn wider, not a second piece of state, and the card in the
+column draws no inline detail. Opening it reads the screen once with no second press: here the
+press on the card is the ask. There is still no timer, and `read again` stays the refresh. Esc
+closes it, as the step after the palette and the sheet in `dismiss`.
