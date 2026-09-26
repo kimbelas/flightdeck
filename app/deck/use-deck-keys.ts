@@ -24,6 +24,7 @@ import { standardKeymap, type DeckAction, type DeckKeymap } from '../../contract
 import { CommandPaletteViewModel, type DeckCommand } from './command-palette-view-model.ts';
 import {
   blurActive,
+  closeCardModal,
   focusControl,
   focusPane,
   moveRowFocus,
@@ -201,6 +202,7 @@ function dismiss(live: Live, controls: Controls): void {
     controls.setSheet(false);
     return;
   }
+  if (closeCardModal()) return;
   blurActive();
 }
 
