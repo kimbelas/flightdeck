@@ -9,7 +9,7 @@
 
 version: 1
 project: flightdeck
-updated: 2026-09-25
+updated: 2026-09-26
 
 docs:
   spec: SPEC.md
@@ -4639,3 +4639,64 @@ phases:
           `/<plugin>:<skill>` — **verify the namespacing against the docs before the first preset
           uses it**, the way P9's phase notes verified `--agent`. The T2 press works on these rows
           too, which is the point: `/superpowers:brainstorming` becomes one press.
+  - id: P10
+    name: State board
+    status: done
+    goal: >-
+      The deck opens on what each session needs from the owner, sorted into columns by state, with
+      the panes docked underneath rather than taking half the screen.
+    gate: >-
+      Board view shows every session in its state column (needs you, working, shells, idle,
+      ended), a card can be put in the dock by a press or a drag, and switching Board and Panes, or
+      docking and undocking, never remounts a pane.
+    depends_on: [P5a, P6]
+    notes: >-
+      The owner chose mockup 06 of the Design canvas (`project/V06-StateBoard.dc.html`) on
+      2026-09-26 as the deck's direction. It is built only from data the deck already holds; the
+      mockup's pieces with nothing behind them were put to the owner and dropped (P10-T1's notes).
+    tasks:
+      - id: P10-T1
+        title: The State board — Board and Panes views, state columns, the dock, and a collapsible rail
+        status: done
+        done_on: 2026-09-26
+        depends_on: [P5a-T5, P6-T1]
+        deliverables:
+          [
+            contracts/deck-view.ts,
+            app/deck/state-board-view-model.ts,
+            app/deck/state-board.tsx,
+            app/deck/card-modal.tsx,
+            app/deck/deck-rail.tsx,
+            app/deck/view-switch.tsx,
+            app/deck/use-deck-view.ts,
+            app/deck/row-drag.ts,
+            app/deck/deck-body.tsx,
+            app/deck/pane-grid.tsx,
+            app/globals.css,
+            tests/contracts/deck-view.test.ts,
+            tests/app/state-board-view-model.test.ts,
+            tests/e2e/smoke/board-checks.mjs,
+            DECISIONS.md D63,
+          ]
+        notes: >-
+          **Every piece of the mockup maps to a field the deck already has, or it was dropped.**
+          The columns come from `SessionRowViewModel.tone` (`needs-you`, `working`, `idle`,
+          `ended`), and Shells from the open shell panes: a shell exists only as a pane, so a shell
+          card is always "in pane N". A card IS `SessionRowCard`, compact, so expand-in-place,
+          `data-deck-row` (j/k, "jump to") and every lifecycle button come with it, and an
+          interactive session still gets no pane button (SPEC §5.2). Ended cards say the D62
+          ending and offer only same-account verbs (resume, adopt). The header keeps both
+          accounts' quota blocks and adds weekly spend as a BUTTON that reads the P7-T3 summary on
+          press, because that summary is read only when asked. Dropped at the owner's call
+          2026-09-26, and not to be faked: per-session cost, the last tool/activity line, Snooze,
+          "Resume on isg" (a conversation lives in one config dir) and a "hit 5h limit" ending (no
+          such ending exists). The rule the dock rests on is `pane-grid.tsx`'s: the dock and the
+          Panes view are the SAME `section.panes` at the same place in the tree, with a class
+          between them, because a remount kills the PTY. `data-pane-mount` proves it in the smoke.
+          The Table view is a disabled placeholder. **A pressed card opens as a modal** (the owner's
+          ask after the first look): most of the window, the screen read on open with no second press
+          and shown large, the card's verbs and detail beside it. `Esc`, a press outside or the close
+          button collapse it, and the caret goes back to the card. **A live background card attaches
+          on open and is typed into there**: its own pane, pinned over the modal's stage by a class and
+          `position: fixed` (never re-parented), left in the dock when the modal closes. An
+          interactive card keeps the read-only screen (SPEC §5.2).

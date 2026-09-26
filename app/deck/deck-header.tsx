@@ -22,6 +22,7 @@ import type { JSX } from 'react';
 import type { QuotaSummary } from '../../contracts/quota-summary.ts';
 import type { SubscriptionId } from '../../contracts/session.ts';
 import { SubscriptionQuotaViewModel, type QuotaGaugeViewModel } from './quota-view-model.ts';
+import { BoardActions, BoardHeading, type HeaderBoard } from './view-switch.tsx';
 
 interface DeckHeaderProps {
   readonly coreUp: boolean;
@@ -40,6 +41,8 @@ interface DeckHeaderProps {
    * had nowhere to live.
    */
   readonly onOpenInstall: (subscription: SubscriptionId) => void;
+  /** The State board's half of the header — P10-T1. */
+  readonly board: HeaderBoard;
 }
 
 export function DeckHeader({
@@ -51,6 +54,7 @@ export function DeckHeader({
   onRefresh,
   onOpenShell,
   onOpenInstall,
+  board,
 }: DeckHeaderProps): JSX.Element {
   const subscriptions = (quota?.subscriptions ?? []).map(
     (entry) => new SubscriptionQuotaViewModel(entry),
@@ -58,10 +62,8 @@ export function DeckHeader({
   return (
     <header className="deck-head">
       <h1>Flightdeck</h1>
-      <span className={`chip ${coreUp ? 'chip-live' : 'chip-refused'}`}>
-        {coreUp ? 'live' : 'core down'}
-      </span>
-      <span className="muted">{sessionCount} sessions</span>
+      <BoardHeading board={board} />
+      <CoreLine coreUp={coreUp} sessionCount={sessionCount} />
       <div className="quotas">
         {subscriptions.map((entry) => (
           <SubscriptionQuotaBlock
@@ -72,6 +74,7 @@ export function DeckHeader({
           />
         ))}
       </div>
+      <BoardActions board={board} coreUp={coreUp} />
       <button type="button" onClick={onRefresh} disabled={loading}>
         {loading ? 'refreshing…' : 'refresh'}
       </button>
@@ -79,6 +82,21 @@ export function DeckHeader({
         + shell
       </button>
     </header>
+  );
+}
+
+/** Whether what is on screen is current, and how many sessions it is. */
+function CoreLine({
+  coreUp,
+  sessionCount,
+}: Pick<DeckHeaderProps, 'coreUp' | 'sessionCount'>): JSX.Element {
+  return (
+    <>
+      <span className={`chip ${coreUp ? 'chip-live' : 'chip-refused'}`}>
+        {coreUp ? 'live' : 'core down'}
+      </span>
+      <span className="muted">{sessionCount} sessions</span>
+    </>
   );
 }
 

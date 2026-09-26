@@ -1969,3 +1969,57 @@ with its own title, remembered as its own condition so it still fires after the 
 the wait it ends. `settled`, `empty-idle`, `killed` and `(done)` get their own completed titles; a
 completion nobody can name says "Session ended", which is true, rather than "finished". The row stays
 `tone-ended` and out of the attention sort: G.24 still holds — the words change, the rank does not.
+
+## D63 — the State board is a view over the same grid, and nothing on it is faked (decided 2026-09-26, P10-T1)
+
+**The owner chose mockup 06** of the Design canvas: sessions in five columns by state (Needs you,
+Working, Shells, Idle, Ended), with the open panes in a dock under them. The deck opens on it. The
+old deck, with the list on the left and the grid with its 1/2/4/6/9/focus chooser, stays as the
+Panes view. Table is a disabled placeholder on the switch.
+
+**Verdict: a view is a class, not a tree.** The dock and the Panes view are the same `PaneGrid`,
+at the same position in the tree with the same key. The board is rendered in the slot before it,
+and `dock` swaps the chooser for the dock's head and drops the layout class. Moving the panes into
+a dock container would remount every card, and a remount closes the PTY socket (`pane-grid.tsx`).
+The smoke switches Board and Panes three times with two shells open and compares `data-pane-mount`
+before and after.
+
+**A card is the list's row.** `SessionRowCard` is drawn in the columns, compact. So expanding a
+card, `data-deck-row` (j/k, "jump to") and every lifecycle button behave the same in both views.
+Only one view draws cards at a time, so a key never matches two elements. The columns are
+`SessionRowViewModel.tone`, which already ranks `ended` before `blocked` (G.24). Shells are the open
+shell panes. A shell exists only as a pane, so the board has no card for a shell that is not open.
+Idle and Ended cap at five cards before "Show N more". Needs you never caps.
+
+**Only data the deck already has.** The owner was asked about each mockup element with no data
+behind it (2026-09-26), and all of them were dropped:
+- per-session cost: only the statusline vitals and the expanded detail carry it
+- the last-tool/activity line: detail only
+- Snooze: no state exists for it
+- "Resume on isg": a conversation lives in one config dir, so resume, adopt and handoff all keep
+  the session's account
+- a "hit 5h limit" ending: no such ending exists (D62)
+
+Weekly spend is on the header as a button, because P7-T3's summary is read only when asked. The
+button reads it on press and then shows `$X this week`. The rail with projects, spend, Ask, search
+and the launch form folds away. It is `hidden`, not unmounted, and `focusControl` unfolds it before
+focusing a control inside it, so the palette's "launch" and the header's New session still land.
+A card dragged onto the panes opens through `onOpenPane`, the button's own call, and only for a row
+that can open one.
+
+**Amended the same day, after the owner's first look:** a pressed card on the board opens as a
+**modal**, because a 200px column is too narrow to read a 200-column `claude logs` screen. The
+modal is the card's expanded state drawn wider, not a second piece of state, and the card in the
+column draws no inline detail. Opening it reads the screen once with no second press: here the
+press on the card is the ask. There is still no timer, and `read again` stays the refresh. Esc
+closes it, as the step after the palette and the sheet in `dismiss`.
+
+**And again, at the owner's second ask ("I should be able to prompt inside there"):** on a live
+background card, opening the modal attaches, as `open pane` does. It evicts any other attach
+(F.2.6); the owner chose that over a separate "type here" press. The terminal is the session's own
+pane, pinned over the modal's stage with the class `is-modal` and `position: fixed`. The modal
+measures the stage and publishes its box as `--card-stage-*` custom properties through the CSSOM:
+SEC-UI-1 refuses a `style` attribute, not a property set from script. The pane is never rendered
+inside the modal, so closing the modal leaves the same terminal in the dock, unremounted. An
+interactive card still shows the read-only screen. `claude attach` takes `--bg` sessions only, and
+that is SPEC §5.2's permanent constraint, not a gap here.

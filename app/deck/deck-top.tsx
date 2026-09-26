@@ -16,6 +16,9 @@ import { projectKey } from '../../contracts/project.ts';
 import { DeckBanners } from './deck-banners.tsx';
 import { groupBannerLine } from './group-banner-line.ts';
 import { DeckHeader } from './deck-header.tsx';
+import type { HeaderBoard } from './view-switch.tsx';
+import type { DeckView } from './use-deck-view.ts';
+import { focusControl, LAUNCH_PROMPT_ID } from './deck-keyboard.ts';
 import { DeckInstall } from './deck-install.tsx';
 import type { DeckActions, ProjectTarget } from './deck-commands.ts';
 import type { DeckState } from './deck-state.ts';
@@ -28,9 +31,11 @@ interface DeckTopProps {
   readonly count: number;
   readonly install: boolean;
   readonly actions: DeckActions;
+  readonly deckView: DeckView;
 }
 
-export function DeckTop({ state, now, count, install, actions }: DeckTopProps): JSX.Element {
+export function DeckTop(props: DeckTopProps): JSX.Element {
+  const { state, now, count, install, actions } = props;
   return (
     <>
       <DeckHeader
@@ -42,6 +47,7 @@ export function DeckTop({ state, now, count, install, actions }: DeckTopProps): 
         onRefresh={actions.onRefresh}
         onOpenShell={actions.onOpenShell}
         onOpenInstall={actions.onOpenInstall}
+        board={headerBoard(state, props.deckView, actions)}
       />
       {install && <DeckInstall state={state} actions={actions} />}
       <DeckBanners
@@ -52,6 +58,25 @@ export function DeckTop({ state, now, count, install, actions }: DeckTopProps): 
       />
     </>
   );
+}
+
+/**
+ * The header's State board half — P10-T1.
+ *
+ * `New session` is the launch form's own prompt, reached the way the palette's "launch" reaches
+ * it: there is one form, in the rail, and `focusControl` unfolds the rail if it has to.
+ */
+function headerBoard(state: DeckState, deckView: DeckView, actions: DeckActions): HeaderBoard {
+  return {
+    view: deckView.view,
+    onView: deckView.setView,
+    spend: state.spend,
+    projects: state.projects,
+    onReadSpend: actions.onReadSpend,
+    onNewSession: () => {
+      focusControl(LAUNCH_PROMPT_ID);
+    },
+  };
 }
 
 /**

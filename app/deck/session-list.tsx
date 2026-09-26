@@ -12,7 +12,7 @@ import type { SessionPreviewViewModel } from './session-preview-view-model.ts';
 import { SessionRowCard, type SessionRowCardProps } from './session-row-card.tsx';
 import type { SessionRowViewModel } from './session-row-view-model.ts';
 
-interface SessionListProps {
+export interface SessionListProps {
   /** Already filtered — `search` is here only so the empty state can say which kind of empty. */
   readonly rows: readonly SessionRowViewModel[];
   readonly now: number;
@@ -43,6 +43,10 @@ interface SessionListProps {
   readonly offers: Readonly<Record<string, HandoffOffer>>;
   /** The last refused handoff, as a sentence and the row it was about. `undefined` for silence. */
   readonly handoffRefusal: { readonly key: string; readonly text: string } | undefined;
+  /** Which pane a session is in, 1-based, or `undefined` — P10-T1's "in pane N". */
+  readonly paneOf: (key: string) => number | undefined;
+  /** Whether an open card draws its detail in place; the board opens a modal instead. */
+  readonly detailInline: boolean;
   readonly onSearch: (value: string) => void;
   readonly onToggle: (row: SessionRowViewModel) => void;
   readonly onLaunch: (request: PresetLaunch) => void;
@@ -67,6 +71,11 @@ const NOWHERE: HandoffOffer = {
   nothingBecause: 'Nothing is known about this session’s worktrees.',
   suggestedName: '',
 };
+
+/** Where one row could be handed to, and "nowhere" for a row nobody computed an offer for. */
+export function offerFor(list: SessionListProps, key: string): HandoffOffer {
+  return list.offers[key] ?? NOWHERE;
+}
 
 export function SessionList(props: SessionListProps): JSX.Element {
   return (
@@ -94,7 +103,7 @@ function SessionRows(props: SessionListProps): JSX.Element {
   return (
     <>
       {props.rows.map((row) => (
-        <Row key={row.key} row={row} list={props} />
+        <BoundRow key={row.key} row={row} list={props} />
       ))}
     </>
   );
@@ -108,7 +117,7 @@ function SessionRows(props: SessionListProps): JSX.Element {
  * one is given. Nothing is memoised — the whole list re-renders on a stream frame anyway, which
  * is P2-T4's shape and what keeps the row a pure function of its view model.
  */
-function Row({
+export function BoundRow({
   row,
   list,
 }: {
@@ -123,8 +132,10 @@ function Row({
       detail={list.details[row.key]}
       preview={list.previews[row.key]}
       previewAsked={row.key in list.previews}
-      handoff={list.offers[row.key] ?? NOWHERE}
+      handoff={offerFor(list, row.key)}
       handoffRefusal={refusalFor(list.handoffRefusal, row.key)}
+      inPane={list.paneOf(row.key)}
+      detailInline={list.detailInline}
       {...handlersFor(row, list)}
     />
   );
@@ -137,7 +148,7 @@ function Row({
  * above is now what the row IS, and this is what pressing anything on it does. The list's own
  * callbacks all take the row, so binding is the whole of the work.
  */
-function handlersFor(
+export function handlersFor(
   row: SessionRowViewModel,
   list: SessionListProps,
 ): Pick<
@@ -176,7 +187,10 @@ function handlersFor(
  * Several rows can be open at once (P2-T4), and a code with no row on it would put "that folder is
  * gone" under a session nobody pressed — a sentence that is false about that row (`HandoffSlice`).
  */
-function refusalFor(refusal: SessionListProps['handoffRefusal'], key: string): string | undefined {
+export function refusalFor(
+  refusal: SessionListProps['handoffRefusal'],
+  key: string,
+): string | undefined {
   return refusal?.key === key ? refusal.text : undefined;
 }
 
@@ -193,7 +207,7 @@ interface SessionSearchProps {
  * keyboard's job here is to put focus in a control, not to create one. The id is how it does that
  * (deck-keyboard.ts); the hint on the right is the only place the deck advertises a key.
  */
-function SessionSearch({ search, onSearch }: SessionSearchProps): JSX.Element {
+export function SessionSearch({ search, onSearch }: SessionSearchProps): JSX.Element {
   return (
     <div className="search">
       <input

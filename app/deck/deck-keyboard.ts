@@ -118,11 +118,32 @@ export function focusPane(position: number): void {
   pane?.querySelector<HTMLTextAreaElement>(TERMINAL_INPUT)?.focus();
 }
 
-/** Puts focus in a named control — the search box for `/`, the prompt for the launch command. */
+/**
+ * Puts focus in a named control — the search box for `/`, the prompt for the launch command.
+ *
+ * A control in the folded rail (P10-T1) is unfolded to first, by the rail's own toggle — `hidden`
+ * cannot hold focus — and focused on the next frame, once the render that click caused is on
+ * screen. `openPreset` below does the same for the same reason.
+ */
 export function focusControl(id: string): void {
   const control = document.getElementById(id);
-  control?.focus();
-  control?.scrollIntoView({ block: 'nearest' });
+  if (control === null) return;
+  const toggle = control
+    .closest('[data-rail-folded]')
+    ?.querySelector<HTMLElement>('[data-rail-toggle]');
+  if (toggle === null || toggle === undefined) {
+    focusNow(control);
+    return;
+  }
+  toggle.click();
+  requestAnimationFrame(() => {
+    focusNow(control);
+  });
+}
+
+function focusNow(control: HTMLElement): void {
+  control.focus();
+  control.scrollIntoView({ block: 'nearest' });
 }
 
 /**
@@ -152,6 +173,19 @@ export function focusRow(key: string): void {
   const row = document.querySelector<HTMLElement>(`[data-deck-row="${CSS.escape(key)}"]`);
   row?.focus();
   row?.scrollIntoView({ block: 'nearest' });
+}
+
+/**
+ * Closes the board's open card, if one is open — `Esc`'s step after the palette and the sheet.
+ *
+ * By the modal's own close button, so there is one way to close it and it also puts the caret back
+ * on the card it came from (`card-modal.tsx`).
+ */
+export function closeCardModal(): boolean {
+  const close = document.querySelector<HTMLElement>('[data-card-modal] [data-card-modal-close]');
+  if (close === null) return false;
+  close.click();
+  return true;
 }
 
 /** What `Esc` does in a text field: hands the keyboard back to the deck. */

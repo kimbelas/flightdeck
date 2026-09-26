@@ -18,6 +18,7 @@ import type { SessionDetailViewModel } from './session-detail-view-model.ts';
 import type { SessionPreviewViewModel } from './session-preview-view-model.ts';
 import { SessionPreviewView } from './session-preview-view.tsx';
 import type { SessionRowViewModel } from './session-row-view-model.ts';
+import { startRowDrag } from './row-drag.ts';
 
 export interface SessionRowCardProps {
   readonly row: SessionRowViewModel;
@@ -33,6 +34,14 @@ export interface SessionRowCardProps {
   readonly handoff: HandoffOffer;
   /** Why the last handoff pressed on THIS row was refused, in English. `undefined` for silence. */
   readonly handoffRefusal: string | undefined;
+  /** The pane this session is in, 1-based, or `undefined` — P10-T1. */
+  readonly inPane: number | undefined;
+  /**
+   * Whether an expanded card draws its detail under itself. The list does; the board does not,
+   * because a column is too narrow to read a screen in — it opens the card as a modal instead
+   * (`card-modal.tsx`), and the card in the column only says it is the open one.
+   */
+  readonly detailInline: boolean;
   readonly onToggle: () => void;
   readonly onOpen: () => void;
   readonly onResume: () => void;
@@ -46,7 +55,14 @@ export interface SessionRowCardProps {
 export function SessionRowCard(props: SessionRowCardProps): JSX.Element {
   const { row, now, expanded } = props;
   return (
-    <article className={`row tone-${row.tone}${expanded ? ' row-open' : ''}`}>
+    // Draggable only where a pane can open, so a drop can never be a refused attach (P10-T1).
+    <article
+      className={`row tone-${row.tone}${expanded ? ' row-open' : ''}`}
+      draggable={row.canOpenPane}
+      onDragStart={(event) => {
+        startRowDrag(event, row.key);
+      }}
+    >
       <div className="row-main">
         <RowToggle
           rowKey={row.key}
@@ -54,19 +70,7 @@ export function SessionRowCard(props: SessionRowCardProps): JSX.Element {
           expanded={expanded}
           onToggle={props.onToggle}
         />
-        <span className="tag">{row.subscriptionLabel}</span>
-        <span className="tag">{row.kindLabel}</span>
-        {/*
-          P6-T5, SPEC §5.6. On the collapsed row rather than inside the expansion, because the
-          whole point is that nobody is looking for it: `claude agents` reads one config directory,
-          so neither account's listing mentions the other's session in the folder. A warning you
-          have to open a row to find is one this never reaches.
-        */}
-        {row.sharesWorkingTree && (
-          <span className="tag tag-warn" data-row-shared-tree title={row.sharedTreeWarning}>
-            shared folder
-          </span>
-        )}
+        <RowTags row={row} inPane={props.inPane} />
       </div>
       <div className="row-meta">
         <span>{row.project}</span>
@@ -80,8 +84,40 @@ export function SessionRowCard(props: SessionRowCardProps): JSX.Element {
         onAdopt={props.onAdopt}
         onStop={props.onStop}
       />
-      {expanded && <RowOpen {...props} />}
+      {expanded && props.detailInline && <RowOpen {...props} />}
     </article>
+  );
+}
+
+/** Which account, which kind, and the two facts a collapsed row must not hide. */
+export function RowTags({
+  row,
+  inPane,
+}: {
+  readonly row: SessionRowViewModel;
+  readonly inPane: number | undefined;
+}): JSX.Element {
+  return (
+    <>
+      <span className="tag">{row.subscriptionLabel}</span>
+      <span className="tag">{row.kindLabel}</span>
+      {/*
+        P6-T5, SPEC §5.6. On the collapsed row rather than inside the expansion, because the
+        whole point is that nobody is looking for it: `claude agents` reads one config directory,
+        so neither account's listing mentions the other's session in the folder. A warning you
+        have to open a row to find is one this never reaches.
+      */}
+      {row.sharesWorkingTree && (
+        <span className="tag tag-warn" data-row-shared-tree title={row.sharedTreeWarning}>
+          shared folder
+        </span>
+      )}
+      {inPane !== undefined && (
+        <span className="tag tag-pane" data-row-in-pane={inPane}>
+          in pane {inPane}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -145,7 +181,7 @@ interface RowDeleteProps {
  * this browser tab and this moment; putting it in `DeckState` would make it survive a re-render
  * from an unrelated stream frame, which is the one thing it must not do.
  */
-function RowDelete({ row, onRemove }: RowDeleteProps): JSX.Element | undefined {
+export function RowDelete({ row, onRemove }: RowDeleteProps): JSX.Element | undefined {
   const [armed, setArmed] = useState(false);
   if (!row.canRemove) return undefined;
   if (!armed) {
@@ -223,7 +259,7 @@ interface RowActionProps {
  * there on purpose, and it is what makes the button make sense — "Not running. Resume it to
  * attach." and "That terminal has closed." are each half of their own control.
  */
-function RowAction({ row, onOpen, onResume, onAdopt, onStop }: RowActionProps): JSX.Element {
+export function RowAction({ row, onOpen, onResume, onAdopt, onStop }: RowActionProps): JSX.Element {
   if (!row.canOpenPane) return <RowBlocked row={row} onResume={onResume} onAdopt={onAdopt} />;
   return (
     <div className="row-actions">
