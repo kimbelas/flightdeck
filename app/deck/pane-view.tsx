@@ -43,6 +43,11 @@ interface PaneViewProps {
    * and a remount closes the socket (see `pane-grid.tsx`).
    */
   readonly thumbnail: boolean;
+  /**
+   * Drawn over the board's open card, big enough to type into — P10-T1. A class again: the card is
+   * pinned over the modal's stage by `position: fixed`, and stays where it is in the tree.
+   */
+  readonly enlarged: boolean;
   /** What the session behind this pane can be asked to do — P5a-T6. A shell has no session. */
   readonly controls: PaneControls | undefined;
   readonly onFocused: () => void;
@@ -148,6 +153,7 @@ export function PaneView({
   title,
   focused,
   thumbnail,
+  enlarged,
   controls,
   onFocused,
   onRename,
@@ -167,7 +173,7 @@ export function PaneView({
     // `onFocus` is React's delegated `focusin`, so it fires for xterm's hidden textarea inside —
     // clicking into a pane and pressing its digit both mark it focused, and `[`/`]` move that one.
     <section
-      className={cardClass(focused, thumbnail)}
+      className={cardClass(focused, thumbnail, enlarged)}
       data-deck-pane={index}
       data-pane-attempt={attempt}
       data-pane-mount={mount}
@@ -204,8 +210,13 @@ function unlessInHead(onFocused: () => void): (event: FocusEvent) => void {
   };
 }
 
-function cardClass(focused: boolean, thumbnail: boolean): string {
-  return ['pane-card', focused ? 'is-focused' : '', thumbnail ? 'is-thumb' : '']
+function cardClass(focused: boolean, thumbnail: boolean, enlarged: boolean): string {
+  return [
+    'pane-card',
+    focused ? 'is-focused' : '',
+    thumbnail ? 'is-thumb' : '',
+    enlarged ? 'is-modal' : '',
+  ]
     .filter((name) => name !== '')
     .join(' ');
 }

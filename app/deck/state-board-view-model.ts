@@ -120,3 +120,21 @@ export class StateBoardViewModel {
     };
   }
 }
+
+/**
+ * The card the board's modal shows: the most recently opened one still on the board — P10-T1.
+ *
+ * Expansion is a set because the list can hold several open rows (P2-T4); the board draws one at a
+ * time, and the newest is the one just pressed. A card hidden behind "Show N more" still counts:
+ * the palette's "jump to" can open one.
+ */
+export function openRowOf<T extends { readonly key: string }>(
+  rows: readonly T[],
+  expanded: ReadonlySet<string>,
+): T | undefined {
+  for (const key of [...expanded].reverse()) {
+    const row = rows.find((each) => each.key === key);
+    if (row !== undefined) return row;
+  }
+  return undefined;
+}

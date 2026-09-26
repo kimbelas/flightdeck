@@ -4696,4 +4696,7 @@ phases:
           The Table view is a disabled placeholder. **A pressed card opens as a modal** (the owner's
           ask after the first look): most of the window, the screen read on open with no second press
           and shown large, the card's verbs and detail beside it. `Esc`, a press outside or the close
-          button collapse it, and the caret goes back to the card.
+          button collapse it, and the caret goes back to the card. **A live background card attaches
+          on open and is typed into there**: its own pane, pinned over the modal's stage by a class and
+          `position: fixed` (never re-parented), left in the dock when the modal closes. An
+          interactive card keeps the read-only screen (SPEC §5.2).
