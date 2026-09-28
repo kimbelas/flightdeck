@@ -169,9 +169,14 @@ export class SessionRowViewModel {
     return this.canTakeOver && this.row.status === 'idle';
   }
 
-  /** What the button does, or what it is waiting for — its title. */
+  /**
+   * What the button does, or what it is waiting for — its title, and while it waits, a line under
+   * it too: a disabled button's title is invisible, and the sentence above it says only that it
+   * cannot be attached, which read as "never" (the owner, 2026-09-28).
+   */
   public get takeOverHint(): string {
-    if (!this.takeOverReady) return 'Working — it can be moved here once this turn finishes.';
+    if (!this.takeOverReady)
+      return 'Working — move here once this turn finishes, or press Esc in its terminal to stop it now.';
     return `Close this session in its terminal and continue it here, in ${this.project}.`;
   }
 
