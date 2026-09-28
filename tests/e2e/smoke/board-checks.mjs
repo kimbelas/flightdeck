@@ -314,6 +314,21 @@ async function liveModalChecks(page, report) {
       (await docked.getAttribute('data-pane-mount')) === mount &&
       (await docked.locator('.chip-live').count()) === 1,
   );
+
+  // The card's own `open pane` opens the card, not just the dock — and here the pane is already
+  // docked, so the modal has to take that same terminal rather than attach a second one.
+  await card(page, 'fixture-bravo').locator('button', { hasText: 'open pane' }).click();
+  const reopened = await waitFor(
+    async () => (await modal.count()) === 1 && (await live.locator('.chip-live').count()) === 1,
+  );
+  report.check(
+    'a card’s open pane opens its modal, with the docked terminal live over it — not a remount',
+    reopened &&
+      (await live.getAttribute('data-pane-mount')) === mount &&
+      (await page.locator('.pane-card').count()) === 1,
+  );
+  await modal.locator('[data-card-modal-close]').click();
+  await waitFor(async () => (await modal.count()) === 0);
   await closeEveryPane(page);
 }
 
@@ -493,25 +508,40 @@ async function keyChecks(page, report) {
   report.check('j walks the cards in the columns', row);
 }
 
-/** Folding the rail widens the board; New session unfolds it and puts the caret in the prompt. */
+/**
+ * P10-T2. On the board the rail is the Tools drawer: closed on arrival, opened and closed by the
+ * header's Tools button, and still reachable by the palette's "launch", which opens it first.
+ */
 async function railChecks(page, report) {
-  const wide = (await boxesOf(page, '.board-col'))[0].width;
-  await page.locator('[data-rail-toggle]').click();
-  await settle(page);
-  const folded = (await boxesOf(page, '.board-col'))[0].width;
+  const closed = (await boxesOf(page, '.board-col'))[0].width;
   report.check(
-    'folding the rail hides its panels and gives the board the room',
-    (await page.locator('.rail-panels').isHidden()) && folded > wide,
-    `${String(wide)}px -> ${String(folded)}px`,
+    'the Tools drawer is closed on the board, and takes no room',
+    (await page.locator('.rail-panels').isHidden()) &&
+      (await page.locator('.deck-left').isHidden()),
   );
-  await page.locator('[data-new-session]').click();
+  await page.locator('[data-tools]').click();
+  await settle(page);
+  const opened = (await boxesOf(page, '.board-col'))[0].width;
+  report.check(
+    'Tools opens the drawer beside the board',
+    (await page.locator('.rail-panels').isVisible()) && opened < closed,
+    `${String(closed)}px -> ${String(opened)}px`,
+  );
+  await page.locator('[data-tools]').click();
+  await settle(page);
+  report.check('and Tools again closes it', await page.locator('.rail-panels').isHidden());
+  await page.locator('h1').click();
+  await page.keyboard.press('Control+k');
+  await page.keyboard.type('Start a background session');
+  await page.keyboard.press('Enter');
   const caret = await waitFor(() =>
     page.evaluate(() => document.activeElement?.id === 'launch-prompt'),
   );
   report.check(
-    'New session unfolds the rail and puts the caret in the one launch form',
+    'the palette’s launch opens the drawer and puts the caret in the one launch form',
     caret && (await page.locator('.rail-panels').isVisible()),
   );
+  await page.locator('[data-tools]').click();
   await page.locator('h1').click();
 }
 

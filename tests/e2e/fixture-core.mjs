@@ -69,6 +69,7 @@ import {
   projectSlug,
 } from '../../contracts/project.ts';
 import { parseWorkflowMap } from '../../contracts/workflow-map.ts';
+import { isUnder } from '../../contracts/windows-path.ts';
 import { ASK_MAX_BUDGET_USD } from '../../contracts/ask-run.ts';
 import { SUBSCRIPTION_IDS } from '../../contracts/session.ts';
 import { parseQuotaSummary } from '../../contracts/quota-summary.ts';
@@ -779,10 +780,20 @@ export class FixtureCore {
     if (!named && !pinsSessionName(request.profileFn)) return [400, { error: 'bad_request' }];
     const agent = optionalAgent(request.agent);
     if (agent === false) return [400, { error: 'bad request' }];
+    // P10-T2. The folder, screened the way `SessionLauncher` screens it: inside an imported project.
+    if (!this.admitsCwd(request.cwd)) return [400, { error: 'bad_cwd' }];
     const refusal = agent === undefined ? undefined : this.refuseAgent(request, agent);
     if (refusal !== undefined) return [400, { error: refusal }];
     this.launches.push(request);
     return [201, { sessionId: randomUUID() }];
+  }
+
+  /** No folder is core's own; a folder must be an imported project or under one. */
+  admitsCwd(cwd) {
+    if (cwd === undefined || cwd === '') return true;
+    if (typeof cwd !== 'string') return false;
+    const key = projectKey(cwd);
+    return [...this.projects.keys()].some((root) => isUnder(key, root));
   }
 
   /**

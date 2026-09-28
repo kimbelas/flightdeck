@@ -25,6 +25,7 @@ import { CommandPaletteViewModel, type DeckCommand } from './command-palette-vie
 import {
   blurActive,
   closeCardModal,
+  closeStartLauncher,
   focusControl,
   focusPane,
   moveRowFocus,
@@ -202,6 +203,7 @@ function dismiss(live: Live, controls: Controls): void {
     controls.setSheet(false);
     return;
   }
+  if (closeStartLauncher()) return;
   if (closeCardModal()) return;
   blurActive();
 }

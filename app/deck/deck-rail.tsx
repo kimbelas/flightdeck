@@ -1,6 +1,8 @@
 'use client';
 
-// The rail — the deck's left column, which folds away since P10-T1.
+// The rail — the deck's left column, which folds away since P10-T1, and on the board is the Tools
+// drawer since P10-T2: closed until the header's Tools button opens it, because the board and the
+// Start launcher are what a morning needs and everything in here is occasional.
 //
 // What it holds is what the left column always held: projects, spend, Ask, transcript search and
 // the launch form. In the Panes view the session list is still under them, which is the deck as it
@@ -51,12 +53,12 @@ export function DeckRail(props: DeckRailProps): JSX.Element {
         className="ghost rail-toggle"
         data-rail-toggle
         aria-expanded={!folded}
-        title={folded ? 'Show projects, spend, Ask and the launch form' : 'Fold the rail away'}
+        title={folded ? 'Show projects, spend, Ask and the launch form' : 'Close the tools'}
         onClick={() => {
           onFold(!folded);
         }}
       >
-        {folded ? '»' : '« fold'}
+        {folded ? 'Tools' : '« close tools'}
       </button>
       <div className="rail-panels" hidden={folded}>
         <RailPanels {...props} />

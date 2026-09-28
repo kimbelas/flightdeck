@@ -50,13 +50,23 @@ export function parseLaunchAccepted(value: unknown): LaunchAccepted | undefined 
  * general case — any exit-0 run whose output this build cannot read.
  */
 export type LaunchFailure =
-  'no_shell' | 'bad_request' | 'launch_failed' | 'no_session_id' | 'pins_agent' | 'unknown_agent';
+  | 'no_shell'
+  | 'bad_request'
+  | 'launch_failed'
+  | 'no_session_id'
+  | 'pins_agent'
+  | 'unknown_agent'
+  | 'bad_cwd';
 
 /**
  * `pins_agent` and `unknown_agent` are P9-T1's, and are the launch-time halves of the two preset
  * refusals of the same names: an agent on the function that pins one, and an agent the roster of
  * the project the session would start in does not hold — a roster file deleted since the preset
  * was saved is a refused launch, never an agent Claude Code will not find.
+ *
+ * `bad_cwd` is P10-T2's: a folder that is not a directory inside an imported project. The route
+ * used to hand the launcher whatever `cwd` the body carried; the Start launcher sends one on every
+ * press, so the launcher screens it now (`SessionLauncher.resolveCwd`).
  */
 export const LAUNCH_FAILURES: readonly LaunchFailure[] = [
   'no_shell',
@@ -65,6 +75,7 @@ export const LAUNCH_FAILURES: readonly LaunchFailure[] = [
   'no_session_id',
   'pins_agent',
   'unknown_agent',
+  'bad_cwd',
 ];
 
 /** The code off a refusal body, or `undefined` for a body that carries none. */

@@ -111,3 +111,31 @@ describe('WindowsPtyCommands — shell panes', () => {
     });
   });
 });
+
+describe('WindowsPtyCommands — a pane is a colour terminal', () => {
+  // Observed: core started from a shell with NO_COLOR set handed it to `claude attach`, which then
+  // drew with no styling — the prompt's dim placeholder as white as typed text.
+  function withNoColor<T>(run: () => T): T {
+    const before = process.env['NO_COLOR'];
+    process.env['NO_COLOR'] = '1';
+    try {
+      return run();
+    } finally {
+      if (before === undefined) delete process.env['NO_COLOR'];
+      else process.env['NO_COLOR'] = before;
+    }
+  }
+
+  it('does not hand core’s NO_COLOR to an attach', () => {
+    const spec = withNoColor(() => commands().forTarget(sessionTarget, SIZE));
+
+    expect(spec?.env).not.toHaveProperty('NO_COLOR');
+    expect(spec?.env['CLAUDE_CONFIG_DIR']).toBe(join('C:\\home', '.claude-365'));
+  });
+
+  it('nor to a shell', () => {
+    const spec = withNoColor(() => commands().forTarget(homeShell, SIZE));
+
+    expect(spec?.env).not.toHaveProperty('NO_COLOR');
+  });
+});

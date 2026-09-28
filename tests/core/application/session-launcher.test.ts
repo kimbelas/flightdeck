@@ -10,6 +10,7 @@ import { AuditLog } from '../../../core/application/audit-log.ts';
 import { SessionLauncher } from '../../../core/application/session-launcher.ts';
 import { FakeClock } from '../../fakes/fake-clock.ts';
 import { FakeLaunchCommands } from '../../fakes/fake-launch-commands.ts';
+import { FakeLaunchDirectories } from '../../fakes/fake-launch-directories.ts';
 import { FakeLogger } from '../../fakes/fake-logger.ts';
 import { FakeProcessRunner } from '../../fakes/fake-process-runner.ts';
 import { FakeStore } from '../../fakes/fake-store.ts';
@@ -32,6 +33,7 @@ function build(runner: FakeProcessRunner, commands = new FakeLaunchCommands()): 
     commands,
     // No agent in any case in this file — `session-launcher-agent.test.ts` has those (P9-T1).
     roster: { allows: () => Promise.resolve(false) },
+    directories: new FakeLaunchDirectories(),
     runner,
     audit,
     logger: new FakeLogger(),

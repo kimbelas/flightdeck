@@ -4765,3 +4765,43 @@ phases:
           on open and is typed into there**: its own pane, pinned over the modal's stage by a class and
           `position: fixed` (never re-parented), left in the dock when the modal closes. An
           interactive card keeps the read-only screen (SPEC §5.2).
+      - id: P10-T2
+        title: The Start launcher — project, account, skill or agent, Start — and the rail as a Tools drawer
+        status: done
+        done_on: 2026-09-28
+        depends_on: [P10-T1, P9-T5]
+        deliverables:
+          [
+            app/deck/start-launcher-view-model.ts,
+            app/deck/start-launcher.tsx,
+            app/deck/start-launcher-steps.tsx,
+            app/deck/use-start-launcher.ts,
+            app/deck/use-start-memory.ts,
+            core/application/session-launcher.ts,
+            contracts/launch-reply.ts,
+            tests/app/start-launcher-view-model.test.ts,
+            tests/core/application/session-launcher-cwd.test.ts,
+            tests/e2e/smoke/start-checks.mjs,
+          ]
+        notes: >-
+          **The owner's morning, in their words (2026-09-27):** press one button, pick the project
+          (xpert-new, isg, 365 Connect — apollo-v13 — and any folder chosen then), pick isg or 365,
+          pick a skill or an agent or just type, Start, and be typing into the session. The header's
+          Start opens a dialog of three steps over the board; the tiles are the imported folders
+          (D26 — "choose folder…" imports one by path, since a browser cannot hand a page a folder's
+          path), the chips are the project's workflow map (skills and commands as `/name`, agents
+          from `agentRoster` as `--agent`, plugins scoped), and the account is `claude-isg` or
+          `claude-365`. Start goes out as `POST /sessions`, closes on the 201, and the new session's
+          card opens when its row ARRIVES (a sweep after the 201), which attaches its pane and puts
+          the caret in it (P10-T1). **Bypass is a notice, not a switch**, at the owner's call: every
+          profile function passes `--dangerously-skip-permissions` (D47), so an off switch would be
+          ignored by the command line. **An account can be locked to a folder** in this browser
+          (365 Connect is claude-365's only, the owner's org-guard rule), and locked the other
+          account is disabled. **The cwd is screened at launch now** (`bad_cwd`): `POST /sessions`
+          used to hand the launcher whatever cwd the body carried, and the launcher's comment
+          assumed a preset had screened it; the Start launcher sends one on every press, so
+          `SessionLauncher` resolves it through `ProjectRegistry.resolveDirectory` first. **On the
+          board the rail is the Tools drawer**, closed until the header's Tools opens it (a new
+          storage key, so everyone starts closed); the Panes view does not fold, because its session
+          list is that view. Esc closes the launcher through the deck's capturing listener
+          (`closeStartLauncher`) — a keydown on the dialog never sees it, measured in the smoke.

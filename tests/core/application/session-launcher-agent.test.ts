@@ -11,6 +11,7 @@ import {
 } from '../../../core/application/session-launcher.ts';
 import { FakeClock } from '../../fakes/fake-clock.ts';
 import { FakeLaunchCommands } from '../../fakes/fake-launch-commands.ts';
+import { FakeLaunchDirectories } from '../../fakes/fake-launch-directories.ts';
 import { FakeLogger } from '../../fakes/fake-logger.ts';
 import { FakeProcessRunner } from '../../fakes/fake-process-runner.ts';
 import { FakeStore } from '../../fakes/fake-store.ts';
@@ -49,6 +50,7 @@ function build(
   const launcher = new SessionLauncher({
     commands,
     roster,
+    directories: new FakeLaunchDirectories(),
     runner,
     audit,
     logger: new FakeLogger(),

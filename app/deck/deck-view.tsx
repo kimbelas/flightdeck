@@ -42,6 +42,8 @@ import { nextShellPane } from './shell-pane.ts';
 import { projectKey, type ProjectRecord } from '../../contracts/project.ts';
 import { useDeckKeys, type DeckKeys } from './use-deck-keys.ts';
 import { useDeckView } from './use-deck-view.ts';
+import { useStartLauncher, type StartLauncherControl } from './use-start-launcher.ts';
+import { useStartMemory, type StartMemory } from './use-start-memory.ts';
 
 const AGE_TICK_MS = 10_000;
 
@@ -82,6 +84,9 @@ export function DeckView(): JSX.Element {
   const targets = { rows, ...actions, onLayout: grid.setLayout, onChooseProject: project.choose, onView: deckView.setView }; // prettier-ignore
   const palette = { ...targets, ...paletteSources(state, scope, project.key, now) };
   const keys = useDeckKeys(commandsFor(palette), { onMovePane: grid.movePaneBy });
+  // P10-T2. The header's Start: launch, then open the new session's card when it arrives.
+  const memory = useStartMemory();
+  const start = useStartLauncher({ store, rows, expanded, toggle, openPane: actions.onOpenPane, view: deckView.view, project, keyFor: (cwd) => scope.keyFor(cwd), memory }); // prettier-ignore
 
   return (
     <DeckScreen
@@ -99,6 +104,8 @@ export function DeckView(): JSX.Element {
       }}
       install={install !== undefined}
       keys={keys}
+      start={start}
+      memory={memory}
     />
   );
 }
@@ -108,10 +115,12 @@ interface DeckScreenProps {
   readonly page: DeckBodyProps;
   readonly install: boolean;
   readonly keys: DeckKeys;
+  readonly start: StartLauncherControl;
+  readonly memory: StartMemory;
 }
 
 /** The page's three layers — header, body, overlays. Arranges and holds nothing. */
-function DeckScreen({ page, install, keys }: DeckScreenProps): JSX.Element {
+function DeckScreen({ page, install, keys, start, memory }: DeckScreenProps): JSX.Element {
   const { state, now, rows, actions, deckView } = page;
   return (
     <main className="deck">
@@ -122,6 +131,8 @@ function DeckScreen({ page, install, keys }: DeckScreenProps): JSX.Element {
         install={install}
         actions={actions}
         deckView={deckView}
+        start={start}
+        memory={memory}
       />
       <DeckBody {...page} />
       <DeckOverlays keys={keys} />

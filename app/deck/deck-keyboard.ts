@@ -188,6 +188,19 @@ export function closeCardModal(): boolean {
   return true;
 }
 
+/**
+ * Closes the Start launcher, if it is open — P10-T2. Before the card: the launcher is drawn over
+ * everything, and a launch it just made opens a card underneath it. By its own close button, for
+ * `closeCardModal`'s reason. (A keydown handler on the dialog never sees `Esc`: this file's
+ * capturing listener takes it first — measured in the smoke.)
+ */
+export function closeStartLauncher(): boolean {
+  const close = document.querySelector<HTMLElement>('[data-start-launcher] [data-start-close]');
+  if (close === null) return false;
+  close.click();
+  return true;
+}
+
 /** What `Esc` does in a text field: hands the keyboard back to the deck. */
 export function blurActive(): void {
   const active = document.activeElement;
