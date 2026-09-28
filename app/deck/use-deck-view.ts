@@ -8,24 +8,27 @@ import { useCallback, useEffect, useState } from 'react';
 import { DEFAULT_VIEW, isBuiltView, type DeckViewMode } from '../../contracts/deck-view.ts';
 
 const VIEW_KEY = 'flightdeck.deck-view';
-const RAIL_KEY = 'flightdeck.rail-folded';
+// P10-T2. A new key, because the meaning changed: on the board the rail is the Tools drawer and
+// starts CLOSED, and a `false` stored under the old key would have opened it for everyone who had
+// ever unfolded it. The Panes view does not fold at all — its session list is the view.
+const RAIL_KEY = 'flightdeck.board-tools-hidden';
 
 export interface DeckView {
   readonly view: DeckViewMode;
   readonly setView: (view: DeckViewMode) => void;
-  /** Whether the rail's panels are folded away, leaving the strip that unfolds them. */
+  /** Whether the board's Tools drawer (the rail) is closed. Closed until it is opened (P10-T2). */
   readonly railFolded: boolean;
   readonly setRailFolded: (folded: boolean) => void;
 }
 
 export function useDeckView(): DeckView {
   const [view, setViewState] = useState<DeckViewMode>(DEFAULT_VIEW);
-  const [railFolded, setFoldedState] = useState(false);
+  const [railFolded, setFoldedState] = useState(true);
 
   useEffect(() => {
     const stored = read(VIEW_KEY);
     if (isBuiltView(stored)) setViewState(stored);
-    setFoldedState(read(RAIL_KEY) === 'true');
+    setFoldedState(read(RAIL_KEY) !== 'false');
   }, []);
 
   // Anything but a built view is refused here rather than at the switch, so the palette and the

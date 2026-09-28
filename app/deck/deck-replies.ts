@@ -59,6 +59,10 @@ export function whyNotLaunched(reply: JsonReply | undefined): string {
   if (failure === 'unknown_agent') {
     return 'That agent is no longer in the project .claude/agents roster — pick another, or none.';
   }
+  // P10-T2. The Start launcher's folder, refused by the registry: forgotten since it was drawn.
+  if (failure === 'bad_cwd') {
+    return 'That folder is not inside an imported project any more — import it again first.';
+  }
   if (failure === 'pins_agent') {
     return 'claude-isg-orch already runs the orchestrator agent — it cannot take a second one.';
   }

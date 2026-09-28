@@ -49,11 +49,14 @@ export function DeckBody(props: DeckBodyProps): JSX.Element {
   const [search, setSearch] = useState('');
   const list = listProps(props, search, setSearch);
   const { view } = deckView;
+  // P10-T2. Only the board folds: there the rail is the Tools drawer, closed by default. In the
+  // Panes view the rail holds the session list, which is that view's whole left half.
+  const folded = view === 'board' && deckView.railFolded;
   return (
-    <div className={`deck-body view-${view}${deckView.railFolded ? ' rail-folded' : ''}`}>
+    <div className={`deck-body view-${view}${folded ? ' rail-folded' : ''}`}>
       <DeckRail
         view={view}
-        folded={deckView.railFolded}
+        folded={folded}
         onFold={deckView.setRailFolded}
         list={list}
         everyRow={rows}

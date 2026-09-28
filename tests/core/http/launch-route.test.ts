@@ -11,6 +11,7 @@ import { LaunchRoute } from '../../../core/http/launch-route.ts';
 import type { RequestFacts } from '../../../core/http/loopback-guard.ts';
 import { FakeClock } from '../../fakes/fake-clock.ts';
 import { FakeLaunchCommands } from '../../fakes/fake-launch-commands.ts';
+import { FakeLaunchDirectories } from '../../fakes/fake-launch-directories.ts';
 import { FakeLogger } from '../../fakes/fake-logger.ts';
 import { FakeProcessRunner } from '../../fakes/fake-process-runner.ts';
 import { FakeStore } from '../../fakes/fake-store.ts';
@@ -35,6 +36,7 @@ function build(): Rig {
     roster: {
       allows: (cwd, agent) => Promise.resolve(cwd === APP_NEXT && agent === 'code-reviewer'),
     },
+    directories: new FakeLaunchDirectories(),
     runner,
     audit: new AuditLog(store, new FakeClock(), new FakeLogger()),
     logger: new FakeLogger(),

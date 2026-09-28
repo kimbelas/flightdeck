@@ -25,7 +25,11 @@ import { AskRunner, type AskPublisher } from './application/ask-runner.ts';
 import { InstallDoctor } from './application/install-doctor.ts';
 import { SessionRespawner } from './application/session-respawner.ts';
 import type { AuditLog } from './application/audit-log.ts';
-import { SessionLauncher, type LaunchAgentRoster } from './application/session-launcher.ts';
+import {
+  SessionLauncher,
+  type LaunchAgentRoster,
+  type LaunchDirectories,
+} from './application/session-launcher.ts';
 import { SessionRemover } from './application/session-remover.ts';
 import { SessionResumer } from './application/session-resumer.ts';
 import { SessionStopper } from './application/session-stopper.ts';
@@ -74,12 +78,15 @@ function systemTool(...segments: readonly string[]): string {
 export function sessionVerbs(
   parts: SessionVerbParts,
   roster: LaunchAgentRoster,
+  directories: LaunchDirectories,
 ): Pick<RouterParts, 'launcher' | 'resumer' | 'stopper' | 'remover' | 'respawner' | 'doctor'> {
   return {
     launcher: new SessionLauncher({
       commands: new PowerShellLaunchCommands(),
       // P9-T1. The project slice's roster — the one a preset save already checked against.
       roster,
+      // P10-T2. The registry, so a launch starts only inside an imported folder (SEC-FS-1).
+      directories,
       runner: parts.runner,
       audit: parts.audit,
       logger: parts.logger,
@@ -223,7 +230,7 @@ export function sessionSlice(
 > {
   const { install, logger } = parts;
   const sessionParts = { install, runner: parts.runner, audit: parts.audit, logger };
-  const verbs = sessionVerbs(sessionParts, parts.projects.roster);
+  const verbs = sessionVerbs(sessionParts, parts.projects.roster, parts.projects.registry);
   const adopter = new SessionAdopter({ ...sessionParts, sessions: parts.directory });
   return {
     ...verbs,

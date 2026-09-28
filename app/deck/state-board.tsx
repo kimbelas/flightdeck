@@ -33,6 +33,7 @@ export function StateBoard({ list, panes, project, onOpenShell }: StateBoardProp
   const [revealed, setRevealed] = useState<ReadonlySet<BoardColumnId>>(() => new Set());
   const board = new StateBoardViewModel(list.rows, panes, revealed);
   const open = openRowOf(list.rows, list.expanded);
+  const cards = cardsList(list);
   const reveal = (id: BoardColumnId): void => {
     setRevealed((current) => new Set([...current, id]));
   };
@@ -47,7 +48,7 @@ export function StateBoard({ list, panes, project, onOpenShell }: StateBoardProp
           <BoardColumnView
             key={column.id}
             column={column}
-            list={list}
+            list={cards}
             onReveal={reveal}
             onOpenShell={onOpenShell}
           />
@@ -56,6 +57,23 @@ export function StateBoard({ list, panes, project, onOpenShell }: StateBoardProp
       {open !== undefined && <CardModal key={open.key} row={open} list={list} />}
     </section>
   );
+}
+
+/**
+ * What the board's cards are given: the list's props, except that `open pane` opens the card.
+ *
+ * The owner's ask: on the board a pane is opened to be USED, and the dock is a strip under five
+ * columns. So a card's `open pane` expands it — the modal attaches on open (`CardModal`) and its
+ * pane is pinned over the modal's stage — rather than attaching straight into the dock. The modal
+ * itself keeps the list's own `onOpen`, which is what attaches.
+ */
+function cardsList(list: SessionListProps): SessionListProps {
+  return {
+    ...list,
+    onOpen: (row) => {
+      if (!list.expanded.has(row.key)) list.onToggle(row);
+    },
+  };
 }
 
 interface BoardColumnViewProps {

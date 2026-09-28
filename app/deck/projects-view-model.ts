@@ -48,6 +48,11 @@ const SENTENCES: Readonly<Record<ImportRefusal, string>> = {
   config_directory: 'That is a Claude Code config directory, or it contains one. Pick a project.',
 };
 
+/** The sentence for one refusal — the projects panel's, and the Start launcher's (P10-T2). */
+export function importRefusalLine(refusal: ImportRefusal): string {
+  return SENTENCES[refusal];
+}
+
 /** One imported project, ready to draw. */
 export interface ProjectLine {
   /** `projectKey` — the React key, and what the withdraw button sends back. */

@@ -18,11 +18,13 @@ import { groupBannerLine } from './group-banner-line.ts';
 import { DeckHeader } from './deck-header.tsx';
 import type { HeaderBoard } from './view-switch.tsx';
 import type { DeckView } from './use-deck-view.ts';
-import { focusControl, LAUNCH_PROMPT_ID } from './deck-keyboard.ts';
 import { DeckInstall } from './deck-install.tsx';
 import type { DeckActions, ProjectTarget } from './deck-commands.ts';
 import type { DeckState } from './deck-state.ts';
 import type { ProjectScope } from './project-scope.ts';
+import { StartLauncher } from './start-launcher.tsx';
+import type { StartLauncherControl } from './use-start-launcher.ts';
+import type { StartMemory } from './use-start-memory.ts';
 
 interface DeckTopProps {
   readonly state: DeckState;
@@ -32,10 +34,13 @@ interface DeckTopProps {
   readonly install: boolean;
   readonly actions: DeckActions;
   readonly deckView: DeckView;
+  /** The Start launcher — P10-T2. Its button is in the header, so its dialog is drawn from here. */
+  readonly start: StartLauncherControl;
+  readonly memory: StartMemory;
 }
 
 export function DeckTop(props: DeckTopProps): JSX.Element {
-  const { state, now, count, install, actions } = props;
+  const { state, now, count, install, actions, start } = props;
   return (
     <>
       <DeckHeader
@@ -47,8 +52,22 @@ export function DeckTop(props: DeckTopProps): JSX.Element {
         onRefresh={actions.onRefresh}
         onOpenShell={actions.onOpenShell}
         onOpenInstall={actions.onOpenInstall}
-        board={headerBoard(state, props.deckView, actions)}
+        board={headerBoard(state, props.deckView, actions, start)}
       />
+      {start.open && (
+        <StartLauncher
+          state={state}
+          now={now}
+          memory={props.memory}
+          starting={start.starting}
+          failure={start.failure}
+          onImport={actions.onImportProject}
+          onStart={start.start}
+          onClose={() => {
+            start.setOpen(false);
+          }}
+        />
+      )}
       {install && <DeckInstall state={state} actions={actions} />}
       <DeckBanners
         error={state.error}
@@ -61,20 +80,29 @@ export function DeckTop(props: DeckTopProps): JSX.Element {
 }
 
 /**
- * The header's State board half — P10-T1.
+ * The header's State board half — P10-T1, and Start and Tools since P10-T2.
  *
- * `New session` is the launch form's own prompt, reached the way the palette's "launch" reaches
- * it: there is one form, in the rail, and `focusControl` unfolds the rail if it has to.
+ * Start opens the launcher; the rail's launch form is still there, in the Tools drawer, and is
+ * still what the palette's "launch" reaches (`focusControl` opens the drawer if it has to).
  */
-function headerBoard(state: DeckState, deckView: DeckView, actions: DeckActions): HeaderBoard {
+function headerBoard(
+  state: DeckState,
+  deckView: DeckView,
+  actions: DeckActions,
+  start: StartLauncherControl,
+): HeaderBoard {
   return {
     view: deckView.view,
     onView: deckView.setView,
     spend: state.spend,
     projects: state.projects,
     onReadSpend: actions.onReadSpend,
-    onNewSession: () => {
-      focusControl(LAUNCH_PROMPT_ID);
+    onStart: () => {
+      start.setOpen(true);
+    },
+    toolsOpen: !deckView.railFolded,
+    onTools: () => {
+      deckView.setRailFolded(!deckView.railFolded);
     },
   };
 }

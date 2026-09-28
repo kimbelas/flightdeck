@@ -27,9 +27,13 @@
 // So a launch with an agent asks `AgentRoster` about the folder it is about to start in, and a name
 // that is not there is a refused launch with an audit row, not a session.
 //
-// **The cwd is honoured as of P4-T1, and was parsed and dropped before it.** The path reaching here
-// has been screened by `PresetBook`/`ProjectRegistry`; this class does not re-screen it, and must
-// never be given one that has not been.
+// **The cwd is honoured as of P4-T1, and screened HERE as of P10-T2.** Until then this class trusted
+// that `PresetBook` had screened it — but `POST /sessions` handed it whatever the body carried, so
+// the one door that did not go through a preset did not go through a screen either. The Start
+// launcher sends a folder on every press, so a cwd is now `resolveDirectory`'d on the way in: a
+// directory inside some imported project, canonicalised first (SEC-FS-1's junction defence), or a
+// refused launch with an audit row. A preset's cwd passes it a second time, which costs one
+// `realpath`.
 import type { AuditOutcome } from '../../contracts/audit-row.ts';
 import type { LaunchFailure } from '../../contracts/launch-reply.ts';
 import {
@@ -63,6 +67,11 @@ export interface LaunchAgentRoster {
   allows(cwd: string, agent: string): Promise<boolean>;
 }
 
+/** The one question a launch asks of the registry (`ProjectRegistry.resolveDirectory`) — P10-T2. */
+export interface LaunchDirectories {
+  resolveDirectory(path: string): Promise<Result<string, string>>;
+}
+
 /**
  * `--bg` returns as soon as the session is registered, but not instantly.
  *
@@ -76,6 +85,7 @@ const MAX_NAME_CHARS = 80;
 export interface SessionLauncherParts {
   readonly commands: LaunchCommands;
   readonly roster: LaunchAgentRoster;
+  readonly directories: LaunchDirectories;
   readonly runner: ProcessRunner;
   readonly audit: AuditLog;
   readonly logger: Logger;
@@ -84,6 +94,7 @@ export interface SessionLauncherParts {
 export class SessionLauncher {
   private readonly commands: LaunchCommands;
   private readonly roster: LaunchAgentRoster;
+  private readonly directories: LaunchDirectories;
   private readonly runner: ProcessRunner;
   private readonly audit: AuditLog;
   private readonly logger: Logger;
@@ -91,6 +102,7 @@ export class SessionLauncher {
   constructor(parts: SessionLauncherParts) {
     this.commands = parts.commands;
     this.roster = parts.roster;
+    this.directories = parts.directories;
     this.runner = parts.runner;
     this.audit = parts.audit;
     this.logger = parts.logger;
@@ -107,8 +119,12 @@ export class SessionLauncher {
    *
    * @returns the new session's id, which the deck uses to open a pane straight away.
    */
-  public async launch(request: LaunchRequest): Promise<Result<string, LaunchFailure>> {
-    if (!isSane(request)) return this.refuse(request, 'bad_request', 'prompt or name out of range');
+  public async launch(asked: LaunchRequest): Promise<Result<string, LaunchFailure>> {
+    if (!isSane(asked)) return this.refuse(asked, 'bad_request', 'prompt or name out of range');
+    const cwd = await this.resolveCwd(asked.cwd);
+    if (cwd === false) return this.refuse(asked, 'bad_cwd', 'outside every imported project');
+    // The canonical folder from here on — the one the roster is read from and the session starts in.
+    const request: LaunchRequest = { ...asked, cwd };
     const agentRefusal = await this.refuseAgent(request);
     if (agentRefusal !== undefined) return agentRefusal;
     const command = this.commands.forProfile(request.profileFn, {
@@ -152,6 +168,20 @@ export class SessionLauncher {
     this.logger.info('session_launched', { profileFn: request.profileFn, session: id });
     this.write(request, 'ok', undefined, id);
     return ok(id);
+  }
+
+  /**
+   * The folder to start in, canonicalised, `undefined` for none, or `false` when it may not be.
+   *
+   * No cwd is allowed and means wherever core is, which is the launch form's case (it has no
+   * project to screen against, `launch-form.tsx`).
+   */
+  private async resolveCwd(cwd: string | undefined): Promise<string | undefined | false> {
+    if (cwd === undefined) return undefined;
+    const resolved = await this.directories.resolveDirectory(cwd);
+    if (resolved.ok) return resolved.value;
+    this.logger.warn('launch_cwd_refused', { reason: resolved.error });
+    return false;
   }
 
   /**

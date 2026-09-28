@@ -23,8 +23,11 @@ export interface HeaderBoard {
   readonly spend: SpendHeld;
   readonly projects: readonly ProjectRecord[];
   readonly onReadSpend: () => void;
-  /** Unfolds the rail and puts the caret in the launch prompt — there is one launch form. */
-  readonly onNewSession: () => void;
+  /** Opens the Start launcher — P10-T2. The rail's launch form is still the palette's "launch". */
+  readonly onStart: () => void;
+  /** Whether the board's Tools drawer is open, and the button that opens and closes it. */
+  readonly toolsOpen: boolean;
+  readonly onTools: () => void;
 }
 
 /** The switch. The line saying what the board is grouped by is on the board's own toolbar. */
@@ -32,7 +35,7 @@ export function BoardHeading({ board }: { readonly board: HeaderBoard }): JSX.El
   return <ViewSwitch view={board.view} onView={board.onView} />;
 }
 
-/** This week's spend and New session, after the quota blocks. */
+/** This week's spend, the Tools drawer and Start, after the quota blocks. */
 export function BoardActions({
   board,
   coreUp,
@@ -48,8 +51,26 @@ export function BoardActions({
         disabled={!coreUp}
         onRead={board.onReadSpend}
       />
-      <button type="button" className="new-session" data-new-session onClick={board.onNewSession}>
-        New session
+      {board.view === 'board' && (
+        <button
+          type="button"
+          className="ghost"
+          data-tools
+          aria-pressed={board.toolsOpen}
+          title="Projects, spend, Ask, transcript search and the launch form"
+          onClick={board.onTools}
+        >
+          Tools
+        </button>
+      )}
+      <button
+        type="button"
+        className="new-session"
+        data-start-open
+        disabled={!coreUp}
+        onClick={board.onStart}
+      >
+        Start
       </button>
     </>
   );

@@ -42,7 +42,7 @@ export class WindowsPtyCommands implements PtyCommands {
         cwd,
         cols: size.cols,
         rows: size.rows,
-        env: process.env,
+        env: forTerminal(process.env),
       };
     }
 
@@ -59,7 +59,7 @@ export class WindowsPtyCommands implements PtyCommands {
       cols: size.cols,
       rows: size.rows,
       // The one line that decides which of the two accounts this pane is attached to.
-      env: this.install.envFor(target.subscription),
+      env: forTerminal(this.install.envFor(target.subscription)),
     };
   }
 
@@ -76,6 +76,21 @@ export class WindowsPtyCommands implements PtyCommands {
     if (project === undefined) return this.install.userHome;
     return this.roots.rootFor(project);
   }
+}
+
+/**
+ * A pane's environment: core's, minus `NO_COLOR`.
+ *
+ * A pane is always a colour terminal — xterm.js draws every SGR there is — so a `NO_COLOR` in
+ * core's own environment is about core's log, never about the pane. Observed, not theorised: core
+ * started from a shell that sets it (Claude Code's own tool shell does) handed it to every
+ * `claude attach`, which then drew with no styling at all — the prompt's dim placeholder came out
+ * as white as typed text, and the recap lost its gray.
+ */
+function forTerminal(
+  env: Readonly<Record<string, string | undefined>>,
+): Readonly<Record<string, string | undefined>> {
+  return Object.fromEntries(Object.entries(env).filter(([name]) => name !== 'NO_COLOR'));
 }
 
 /**

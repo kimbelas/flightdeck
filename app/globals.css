@@ -175,6 +175,21 @@ button.ghost {
   align-self: center;
 }
 
+/* P10-T2. On the board the rail is the Tools drawer, and closed it takes no room at all: the
+   header's Tools button opens it. It stays in the tree — `focusControl` clicks its toggle — and
+   the Panes view never folds, because its session list is that view's left half. */
+.deck-body.view-board.rail-folded {
+  grid-template-columns: 1fr;
+}
+
+.deck-body.view-board.rail-folded .deck-left {
+  display: none;
+}
+
+.deck-body.view-panes .rail-toggle {
+  display: none;
+}
+
 /* ---- P10-T1: the State board, and the dock under it ---- */
 
 /* The board, or nothing, then the pane area — one column, so the dock can sit under the board. */
@@ -2448,4 +2463,192 @@ button.warn {
 button.warn:hover:not(:disabled) {
   background: var(--warn);
   color: var(--bg);
+}
+
+/* ---- P10-T2: the Start launcher ---- */
+
+.start-scrim {
+  z-index: 20;
+  padding-top: 8vh;
+}
+
+.start-launcher {
+  width: min(760px, 100%);
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.start-head {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.start-head h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.start-head button {
+  margin-left: auto;
+  border-color: transparent;
+}
+
+.start-steps {
+  list-style: none;
+  margin: 0;
+  padding: 4px 16px 12px;
+  overflow-y: auto;
+}
+
+.start-step {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.start-step:last-child {
+  border-bottom: 0;
+}
+
+.start-step-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.start-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.start-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-height: 56px;
+  padding: 10px 12px;
+  text-align: left;
+  border-radius: 6px;
+}
+
+.start-tile-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.start-tile[aria-pressed='true'],
+.start-account[aria-pressed='true'],
+.start-chip[aria-pressed='true'] {
+  border-color: var(--good);
+  color: var(--good);
+  background: color-mix(in srgb, var(--good) 12%, transparent);
+}
+
+.start-tile-choose {
+  justify-content: center;
+  color: var(--dim);
+  border-style: dashed;
+}
+
+.start-choose {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.start-choose input {
+  flex: 1;
+  min-width: 200px;
+}
+
+.start-refusal {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+  color: var(--bad);
+}
+
+.start-accounts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.start-account {
+  min-width: 72px;
+  padding: 6px 14px;
+  font-weight: 600;
+}
+
+.start-lock {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  color: var(--dim);
+}
+
+.start-bypass {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.start-bypass-tag {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.start-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.start-chip-agent {
+  color: var(--accent);
+}
+
+.start-prompt,
+.start-name {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+}
+
+.start-prompt {
+  resize: vertical;
+}
+
+.start-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+}
+
+.start-foot .start-refusal {
+  margin: 0;
+}
+
+.start-go {
+  min-width: 160px;
+  padding: 8px 18px;
 }
