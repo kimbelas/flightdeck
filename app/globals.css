@@ -2455,6 +2455,13 @@ button.chip-version {
   font-size: 11px;
 }
 
+.row-takeover-wait {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--dim);
+  font-size: 11px;
+}
+
 button.warn {
   border-color: var(--warn);
   color: var(--warn);
