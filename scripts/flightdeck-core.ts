@@ -6,21 +6,29 @@
 // **Two verbs, one file, because they are one command.** P1's gate sentence is
 // `flightdeck-core status`, and a separate script would be a second thing to know the name of.
 // `status` starts nothing and builds nothing: it asks the core that is already listening (P1-T12).
-import { CORE_PORT } from '../contracts/origins.ts';
+import { readCoreEnvironment } from '../core/core-environment.ts';
 import { buildCore } from '../core/main.ts';
 import { startCore } from '../core/shutdown.ts';
 import { readStatus, renderStatus } from './core-status.ts';
 
 async function start(): Promise<void> {
-  const core = buildCore();
+  // FD_CORE_PORT / FD_SUBSCRIPTIONS (P11-T0, D65). Wrong values stop core here, before a token is
+  // issued: an outpost core that fell back to 4950 would answer a tunnel meant for another core.
+  const environment = readCoreEnvironment();
+  if (!environment.ok) {
+    console.error(`flightdeck-core: ${environment.error}`);
+    process.exitCode = 1;
+    return;
+  }
+  const core = buildCore(undefined, environment.value);
 
   try {
-    await core.server.listen(CORE_PORT);
+    await core.server.listen(core.port);
   } catch (cause) {
     // Fail loudly and stay dead. A second core on another port would issue a second token and
     // serve a stale session list (SECURITY.md §7 rule 1).
     const reason = cause instanceof Error ? cause.message : 'unknown';
-    console.error(`flightdeck-core could not bind 127.0.0.1:${String(CORE_PORT)} — ${reason}`);
+    console.error(`flightdeck-core could not bind 127.0.0.1:${String(core.port)} — ${reason}`);
     process.exitCode = 1;
     return;
   }
@@ -33,7 +41,8 @@ async function start(): Promise<void> {
   // one after boot and by no other (RESEARCH.md F.1.4), and a hook is a bad thing to be first.
   await core.warmUp();
 
-  console.log(`flightdeck-core listening on 127.0.0.1:${String(CORE_PORT)}`);
+  console.log(`flightdeck-core listening on 127.0.0.1:${String(core.port)}`);
+  console.log(`subscriptions: ${environment.value.subscriptions.join(', ')}`);
   console.log(`token: ${core.tokenPath}`);
   // Named, not assumed: `claude` is not on PATH, and a pane on a session cannot open without it.
   console.log(`claude: ${core.claudePath ?? 'NOT FOUND — session panes will refuse to open'}`);

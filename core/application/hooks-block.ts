@@ -9,18 +9,22 @@
 //
 // **Recognised by target, not by a marker.** JSON has no comments, and an extra field on a hook
 // entry is a field Claude Code's own schema did not ask for. So a handler is Flightdeck's if and
-// only if it is an `http` handler pointing at `CORE_HOOKS_URL` — which is also the only property
+// only if it is an `http` handler pointing at this core's hooks URL (`coreHooksUrl(port)`) — which is also the only property
 // that makes it ours in any sense that matters.
-import {
-  CONNECTED_EVENTS,
-  CORE_HOOKS_URL,
-  flightdeckHandler,
-} from '../../contracts/connect-plan.ts';
+import { CONNECTED_EVENTS, coreHooksUrl, flightdeckHandler } from '../../contracts/connect-plan.ts';
+import { CORE_PORT } from '../../contracts/origins.ts';
 
 /** A JSON object, as it comes back from `JSON.parse`, before anything is believed about it. */
 type JsonObject = Record<string, unknown>;
 
 export class HooksBlock {
+  private readonly port: number;
+
+  /** @param port the core the hooks post to: 4950 here, `FD_CORE_PORT` on an outpost (P11-T0). */
+  constructor(port: number = CORE_PORT) {
+    this.port = port;
+  }
+
   /**
    * The settings object with Flightdeck's handlers merged in.
    *
@@ -34,7 +38,10 @@ export class HooksBlock {
       const existing = asArray(hooks[event]) ?? [];
       // Appended, not prepended: the owner's handlers run first, and a hook of ours that is slow
       // or wrong must not delay one of theirs.
-      merged[event] = [...withoutOurs(existing), { hooks: [flightdeckHandler()] }];
+      merged[event] = [
+        ...withoutOurs(existing, this.port),
+        { hooks: [flightdeckHandler(this.port)] },
+      ];
     }
     return { ...settings, hooks: merged };
   }
@@ -52,7 +59,7 @@ export class HooksBlock {
 
     const kept: JsonObject = {};
     for (const [event, entries] of Object.entries(hooks)) {
-      const survivors = withoutOurs(asArray(entries) ?? []);
+      const survivors = withoutOurs(asArray(entries) ?? [], this.port);
       // A non-array value was never ours and is put back untouched rather than normalised.
       if (asArray(entries) === undefined) kept[event] = entries;
       else if (survivors.length > 0) kept[event] = survivors;
@@ -67,7 +74,9 @@ export class HooksBlock {
   public isApplied(settings: JsonObject): boolean {
     const hooks = asObject(settings['hooks']);
     if (hooks === undefined) return false;
-    return Object.values(hooks).some((entries) => (asArray(entries) ?? []).some(isOurEntry));
+    return Object.values(hooks).some((entries) =>
+      (asArray(entries) ?? []).some((entry) => isOurEntry(entry, this.port)),
+    );
   }
 }
 
@@ -77,7 +86,7 @@ export class HooksBlock {
  * An entry the owner wrote that happens to sit in one of our events survives untouched; an entry
  * that held our handler alongside one of theirs keeps theirs.
  */
-function withoutOurs(entries: readonly unknown[]): readonly unknown[] {
+function withoutOurs(entries: readonly unknown[], port: number): readonly unknown[] {
   const kept: unknown[] = [];
   for (const entry of entries) {
     const object = asObject(entry);
@@ -86,23 +95,23 @@ function withoutOurs(entries: readonly unknown[]): readonly unknown[] {
       kept.push(entry);
       continue;
     }
-    const theirs = handlers.filter((handler) => !isOurHandler(handler));
+    const theirs = handlers.filter((handler) => !isOurHandler(handler, port));
     if (theirs.length === handlers.length) kept.push(entry);
     else if (theirs.length > 0) kept.push({ ...object, hooks: theirs });
   }
   return kept;
 }
 
-function isOurEntry(entry: unknown): boolean {
+function isOurEntry(entry: unknown, port: number): boolean {
   const object = asObject(entry);
   if (object === undefined) return false;
-  return (asArray(object['hooks']) ?? []).some(isOurHandler);
+  return (asArray(object['hooks']) ?? []).some((handler) => isOurHandler(handler, port));
 }
 
-function isOurHandler(handler: unknown): boolean {
+function isOurHandler(handler: unknown, port: number): boolean {
   const object = asObject(handler);
   if (object === undefined) return false;
-  return object['type'] === 'http' && object['url'] === CORE_HOOKS_URL;
+  return object['type'] === 'http' && object['url'] === coreHooksUrl(port);
 }
 
 /** `null` is an object to `typeof` and an array is one to both; neither is what this asks. */

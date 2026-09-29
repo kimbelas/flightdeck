@@ -38,6 +38,8 @@ export interface ConnectPlannerParts {
   readonly statusline: StatuslineSource;
   readonly patcher: SourcePatcher;
   readonly environment: SessionEnvironment;
+  /** The core the hooks post to. 4950 when omitted; an outpost's own port there (P11-T0). */
+  readonly corePort?: number;
 }
 
 export class ConnectPlanner {
@@ -45,13 +47,14 @@ export class ConnectPlanner {
   private readonly statusline: StatuslineSource;
   private readonly patcher: SourcePatcher;
   private readonly environment: SessionEnvironment;
-  private readonly block = new HooksBlock();
+  private readonly block: HooksBlock;
 
   constructor(parts: ConnectPlannerParts) {
     this.settings = parts.settings;
     this.statusline = parts.statusline;
     this.patcher = parts.patcher;
     this.environment = parts.environment;
+    this.block = new HooksBlock(parts.corePort);
   }
 
   /** What Connect would write. `alreadyDone` names files that need nothing, which is not an error. */

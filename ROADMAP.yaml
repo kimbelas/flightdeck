@@ -4779,7 +4779,7 @@ phases:
           interactive card keeps the read-only screen (SPEC §5.2).
   - id: P11
     name: Outposts — a core on another machine the owner owns
-    status: todo
+    status: doing
     goal: >-
       A session running on the owner's server (the Vostro's CT 120) is a card on the board with a
       host chip, typable and dispatchable with one press, while every Flightdeck bind on both
@@ -4810,11 +4810,36 @@ phases:
     tasks:
       - id: P11-T0
         title: Per-core port and hosted subscriptions — FD_CORE_PORT threaded through, ClaudeInstall.subscriptions()
-        status: todo
+        status: doing
         depends_on: [P10-T1]
         security: [SEC-NET-1, SEC-HTTP-1, SEC-HTTP-2]
-        deliverables: [contracts/origins.ts, DECISIONS.md D65]
+        deliverables:
+          [
+            contracts/origins.ts,
+            contracts/connect-plan.ts,
+            core/core-environment.ts,
+            core/boot.ts,
+            core/adapters/claude-cli/claude-install.ts,
+            core/application/hooks-block.ts,
+            tests/core/core-environment.test.ts,
+            tests/contracts/origins.test.ts,
+            DECISIONS.md D65,
+          ]
         notes: >-
+          **Code landed 2026-09-29; `doing` until it runs in CT 120** (the owner's rule for P11:
+          nothing is done before it runs end-to-end against the real container, and the Vostro is
+          not rebuilt yet). Proven on this machine meanwhile with a second core from the branch —
+          `FD_CORE_PORT=4951 FD_SUBSCRIPTIONS=365`, its own `LOCALAPPDATA` so the running core's
+          token was not touched: it bound `127.0.0.1:4951` only (netstat), `/health` answered 200
+          to `Host: 127.0.0.1:4951` and 421 to `Host: 127.0.0.1:4950`, `/sessions` held eleven
+          365 rows and no isg row and no `unreadable` banner, `flightdeck-core status` beside it
+          asked 4951, and `FD_CORE_PORT=4949` refused to start ("the deck's port"). A present but
+          wrong value refuses rather than falling back, because an outpost core on 4950 would answer
+          a tunnel meant for another; the CLIENTS (`status`, `doctor`, `connect`) fall back, which
+          is safe that way round. Connect writes and recognises hooks by the core's own port, so a
+          4951 core's Disconnect never removes a 4950 handler.
+
+          *The task as planned:*
           `contracts/origins.ts` gains `coreHosts(port)`, `coreOrigin(port)` and
           `coreWebSocket(port)` with today's constants as the defaults; `FD_CORE_PORT` threads
           through `main.ts`, the core script, warm-up, the http client, the hooks URL and the

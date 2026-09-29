@@ -15,7 +15,7 @@
 // row in the index that points nowhere.
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { SUBSCRIPTION_IDS, type SubscriptionId } from '../../../contracts/session.ts';
+import type { SubscriptionId } from '../../../contracts/session.ts';
 import type { ClaudeInstall } from '../claude-cli/claude-install.ts';
 import type { CatalogueEntry, TranscriptCatalogue } from '../../ports/transcript-catalogue.ts';
 
@@ -34,7 +34,7 @@ export class FsTranscriptCatalogue implements TranscriptCatalogue {
 
   public async list(): Promise<readonly CatalogueEntry[]> {
     const found: (CatalogueEntry & { readonly mtime: number })[] = [];
-    for (const subscription of SUBSCRIPTION_IDS) {
+    for (const subscription of this.install.subscriptions()) {
       found.push(...(await this.listOne(subscription)));
     }
     // Newest-written first — see the port for why the order is part of the contract. The mtime is

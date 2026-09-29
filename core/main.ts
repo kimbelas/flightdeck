@@ -3,13 +3,12 @@
 // It returns the assembled service rather than starting it, so a test can build the whole graph
 // against fakes and `scripts/flightdeck-core.ts` can own the printing. No DI container, no
 // globals: everything below is constructor injection, read top to bottom.
-import { mkdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 import { ingestKeyFile } from '../contracts/ingest-key.ts';
 import { storeFile } from '../contracts/store-file.ts';
-import { CORE_PORT, UI_ORIGIN } from '../contracts/origins.ts';
+import type { SubscriptionId } from '../contracts/session.ts';
+import { LOCAL_CORE } from './core-environment.ts';
+import { buildGuard, issueSecrets, readVersion, restrictDataDirectory } from './boot.ts';
 import { DeckQuery } from './application/deck-query.ts';
-import { IngestKeyIssuer } from './application/ingest-key-issuer.ts';
 import { PaneRegistry } from './application/pane-registry.ts';
 import { type Reconciler } from './application/reconciler.ts';
 import { type TranscriptIndexer } from './application/transcript-indexer.ts';
@@ -20,7 +19,6 @@ import { type ToastAnnouncer } from './application/toast-announcer.ts';
 import { type TranscriptReader } from './application/transcript-reader.ts';
 import { type VitalsRegistry } from './application/vitals-registry.ts';
 import { TicketOffice } from './application/ticket-office.ts';
-import { TokenIssuer } from './application/token-issuer.ts';
 import { ClaudeCliSessionSource } from './adapters/claude-cli/claude-cli-session-source.ts';
 import { ClaudeInstall } from './adapters/claude-cli/claude-install.ts';
 import { ExecFileProcessRunner } from './adapters/claude-cli/execfile-process-runner.ts';
@@ -29,11 +27,9 @@ import { SqliteStore } from './adapters/sqlite/sqlite-store.ts';
 import type { Store } from './ports/store.ts';
 import { NodePtyHost } from './adapters/node-pty/node-pty-host.ts';
 import { WindowsPtyCommands } from './adapters/windows/windows-pty-commands.ts';
-import { WindowsFileAcl } from './adapters/windows/windows-file-acl.ts';
-import { WindowsTokenFile } from './adapters/windows/windows-token-file.ts';
+import type { WindowsTokenFile } from './adapters/windows/windows-token-file.ts';
 import { CoreServer } from './http/core-server.ts';
-import { BUDGETS } from './http/limits.ts';
-import { LoopbackGuard } from './http/loopback-guard.ts';
+import type { LoopbackGuard } from './http/loopback-guard.ts';
 import { KeybindingHelper } from './application/keybinding-helper.ts';
 import { buildConnector } from './connect.ts';
 import { PasteInbox } from './application/paste-inbox.ts';
@@ -102,6 +98,8 @@ export interface Core {
   readonly store: SqliteStore;
   readonly logger: Logger;
   readonly tokenPath: string;
+  /** The loopback port this core binds — 4950 here, `FD_CORE_PORT` on an outpost (D65). */
+  readonly port: number;
   /** Where the stable ingest key lives, for `flightdeck-core status` and Connect (SEC-HTTP-7). */
   readonly ingestKeyPath: string;
   /** Where `claude.exe` was found, or `undefined` — panes on sessions need it, shells do not. */
@@ -128,7 +126,7 @@ export interface Core {
  * Order matters: the token exists before the server can accept a request, so there is no window in
  * which a route is reachable without one (SEC-HTTP-3).
  */
-export function buildCore(logger: Logger = new ConsoleLogger()): Core {
+export function buildCore(logger: Logger = new ConsoleLogger(), environment = LOCAL_CORE): Core {
   // SEC-FS-4, first, because everything below writes into this directory: the token, the ingest
   // key and the database. The reason it is the DIRECTORY and not each file is that SQLite writes
   // `flightdeck.db-wal` and `-shm` beside the database after anything could have restricted the
@@ -137,7 +135,8 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
   restrictDataDirectory();
   const { tokenFile, issuer, token, ingestKey } = issueSecrets();
 
-  const { install, runner, clock, sessions } = buildAdapters(logger);
+  const adapters = buildAdapters(logger, environment.subscriptions);
+  const { install, runner, clock, sessions } = adapters;
   // Opened before the feeds, because they are constructed around it — and before `listen`, so a
   // store that cannot be opened stops core at boot rather than on the first hook.
   const store = new SqliteStore(storeFile());
@@ -152,7 +151,7 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
   const projects = projectSlice({ install, store, audit, runner, clock, logger });
   const version = readVersion();
   const http = buildHttp({
-    guard: buildGuard(token, ingestKey),
+    guard: buildGuard(token, ingestKey, environment.port),
     feeds,
     audit,
     projects,
@@ -160,12 +159,10 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
     // `/status` disagreeing about which build is running would be a very silly bug to have.
     version,
     report: buildReport({ version, store, audit, feeds, tokenFile, install }),
-    sessions,
+    ...adapters,
     store,
-    runner,
-    clock,
-    install,
     logger,
+    port: environment.port,
   });
   return {
     server: http.server,
@@ -180,35 +177,14 @@ export function buildCore(logger: Logger = new ConsoleLogger()): Core {
     tokenPath: tokenFile.location(),
     ingestKeyPath: ingestKeyFile(),
     claudePath: install.executable,
-    warmUp: () => warmUp(token, logger),
+    port: environment.port,
+    warmUp: () => warmUp(token, logger, environment.port),
     // Built inside the closure rather than on a line of its own above, because this function is at
     // its 40-line limit and P6-T3 needed one of them. It costs nothing: every field is an object
     // already constructed above, `stopCore` is the only caller, and it is idempotent — so a list
     // assembled per call and a list assembled once are the same list.
     shutdown: () => stopCore({ ...http, ...feeds, store, issuer, logger }),
   };
-}
-
-interface Secrets {
-  readonly tokenFile: WindowsTokenFile;
-  readonly issuer: TokenIssuer;
-  readonly token: string;
-  readonly ingestKey: string;
-}
-
-/**
- * The two secrets, which differ in exactly one way that matters: one is per boot and one is not.
- *
- * The token is issued fresh and revoked on shutdown (SEC-HTTP-3). The ingest key is read-or-create
- * and is NOT revoked — it is the one secret that outlives the process, so a session that started
- * three restarts ago still authenticates its hooks (SEC-HTTP-7, RESEARCH.md F.1.7).
- */
-function issueSecrets(): Secrets {
-  const tokenFile = new WindowsTokenFile();
-  const issuer = new TokenIssuer(tokenFile);
-  const token = issuer.issue();
-  const ingestKey = new IngestKeyIssuer(new WindowsTokenFile(ingestKeyFile())).ensure();
-  return { tokenFile, issuer, token, ingestKey };
 }
 
 interface ReportParts {
@@ -258,13 +234,16 @@ interface HttpSide {
  * directory they read. Lifted out of `buildCore` for its forty-line limit, and they belong
  * together — none of the four has a decision in it.
  */
-function buildAdapters(logger: Logger): {
+function buildAdapters(
+  logger: Logger,
+  hosted: readonly SubscriptionId[],
+): {
   readonly install: ClaudeInstall;
   readonly runner: ExecFileProcessRunner;
   readonly clock: SystemClock;
   readonly sessions: ClaudeCliSessionSource;
 } {
-  const install = new ClaudeInstall();
+  const install = new ClaudeInstall(undefined, undefined, hosted);
   const runner = new ExecFileProcessRunner();
   return {
     install,
@@ -294,6 +273,8 @@ interface HttpParts {
   readonly clock: SystemClock;
   readonly install: ClaudeInstall;
   readonly logger: Logger;
+  /** This core's own port, for Connect's hooks URL (P11-T0). */
+  readonly port: number;
 }
 
 /**
@@ -332,7 +313,7 @@ function buildHttp(parts: HttpParts): HttpSide {
         daemons: buildDaemonReader({ install, clock, log: feeds.daemonLog }),
         // P6-T7. The third argument is the reconciler's memory of ended interactive
         // sessions — a sweep cannot see one, which is why it is held (`DeckQuery`).
-        deck: new DeckQuery(parts.sessions, clock, feeds.reconciler),
+        deck: new DeckQuery(parts.sessions, clock, feeds.reconciler, install.subscriptions()),
         // P7-T1. The store, narrowed to the one method a search needs.
         search: parts.store,
         // P6-T7. `directory` is the reconciler's memory of where each session was seen — an
@@ -343,7 +324,7 @@ function buildHttp(parts: HttpParts): HttpSide {
         // P5a-T8. The directory is made on first paste, not at boot: a machine where nobody has
         // ever pasted an image has no `pasted\` folder to explain.
         paste: new PasteInbox({ store: new FsPastedImageStore(), clock, logger }),
-        ...configWriters(install, parts.audit, logger),
+        ...configWriters(install, parts.audit, logger, parts.port),
         limiter,
         install,
         logger,
@@ -372,55 +353,14 @@ function configWriters(
   install: ClaudeInstall,
   audit: AuditLog,
   logger: Logger,
+  port: number,
 ): Pick<RouterParts, 'keybindings' | 'connector' | 'audit'> {
   return {
     // The same `ConfigFile` Connect uses — back up, write temp, atomic rename, in one class.
     keybindings: new KeybindingHelper({ install, files: new BackingUpConfigFile(), logger }),
     // Built by `connect.ts`, which `npm run connect` calls too, so the plan the panel shows and
     // the plan the terminal prints cannot come apart.
-    connector: buildConnector(install, logger),
+    connector: buildConnector(install, logger, port),
     audit,
   };
-}
-
-/**
- * One screen for every inbound connection, promoted from the P0-T7 probe unchanged.
- *
- * The body limit here is the CONTROL cap. Core enforces the per-route caps itself (limits.ts) now
- * that a hook may send 4 MB and a launch may not; this keeps the guard's own answer agreeing with
- * what the server does.
- */
-function buildGuard(token: string, ingestKey: string): LoopbackGuard {
-  return new LoopbackGuard({
-    port: CORE_PORT,
-    uiOrigin: UI_ORIGIN,
-    token,
-    ingestKey,
-    bodyLimitBytes: BUDGETS.control.bodyBytes,
-  });
-}
-
-/**
- * Restricts `%LOCALAPPDATA%\flightdeck` to this user, creating it if it is not there.
- *
- * The directory is derived from the store's path rather than spelled again: three contracts
- * already agree about this folder and a fourth opinion is how they stop agreeing
- * (contracts/store-file.ts). It is created here rather than relied upon, so this does not depend
- * on the token having been written first — an ordering that is true today and is not a contract.
- */
-function restrictDataDirectory(): void {
-  const directory = dirname(storeFile());
-  mkdirSync(directory, { recursive: true });
-  new WindowsFileAcl().restrictDirectory(directory);
-}
-
-function readVersion(): string {
-  const manifest: unknown = JSON.parse(
-    readFileSync(join(import.meta.dirname, '..', 'package.json'), 'utf8'),
-  );
-  if (typeof manifest === 'object' && manifest !== null && 'version' in manifest) {
-    const { version } = manifest;
-    if (typeof version === 'string') return version;
-  }
-  return '0.0.0';
 }

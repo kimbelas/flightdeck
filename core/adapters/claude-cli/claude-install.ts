@@ -29,14 +29,22 @@ function candidates(): readonly string[] {
 export class ClaudeInstall {
   private readonly home: string;
   private readonly executablePath: string | undefined;
+  private readonly hosted: readonly SubscriptionId[];
 
   /**
    * @param executable omit to discover it; pass a path to name it; pass `''` to say there is
    * none. The empty case is not a quirk — a test for "Claude is not installed" must not fall
    * back to discovery and then find the real binary on the machine running the test.
+   * @param hosted the subscriptions this machine has a config dir for (`FD_SUBSCRIPTIONS`,
+   * core-environment.ts). Both, here; one on an outpost that is logged in as one account (D65).
    */
-  constructor(home: string = process.env['USERPROFILE'] ?? '', executable?: string) {
+  constructor(
+    home: string = process.env['USERPROFILE'] ?? '',
+    executable?: string,
+    hosted: readonly SubscriptionId[] = SUBSCRIPTION_IDS,
+  ) {
     this.home = home;
+    this.hosted = hosted;
     if (executable === undefined)
       this.executablePath = candidates().find((path) => existsSync(path));
     else this.executablePath = executable === '' ? undefined : executable;
@@ -49,6 +57,16 @@ export class ClaudeInstall {
 
   public get userHome(): string {
     return this.home;
+  }
+
+  /**
+   * The subscriptions this core sweeps, watches and lists, in `SUBSCRIPTION_IDS` order.
+   *
+   * Every loop that used to walk `SUBSCRIPTION_IDS` walks this instead (P11-T0): a container that
+   * holds only `~/.claude-365` would otherwise report `~/.claude-isg` as unreadable on every sweep.
+   */
+  public subscriptions(): readonly SubscriptionId[] {
+    return this.hosted;
   }
 
   /**
@@ -71,7 +89,7 @@ export class ClaudeInstall {
    * session, and the watcher treats absence as an ordinary state.
    */
   public watchTargets(): readonly string[] {
-    return SUBSCRIPTION_IDS.flatMap((subscription) => {
+    return this.hosted.flatMap((subscription) => {
       const configDir = this.configDirFor(subscription);
       return [join(configDir, 'sessions'), join(configDir, 'jobs')];
     });

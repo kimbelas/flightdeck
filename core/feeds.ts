@@ -181,6 +181,7 @@ function buildReconciler(
     clock: parts.clock,
     logger,
     endings: new EndingBook(daemonLog),
+    subscriptions: install.subscriptions(),
   });
   return { reconciler, daemonLog };
 }

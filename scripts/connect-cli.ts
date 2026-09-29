@@ -21,6 +21,7 @@ import { unifiedDiff } from '../contracts/text-diff.ts';
 import { ClaudeInstall } from '../core/adapters/claude-cli/claude-install.ts';
 import { ConsoleLogger } from '../core/adapters/console-logger.ts';
 import { buildConnector } from '../core/connect.ts';
+import { clientCorePort, clientSubscriptions } from '../core/core-environment.ts';
 
 function printPlan(direction: ConnectDirection, plan: ConnectPlan): void {
   if (!plan.ok) {
@@ -47,7 +48,8 @@ function printPlan(direction: ConnectDirection, plan: ConnectPlan): void {
 }
 
 async function run(direction: ConnectDirection, apply: boolean): Promise<number> {
-  const connector = buildConnector(new ClaudeInstall(), new ConsoleLogger());
+  const install = new ClaudeInstall(undefined, undefined, clientSubscriptions());
+  const connector = buildConnector(install, new ConsoleLogger(), clientCorePort());
   const plan = connector.plan(direction);
   printPlan(direction, plan);
   if (!plan.ok) return 1;

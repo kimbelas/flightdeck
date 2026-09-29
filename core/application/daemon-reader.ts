@@ -33,6 +33,8 @@ export interface DaemonReaderParts {
   readonly log: DaemonLogSource;
   readonly probe: ProcessProbe;
   readonly clock: Clock;
+  /** The ones this core hosts (`ClaudeInstall.subscriptions()`, P11-T0). Both when omitted. */
+  readonly subscriptions?: readonly SubscriptionId[];
 }
 
 export class DaemonReader {
@@ -42,9 +44,13 @@ export class DaemonReader {
     this.parts = parts;
   }
 
-  /** Both subscriptions, always both — a subscription with no daemon ever is `absent`, not missing. */
+  /**
+   * Every hosted subscription, always all of them — one with no daemon ever is `absent`, not
+   * missing. An outpost hosting one account reports that one (P11-T0).
+   */
   public async read(): Promise<DaemonReport> {
-    const daemons = await Promise.all(SUBSCRIPTION_IDS.map((id) => this.readOne(id)));
+    const hosted = this.parts.subscriptions ?? SUBSCRIPTION_IDS;
+    const daemons = await Promise.all(hosted.map((id) => this.readOne(id)));
     return { at: this.parts.clock.now().getTime(), daemons };
   }
 

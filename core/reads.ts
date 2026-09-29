@@ -110,6 +110,7 @@ export function buildDaemonReader(
     log: parts.log,
     probe: new SignalProcessProbe(),
     clock: parts.clock,
+    subscriptions: parts.install.subscriptions(),
   });
 }
 

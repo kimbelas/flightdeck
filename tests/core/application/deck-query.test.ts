@@ -257,3 +257,16 @@ describe('DeckQuery — ended interactive sessions', () => {
     expect((await deck.snapshot()).rows).toEqual([]);
   });
 });
+
+describe('DeckQuery on an outpost (P11-T0)', () => {
+  it('sweeps only the hosted subscription, so the other is never reported unreadable', async () => {
+    const source = new FakeSessionSource();
+    source.willFail('isg');
+    const deck = new DeckQuery(source, new FakeClock(1_700_000_000_000), undefined, ['365']);
+
+    const { unreadable } = await deck.snapshot();
+
+    expect(source.swept).toEqual(['365']);
+    expect(unreadable).toEqual([]);
+  });
+});

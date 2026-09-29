@@ -11,9 +11,10 @@
 // is why `StatuslinePatcher` moved to `core/adapters/statusline/` in this task (see the port).
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { SUBSCRIPTION_IDS } from '../contracts/session.ts';
+import { CORE_PORT } from '../contracts/origins.ts';
 import type { ClaudeInstall } from './adapters/claude-cli/claude-install.ts';
 import { BackingUpConfigFile } from './adapters/node/backing-up-config-file.ts';
+import { HttpCoreClient } from './adapters/node/http-core-client.ts';
 import { HttpCoreHealth } from './adapters/node/http-core-health.ts';
 import { StatuslinePatcher } from './adapters/statusline/statusline-patcher.ts';
 import { UserEnvironmentVariable } from './adapters/windows/user-environment-variable.ts';
@@ -41,20 +42,25 @@ export function statuslinePath(): string {
  * F.1.5 exists for — installing hooks against a receiver that will refuse them is an error banner
  * in every session, every turn, until somebody runs Disconnect.
  */
-export function buildConnector(install: ClaudeInstall, logger: Logger): Connector {
+export function buildConnector(
+  install: ClaudeInstall,
+  logger: Logger,
+  corePort: number = CORE_PORT,
+): Connector {
   return new Connector({
     files: new BackingUpConfigFile(),
-    health: new HttpCoreHealth(),
+    health: new HttpCoreHealth(new HttpCoreClient(undefined, corePort)),
     patcher: StatuslinePatcher.fromRepo(),
     environment: new UserEnvironmentVariable(),
-    // From SUBSCRIPTION_IDS rather than spelled out, so the plan lists them in the same order
+    // From the hosted subscriptions rather than spelled out, so the plan lists them in the same order
     // everything else does. The CLI listed 365 first and `doctor` listed isg first, which put two
     // different orders on one screen once the deck started rendering the plan (P4-T6).
-    settingsPaths: SUBSCRIPTION_IDS.map((subscription) => ({
+    settingsPaths: install.subscriptions().map((subscription) => ({
       subscription,
       path: join(install.configDirFor(subscription), SETTINGS_FILE),
     })),
     statuslinePath: statuslinePath(),
     logger,
+    corePort,
   });
 }
