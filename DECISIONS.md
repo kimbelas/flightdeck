@@ -174,7 +174,7 @@ unnecessary.
 ## D12 — Not building (decided)
 
 Config *scoring* (claude-coach / coach-core owns it — link to `:4747` when `gates.json` exists),
-remote/phone access (Remote Control), cloud sessions (`--cloud`), multi-machine aggregation,
+remote/phone access (Remote Control), cloud sessions (`--cloud`), multi-machine aggregation (narrowed by D65),
 anything on the undocumented messaging pipe (`messagingSocketPath`, `.key` files), a re-implementation
 of agent view's "peek & reply".
 
@@ -2059,3 +2059,37 @@ writes a `takeover` audit row with the taskkill argv, pid included, followed by 
 
 **Rejected: ending only the parent.** An idle session still owns children (G.60). Closing a
 window ends them; `TerminateProcess` on the parent alone would orphan a stdio MCP server.
+
+## D65 — a core may run on another machine the owner owns, reached only through an SSH tunnel; D12, D59, SEC-NET-3 and SEC-DATA-1 amended (proposed 2026-09-28, approved 2026-09-29, P11)
+
+**The ask.** Building, serving and the agents move to the owner's server — the Vostro, bare-metal
+Proxmox, one container per Claude account (the homelab plan, rev 3). Prompting stays in the deck
+here. A session running in the container should be a card on the board, typable and dispatchable,
+not a second terminal ritual.
+
+**D12 excluded "multi-machine aggregation", and D59 kept "other machines" out.** Both reasons —
+one owner, loopback, no page in a browser tab reaching anything new — still hold, so the amendment
+is narrow:
+
+1. **Only a machine the owner owns, only through an SSH tunnel** a Windows logon task keeps up
+   (P11-T3). No bind widens: every core and the deck bind `127.0.0.1` on both ends (SEC-NET-1).
+2. **One loopback port per core** (`FD_CORE_PORT`). The tunnel's local port equals the remote
+   bind, so the exact-match Host check (SEC-HTTP-1) needs no new allowlist entry. P8-T3's pair
+   mechanism is not reused: it refuses loopback names by design.
+3. **The deck's origin is the only origin any core accepts** (SEC-HTTP-2 unchanged).
+4. **One core per machine, one declared subscription** (`FD_SUBSCRIPTIONS`), sweeping only its own
+   `~/.claude-<sub>`. One account per host is what keeps D4's drift impossible.
+5. **Tokens never reach the page.** The deck's server side reads
+   `%LOCALAPPDATA%\flightdeck\hosts.json` (`{id, name, port, tokenPath}`); the page learns ids and
+   ports. A remote core's per-boot token is copied by the tunnel task whenever its mtime changes,
+   into the SEC-FS-4 directory.
+6. **Transcript text of a remote core stays in that core's store** (SEC-DATA-1, narrowed): only
+   stream frames, details and PTY bytes cross the tunnel.
+
+SEC-NET-3's last sentence ("other machines stay out") now reads "other machines only as D65
+outposts". SEC-NET-4 is written by P11-T5 from what P11-T4 measures, not before.
+
+**Rejected.** Widening any bind or the Host allowlist; a `build:core` bundle for Linux (node-pty
+ships no Linux prebuild, so the outpost runs from a clone with build tools); one core sweeping both
+accounts on a machine that has one; Tailscale as the tunnel (the owner chose Twingate as the one
+overlay on 2026-09-29, and plain SSH over the LAN or Twingate is all the tunnel needs).
