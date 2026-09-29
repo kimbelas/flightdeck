@@ -9,7 +9,7 @@
 
 version: 1
 project: flightdeck
-updated: 2026-09-26
+updated: 2026-09-29
 
 docs:
   spec: SPEC.md
@@ -51,8 +51,20 @@ decisions_pending:
     why_deferred: >-
       Two facts the spike measures decide the shape of P8-T3 (whether the proxy preserves Host,
       whether it carries the WebSocket upgrade); the install itself only the owner can approve.
+      **2026-09-29, the owner's answer in the homelab plan (decision 8): no Tailscale.** Twingate
+      stays the one overlay (always on when away from home) and anything public goes through a
+      Cloudflare Tunnel. P8-T2 re-plans against those two before P8-T3 is written.
     blocks: [P8-T2]
     ref: DECISIONS.md D59
+  - id: DP6
+    question: >-
+      An SSH key from this machine to each outpost, restricted to `port-forwarding` and one
+      `permitopen`, and `%LOCALAPPDATA%\flightdeck\hosts.json` naming the outposts — approved?
+      Both are new standing access from this machine to another one (D65).
+    deferred_to: P11-T0
+    why_deferred: The key and the file are only needed once a core runs on the outpost (P11-T1, T3).
+    blocks: [P11-T3]
+    ref: DECISIONS.md D65
   - id: DP5
     question: >-
       Does a ticket ever come from OUTSIDE the repository? P9-T3 reads ticket ids from the
@@ -4765,3 +4777,131 @@ phases:
           on open and is typed into there**: its own pane, pinned over the modal's stage by a class and
           `position: fixed` (never re-parented), left in the dock when the modal closes. An
           interactive card keeps the read-only screen (SPEC §5.2).
+  - id: P11
+    name: Outposts — a core on another machine the owner owns
+    status: todo
+    goal: >-
+      A session running on the owner's server (the Vostro's CT 120) is a card on the board with a
+      host chip, typable and dispatchable with one press, while every Flightdeck bind on both
+      machines stays 127.0.0.1.
+    gate: >-
+      A card for a CT 120 session is on the board with a host chip; typing into it round-trips;
+      the tunnel task survives a reboot and a token rotation; `npm run check` and `npm run smoke`
+      are green with a second fixture core on 4951.
+    depends_on: [P10]
+    notes: >-
+      **Why this phase exists.** Building, serving and the agents themselves move to the Vostro, a
+      bare-metal Proxmox server (the owner's homelab plan, 2026-09-28, rev 3); prompting stays in
+      the deck on this machine. Every doc said other machines stay out (D12, D59, SPEC §6,
+      SEC-NET-3), so the phase starts with D65, a narrow amendment, not code. There is no P8
+      dependency: the tunnel is SSH over the LAN or the owner's overlay (Twingate), not the
+      phone's proxy. P8-T4's phone pane will later need a per-host PTY mount — noted here, not
+      built.
+
+      **Four claims of the first draft were wrong and are corrected in the tasks** (architecture
+      review of 2026-09-28 against the code): P8-T3's pair mechanism refuses loopback names by
+      design and is not reused; there is no `build:core` bundle and node-pty ships no Linux
+      prebuild; the `ABSOLUTE` path rule refuses `/home/dev/wt/X`; the sweep assumes both
+      subscriptions are on every machine.
+
+      **Order.** After the homelab plan's Phase 2 proves the stopgap (`$PROFILE` functions over
+      ssh), so T4's spike runs against a real CT. Each task is run end-to-end with flightdeck.cmd
+      against that CT before it is called done.
+    tasks:
+      - id: P11-T0
+        title: Per-core port and hosted subscriptions — FD_CORE_PORT threaded through, ClaudeInstall.subscriptions()
+        status: todo
+        depends_on: [P10-T1]
+        security: [SEC-NET-1, SEC-HTTP-1, SEC-HTTP-2]
+        deliverables: [contracts/origins.ts, DECISIONS.md D65]
+        notes: >-
+          `contracts/origins.ts` gains `coreHosts(port)`, `coreOrigin(port)` and
+          `coreWebSocket(port)` with today's constants as the defaults; `FD_CORE_PORT` threads
+          through `main.ts`, the core script, warm-up, the http client, the hooks URL and the
+          statusline block. `ClaudeInstall.subscriptions()` (from `FD_SUBSCRIPTIONS`) replaces the
+          `SUBSCRIPTION_IDS` sweep at its five sites, so a one-account CT never shows an
+          `unreadable` banner for the other. DP6 "SSH key + hosts.json approved". ~300 LOC.
+      - id: P11-T1
+        title: core/adapters/linux and posix path rules — a core that runs, imports and launches on Linux
+        status: todo
+        depends_on: [P11-T0]
+        security: [SEC-FS-3, SEC-FS-4, SEC-PROC-5]
+        deliverables: [core/adapters/linux]
+        notes: >-
+          `BashLaunchCommands`, `PosixPtyCommands`, `SignalProcessEnder` (returns the argv it ran,
+          for the audit row), `PosixFileAcl` (chmod 700/600), a `~/.profile` block writer with
+          SEC-FS-3's backup and inverse, `FD_DATA_DIR` (XDG default) and `FD_CLAUDE`. A `PathRules`
+          value (`windows` | `posix`) injected into `ProjectImport` and `ReadPolicy`, because
+          today's `ABSOLUTE` regex refuses `/home/dev/wt/X` as `not_absolute` and no project can be
+          imported on Linux; `main.ts` picks the set by an explicit `FD_PLATFORM`. **No
+          `build:core` bundle**: the CT runs Node 26 (engines `>=26`) from `git clone` +
+          `npm ci --omit=dev` with build tools present, because node-pty ships no Linux prebuild.
+          `flightdeck-core.service` as a user unit. A CI job on `ubuntu-latest`. ~900 LOC in three
+          PRs.
+      - id: P11-T2a
+        title: Deck server side — hosts.json, GET /api/hosts, a per-host route handler, stream and CSP per host
+        status: todo
+        depends_on: [P11-T0]
+        security: [SEC-FS-4, SEC-HTTP-5]
+        deliverables: [contracts/hosts.ts]
+        notes: >-
+          `contracts/hosts.ts`; the deck's server side reads `%LOCALAPPDATA%\flightdeck\hosts.json`
+          (`{id, name, port, tokenPath}`) and the page learns ids and ports, never tokens.
+          `GET /api/hosts`, a route handler `app/api/host/[id]/[...path]` with the per-host bearer
+          (the core rewrite is build-time and single-destination, so it cannot be reused),
+          `/api/stream?host=`, CSP `connect-src` per host, and `host` on `SessionRow`, `SessionRef`
+          and `PtyTarget` — absent means local, so every fixture stays valid. ~500 LOC.
+      - id: P11-T2b
+        title: Store, host chip and panes — per-host streams, rows keyed by host, a host-down banner
+        status: todo
+        depends_on: [P11-T2a]
+        deliverables: [tests/e2e/smoke/host-checks.mjs]
+        notes: >-
+          Per-host `EventSource`s, rows keyed `host:subscription:id`, a host tag beside the
+          subscription label, `PaneSocket` takes the host's ws port, a host-down banner. Smoke: a
+          second `FixtureCore` on 4951 (it needs a port parameter), `host-checks.mjs`, and the
+          exact `connect-src` assertion extended. ~700 LOC.
+      - id: P11-T2c
+        title: Start launcher host step, and P9's one press picks a host
+        status: todo
+        depends_on: [P11-T2b]
+        deliverables: [app/deck/start-launcher.tsx]
+        notes: >-
+          Needs P10-T2's Start launcher on main. The launcher gains a host step; its tiles are
+          per-host projects. P9's one-press dispatch picks a host. Launch routing on an outpost is
+          one bash function per host; one account per host is what keeps D4's drift impossible.
+          ~300 LOC.
+      - id: P11-T3
+        title: The tunnel as a third logon role — ssh -L in a backoff loop, a token copy on rotation, doctor checks
+        status: todo
+        depends_on: [P11-T1]
+        security: [SEC-OPS-3, SEC-FS-4]
+        deliverables: [core/adapters/windows/logon-task-definition.ts]
+        notes: >-
+          `ssh -N -L 4951:127.0.0.1:4951 -o BatchMode=yes -o IdentitiesOnly=yes
+          -o StrictHostKeyChecking=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3
+          -o ExitOnForwardFailure=yes dev@192.168.1.52` in a backoff loop, because Task Scheduler
+          restarts nothing. The remote key is restricted to `port-forwarding` +
+          `permitopen="127.0.0.1:4951"`. A token mtime poll re-copies the remote core's per-boot
+          token into the SEC-FS-4 directory whenever it rotates (every core restart, independent
+          of the tunnel). doctor on the Windows side: ssh.exe holds 4951, the token copy is present,
+          `/health` answers through the tunnel.
+      - id: P11-T4
+        title: Spike — keystroke round trip over LAN and overlay, hooks inside the CT, a tunnel drop, node-pty build time
+        status: todo
+        depends_on: [P11-T3]
+        deliverables: [RESEARCH.md]
+        notes: >-
+          Into the next free RESEARCH section (§H is P8-T2's). Measure the keystroke round trip on
+          the LAN and over the owner's overlay, hook delivery inside the CT, a tunnel dropped
+          mid-session, and the node-pty build time.
+      - id: P11-T5
+        title: SEC-NET-4 from the measurements, SPEC §6/§7 amended, an outposts runbook
+        status: todo
+        depends_on: [P11-T4]
+        security: [SEC-NET-1]
+        deliverables: [SECURITY.md]
+        notes: >-
+          SEC-NET-4 is written from what T4 measured, not before. SPEC §6 notes there are no
+          Windows toasts for outpost sessions (the local core never sees them); ntfy on the server
+          covers it.
