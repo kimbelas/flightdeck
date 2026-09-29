@@ -3,7 +3,7 @@
 // The round trip is the headline test: `remove(merge(x))` is `x`, including for a settings.json
 // that already had hooks of the owner's in the same events Flightdeck uses.
 import { describe, expect, it } from 'vitest';
-import { CONNECTED_EVENTS, CORE_HOOKS_URL } from '../../../contracts/connect-plan.ts';
+import { CONNECTED_EVENTS, CORE_HOOKS_URL, coreHooksUrl } from '../../../contracts/connect-plan.ts';
 import { HooksBlock } from '../../../core/application/hooks-block.ts';
 
 const theirs = { type: 'command', command: 'python guard.py' };
@@ -111,5 +111,22 @@ describe('HooksBlock', () => {
     const before = settingsWithTheirHooks();
 
     expect(new HooksBlock().remove(before)).toEqual(before);
+  });
+});
+
+describe('HooksBlock for an outpost core (P11-T0)', () => {
+  it('points the hooks at the outpost core’s own port', () => {
+    const stop = JSON.stringify(new HooksBlock(4951).merge({})['hooks']);
+
+    expect(stop).toContain(coreHooksUrl(4951));
+    expect(stop).not.toContain(CORE_HOOKS_URL);
+  });
+
+  it('recognises only its own port’s handlers as its own', () => {
+    const local = new HooksBlock().merge({});
+
+    expect(new HooksBlock(4951).isApplied(local)).toBe(false);
+    expect(new HooksBlock(4951).remove(local)).toEqual(local);
+    expect(new HooksBlock(4951).remove(new HooksBlock(4951).merge({}))).toEqual({});
   });
 });

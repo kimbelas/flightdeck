@@ -22,7 +22,15 @@ import { CORE_PORT, LOOPBACK_ADDRESS } from './origins.ts';
 export const INGEST_KEY_ENV_VAR = 'FLIGHTDECK_TOKEN';
 
 /** Where a hook posts. The one string Disconnect recognises its own handlers by. */
-export const CORE_HOOKS_URL = `http://${LOOPBACK_ADDRESS}:${String(CORE_PORT)}/hooks`;
+export function coreHooksUrl(port: number = CORE_PORT): string {
+  return `http://${LOOPBACK_ADDRESS}:${String(port)}/hooks`;
+}
+
+/**
+ * This machine's hooks URL. An outpost's core binds its own port (D65), and Connect run beside it
+ * writes that port instead — `coreHooksUrl(port)`.
+ */
+export const CORE_HOOKS_URL = coreHooksUrl();
 
 /**
  * The events Connect installs, and nothing else.
@@ -74,10 +82,10 @@ export interface HttpHandler {
   readonly timeout: number;
 }
 
-export function flightdeckHandler(): HttpHandler {
+export function flightdeckHandler(port: number = CORE_PORT): HttpHandler {
   return {
     type: 'http',
-    url: CORE_HOOKS_URL,
+    url: coreHooksUrl(port),
     // The value is the stable ingest key, taken from the session's environment. Never the literal
     // secret: a token in settings.json is a credential in a config file AND stale on every core
     // restart, which is the pair of problems SEC-HTTP-7 exists to avoid.

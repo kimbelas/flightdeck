@@ -15,6 +15,7 @@ import type { CoreHealth } from '../ports/core-health.ts';
 import type { Logger } from '../ports/logger.ts';
 import type { SessionEnvironment } from '../ports/session-environment.ts';
 import type { SourcePatcher } from '../ports/source-patcher.ts';
+import { CORE_PORT } from '../../contracts/origins.ts';
 import { ConnectPlanner, type SettingsSource, type StatuslineSource } from './connect-planner.ts';
 
 export interface ConnectorParts {
@@ -25,6 +26,8 @@ export interface ConnectorParts {
   readonly settingsPaths: readonly { readonly subscription: string; readonly path: string }[];
   readonly statuslinePath: string;
   readonly logger: Logger;
+  /** The core the hooks post to. 4950 when omitted; an outpost's own port there (P11-T0). */
+  readonly corePort?: number;
 }
 
 export type ApplyOutcome =
@@ -42,6 +45,7 @@ export class Connector {
   }[];
   private readonly statuslinePath: string;
   private readonly logger: Logger;
+  private readonly corePort: number;
 
   constructor(parts: ConnectorParts) {
     this.files = parts.files;
@@ -51,6 +55,7 @@ export class Connector {
     this.settingsPaths = parts.settingsPaths;
     this.statuslinePath = parts.statuslinePath;
     this.logger = parts.logger;
+    this.corePort = parts.corePort ?? CORE_PORT;
   }
 
   /** Reads every file and works out the change. Writes nothing, whatever the answer. */
@@ -69,6 +74,7 @@ export class Connector {
       statusline,
       patcher: this.patcher,
       environment: this.environment,
+      corePort: this.corePort,
     });
     return direction === 'connect' ? planner.connect() : planner.disconnect();
   }

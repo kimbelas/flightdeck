@@ -12,11 +12,11 @@ import { execFileSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CORE_PORT, UI_PORT } from '../contracts/origins.ts';
+import { UI_PORT } from '../contracts/origins.ts';
+import { clientCorePort, clientSubscriptions } from '../core/core-environment.ts';
 import { ingestKeyFile } from '../contracts/ingest-key.ts';
 import { storeFile } from '../contracts/store-file.ts';
 import { coreTokenFile } from '../contracts/core-token.ts';
-import { SUBSCRIPTION_IDS } from '../contracts/session.ts';
 import { ClaudeInstall } from '../core/adapters/claude-cli/claude-install.ts';
 import { ConsoleLogger } from '../core/adapters/console-logger.ts';
 import { WindowsFileAcl } from '../core/adapters/windows/windows-file-acl.ts';
@@ -51,7 +51,7 @@ const SYSTEM32 = join(process.env['SystemRoot'] ?? 'C:/Windows', 'System32');
 /** Enough to see a new record type from the current Claude Code, cheap enough to run often. */
 const TRANSCRIPT_SAMPLE = 15;
 
-const install = new ClaudeInstall();
+const install = new ClaudeInstall(undefined, undefined, clientSubscriptions());
 const acl = new WindowsFileAcl();
 
 const REPO = join(import.meta.dirname, '..');
@@ -95,7 +95,7 @@ function portChecks(deckTaskInstalled: boolean): readonly Check[] {
   });
   return [
     // Core is always `needed`: hooks post to core whether a browser is open or not.
-    loopbackCheck('core port', netstat, CORE_PORT, true),
+    loopbackCheck('core port', netstat, clientCorePort(), true),
     loopbackCheck('deck port', netstat, UI_PORT, deckTaskInstalled),
   ];
 }
@@ -117,7 +117,7 @@ function aclChecks(): readonly Check[] {
 }
 
 function policy(): ReadPolicy {
-  return new ReadPolicy(SUBSCRIPTION_IDS.map((id) => install.configDirFor(id)));
+  return new ReadPolicy(install.subscriptions().map((id) => install.configDirFor(id)));
 }
 
 /**
@@ -127,7 +127,7 @@ function policy(): ReadPolicy {
  * nothing (see `secretsCheck`).
  */
 function secretCandidates(): readonly string[] {
-  const named = SUBSCRIPTION_IDS.flatMap((id) => {
+  const named = install.subscriptions().flatMap((id) => {
     const configDir = install.configDirFor(id);
     return [
       join(configDir, 'daemon', 'control.key'),
@@ -141,7 +141,7 @@ function secretCandidates(): readonly string[] {
 
 /** `.key` and `.credentials*` in the three directories Claude Code puts them in. */
 function secretsOnDisk(): readonly string[] {
-  return SUBSCRIPTION_IDS.flatMap((id) => {
+  return install.subscriptions().flatMap((id) => {
     const configDir = install.configDirFor(id);
     return [configDir, join(configDir, 'daemon'), join(configDir, 'sessions')].flatMap(
       (directory) =>
@@ -162,7 +162,7 @@ function names(directory: string): readonly string[] {
 
 /** The same construction `npm run connect` uses, so `plan()` compares against the real template. */
 function connector(): Connector {
-  return buildConnector(install, new ConsoleLogger());
+  return buildConnector(install, new ConsoleLogger(), clientCorePort());
 }
 
 /** What is registered under the role's name. Only `describe` is called — doctor writes nothing. */
@@ -185,7 +185,7 @@ function fts5Failure(): string | undefined {
 }
 
 async function transcripts(): Promise<Check> {
-  const roots = SUBSCRIPTION_IDS.map((id) => join(install.configDirFor(id), 'projects'));
+  const roots = install.subscriptions().map((id) => join(install.configDirFor(id), 'projects'));
   const total = allTranscripts(roots).length;
   const sample = recentTranscripts(roots, TRANSCRIPT_SAMPLE);
   let unknown = 0;

@@ -13,17 +13,21 @@ import type { Logger } from '../ports/logger.ts';
  * Node's HTTP stack — the parser, the socket path, the first allocation — and a direct call warms
  * none of it. It spends one of the minute's 60 control requests, which is the right price.
  */
-export async function warmUp(token: string, logger: Logger): Promise<void> {
+export async function warmUp(
+  token: string,
+  logger: Logger,
+  port: number = CORE_PORT,
+): Promise<void> {
   const startedAt = Date.now();
   const status = await new Promise<number>((resolve) => {
     const probe = httpRequest(
       {
         host: LOOPBACK_ADDRESS,
-        port: CORE_PORT,
+        port,
         path: '/health',
         headers: {
           authorization: `Bearer ${token}`,
-          host: `${LOOPBACK_ADDRESS}:${String(CORE_PORT)}`,
+          host: `${LOOPBACK_ADDRESS}:${String(port)}`,
         },
       },
       (response) => {

@@ -31,7 +31,15 @@ import sys
 # costs the whole connect timeout (RESEARCH.md F.3.3). A live core answers the connect in
 # about 1 ms, so 25 ms is 25x headroom and caps the cost of a dead core at ~25 ms.
 FD_HOST = "127.0.0.1"
-FD_PORT = 4950
+
+
+def fd_port():
+    """4950, or the outpost core's own FD_CORE_PORT (P11-T0, D65). A bad value is 4950."""
+    raw = os.environ.get("FD_CORE_PORT", "")
+    return int(raw) if raw.isdigit() and 1024 <= int(raw) <= 65535 else 4950
+
+
+FD_PORT = fd_port()
 FD_PATH = "/statusline"
 FD_CONNECT_TIMEOUT_S = 0.025
 FD_TIMEOUT_S = 0.15

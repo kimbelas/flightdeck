@@ -45,19 +45,27 @@ export class DeckQuery {
   private readonly source: SessionSource;
   private readonly clock: Clock;
   private readonly memory: EndedSessions;
+  private readonly subscriptions: readonly SubscriptionId[];
 
   /**
    * @param memory what a sweep cannot see. Defaulted to nothing so a caller that only wants the
    * listing — every test of this class before P6-T7 — does not have to supply an empty one.
+   * @param subscriptions the ones this core hosts (`ClaudeInstall.subscriptions()`, P11-T0).
    */
-  constructor(source: SessionSource, clock: Clock, memory: EndedSessions = NOTHING_REMEMBERED) {
+  constructor(
+    source: SessionSource,
+    clock: Clock,
+    memory: EndedSessions = NOTHING_REMEMBERED,
+    subscriptions: readonly SubscriptionId[] = SUBSCRIPTION_IDS,
+  ) {
     this.source = source;
     this.clock = clock;
     this.memory = memory;
+    this.subscriptions = subscriptions;
   }
 
   public async snapshot(): Promise<DeckSnapshot> {
-    const sweeps = await Promise.all(SUBSCRIPTION_IDS.map((id) => this.source.sweep(id)));
+    const sweeps = await Promise.all(this.subscriptions.map((id) => this.source.sweep(id)));
 
     const rows: SessionRow[] = [];
     const unreadable: SubscriptionId[] = [];

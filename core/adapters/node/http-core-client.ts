@@ -17,7 +17,8 @@
 // authenticate to a core that no longer exists.
 import { request } from 'node:http';
 import { readCoreToken } from '../../../contracts/core-token.ts';
-import { CORE_PORT, LOOPBACK_ADDRESS } from '../../../contracts/origins.ts';
+import { LOOPBACK_ADDRESS } from '../../../contracts/origins.ts';
+import { clientCorePort } from '../../core-environment.ts';
 import { err, ok, type Result } from '../../shared/result.ts';
 
 /** Generous next to a 1 ms loopback answer, and short enough not to leave a caller hanging. */
@@ -33,13 +34,17 @@ export interface CoreResponse {
 
 export class HttpCoreClient {
   private readonly timeoutMs: number;
+  private readonly port: number;
 
   /**
    * @param timeoutMs how long to wait. The default suits `/health`; `/sessions` sweeps both
    * subscriptions at ~760 ms each (RESEARCH.md B.2) and its caller passes more.
+   * @param port the core to ask: 4950 here, `FD_CORE_PORT` beside an outpost's core (P11-T0), so
+   * `status`, `doctor` and `otlp` run in that container ask the core beside them.
    */
-  constructor(timeoutMs: number = DEFAULT_TIMEOUT_MS) {
+  constructor(timeoutMs: number = DEFAULT_TIMEOUT_MS, port: number = clientCorePort()) {
     this.timeoutMs = timeoutMs;
+    this.port = port;
   }
 
   /**
@@ -66,14 +71,14 @@ export class HttpCoreClient {
       const probe = request(
         {
           host: LOOPBACK_ADDRESS,
-          port: CORE_PORT,
+          port: this.port,
           path,
           timeout: this.timeoutMs,
           headers: {
             authorization: `Bearer ${token}`,
             // Exactly what SEC-HTTP-1 demands. `node:http` would send one anyway; naming it keeps
             // the request's whole screened surface visible in one place.
-            host: `${LOOPBACK_ADDRESS}:${String(CORE_PORT)}`,
+            host: `${LOOPBACK_ADDRESS}:${String(this.port)}`,
           },
         },
         (response) => {

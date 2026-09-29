@@ -92,6 +92,8 @@ export interface ReconcilerParts {
   readonly watcher: DirectoryWatcher;
   readonly clock: Clock;
   readonly logger: Logger;
+  /** The ones this core hosts (`ClaudeInstall.subscriptions()`, P11-T0). Both when omitted. */
+  readonly subscriptions?: readonly SubscriptionId[];
   /**
    * How background sessions ended, from `daemon.log` (D62). Optional so a test about sweeps and
    * absences need not supply a log; without one every ending reads `unknown`, as it did before.
@@ -107,6 +109,7 @@ export class Reconciler {
   private readonly clock: Clock;
   private readonly logger: Logger;
   private readonly endings: EndingBook;
+  private readonly subscriptions: readonly SubscriptionId[];
 
   private readonly known = new Map<string, SessionRow>();
   private readonly absences = new Map<string, number>();
@@ -128,6 +131,7 @@ export class Reconciler {
     this.clock = parts.clock;
     this.logger = parts.logger;
     this.endings = parts.endings ?? new EndingBook();
+    this.subscriptions = parts.subscriptions ?? SUBSCRIPTION_IDS;
   }
 
   /** Every session known to be, or to have been, running — the newest observation of each. */
@@ -278,7 +282,7 @@ export class Reconciler {
   }
 
   private async sweepAll(): Promise<void> {
-    const sweeps = await Promise.all(SUBSCRIPTION_IDS.map((id) => this.source.sweep(id)));
+    const sweeps = await Promise.all(this.subscriptions.map((id) => this.source.sweep(id)));
     const at = this.clock.now().getTime();
     // Before the rows are recorded, so the frame that says a session stopped already says why —
     // one `changed`, and the toast reads the right word the first time (D58, D62).

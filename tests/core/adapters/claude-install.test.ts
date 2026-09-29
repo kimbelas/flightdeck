@@ -51,3 +51,18 @@ describe('ClaudeInstall — watch targets', () => {
     }
   });
 });
+
+describe('ClaudeInstall — hosted subscriptions (P11-T0)', () => {
+  it('hosts both subscriptions unless told otherwise', () => {
+    expect(install().subscriptions()).toEqual(['isg', '365']);
+  });
+
+  it('watches only the hosted config dir on a one-account outpost', () => {
+    const outpost = new ClaudeInstall(HOME, 'C:\\claude.exe', ['365']);
+
+    expect(outpost.subscriptions()).toEqual(['365']);
+    expect([...outpost.watchTargets()].sort()).toEqual(
+      [join(HOME, '.claude-365', 'jobs'), join(HOME, '.claude-365', 'sessions')].sort(),
+    );
+  });
+});

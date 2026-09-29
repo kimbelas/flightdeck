@@ -179,3 +179,19 @@ describe('DaemonReader', () => {
     ]);
   });
 });
+
+describe('DaemonReader on an outpost (P11-T0)', () => {
+  it('reports only the hosted subscription', async () => {
+    const reader = new DaemonReader({
+      roster: new FakeRosterSource(),
+      log: new FakeDaemonLogSource(),
+      probe: new FakeProcessProbe(),
+      clock: new FakeClock(NOW),
+      subscriptions: ['365'],
+    });
+
+    const report = await reader.read();
+
+    expect(report.daemons.map((daemon) => daemon.subscription)).toEqual(['365']);
+  });
+});
