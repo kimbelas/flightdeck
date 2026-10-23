@@ -53,6 +53,13 @@ async function busyChecks(page, report) {
     clean(await button.getAttribute('title')).includes('once this turn finishes'),
     clean(await button.getAttribute('title')),
   );
+  // A disabled button's title never shows, and the line above says only "cannot be attached".
+  const wait = rowFor(page, TERMINAL).locator('[data-row-takeover-wait]');
+  report.check(
+    'and says it on screen too, with the way to stop the turn',
+    (await wait.isVisible()) && clean(await wait.textContent()).includes('press Esc'),
+    clean(await wait.textContent()),
+  );
   return true;
 }
 

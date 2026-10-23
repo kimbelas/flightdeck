@@ -28,18 +28,25 @@ export function RowTakeover({ row, onTakeOver }: RowTakeoverProps): JSX.Element 
   if (!row.canTakeOver) return undefined;
   if (!armed) {
     return (
-      <button
-        type="button"
-        className="ghost"
-        data-row-takeover
-        disabled={!row.takeOverReady}
-        title={row.takeOverHint}
-        onClick={() => {
-          setArmed(true);
-        }}
-      >
-        move here…
-      </button>
+      <div className="row-takeover">
+        <button
+          type="button"
+          className="ghost"
+          data-row-takeover
+          disabled={!row.takeOverReady}
+          title={row.takeOverHint}
+          onClick={() => {
+            setArmed(true);
+          }}
+        >
+          move here…
+        </button>
+        {!row.takeOverReady && (
+          <p className="row-takeover-wait" data-row-takeover-wait>
+            {row.takeOverHint}
+          </p>
+        )}
+      </div>
     );
   }
   return (
